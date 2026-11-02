@@ -7,6 +7,7 @@ package com.nvidia.rtxremix.minecraft.terrain;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import net.minecraft.world.level.lighting.SkyLightSectionStorage;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -16,8 +17,10 @@ import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.chunk.DataLayer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ServerLightSnapshotTest {
 
@@ -39,6 +42,7 @@ class ServerLightSnapshotTest {
         List<Long2IntOpenHashMap> columnClones = new ArrayList<>();
 
         for (int pass = 0; pass < 400; pass++) {
+            liveColumns.defaultReturnValue(MIN_SECTION - pass / 7);
             // Enough passes of every size that layers merge many times and the base rebuilds.
             int operations = pass < 20 ? 60 : 1 + random.nextInt(12);
             for (int i = 0; i < operations; i++) {
@@ -72,6 +76,7 @@ class ServerLightSnapshotTest {
             Long2IntOpenHashMap expectedColumns = columnClones.get(i);
             assertEquals(expected.size(), view.size(), "size of publish " + i);
             assertEquals(expectedColumns.size(), columns.size(), "column count of publish " + i);
+            assertEquals(expectedColumns.defaultReturnValue(), columns.defaultReturnValue(), "minimum section of publish " + i);
             for (int x = 0; x < COLUMNS; x++) {
                 for (int z = 0; z < COLUMNS; z++) {
                     long column = SectionPos.asLong(x, 0, z);
@@ -85,6 +90,70 @@ class ServerLightSnapshotTest {
                 }
             }
         }
+    }
+
+    @Test
+    void lowerSectionCanChangeTheMinimumWithoutMutatingPublishedData() {
+        ServerLightSnapshot snapshot = new ServerLightSnapshot();
+        Long2ObjectOpenHashMap<DataLayer> live = new Long2ObjectOpenHashMap<>();
+        Long2IntOpenHashMap columns = new Long2IntOpenHashMap();
+        SkyLightSectionStorage.SkyDataLayerStorageMap engine = new SkyLightSectionStorage.SkyDataLayerStorageMap(live, columns, 6);
+        long highSection = SectionPos.asLong(0, 6, 0);
+        long column = SectionPos.getZeroNode(highSection);
+        long missing = SectionPos.asLong(1, 0, 1);
+        live.put(highSection, new DataLayer(new byte[2048]));
+        columns.put(column, 7);
+        ServerLightSnapshot.Published high = snapshot.publish(live, columns, LongOpenHashSet.of(highSection));
+        SkyLightSectionStorage.SkyDataLayerStorageMap earlier = new SkyLightSectionStorage.SkyDataLayerStorageMap(high.sections(), high.columns(), engine.currentLowestY);
+
+        long lowerSection = SectionPos.asLong(0, -5, 0);
+        live.put(lowerSection, new DataLayer(new byte[2048]));
+        // SkyLightStorage.onLoadSection updates both before notifyChanges publishes.
+        engine.currentLowestY = -5;
+        columns.defaultReturnValue(engine.currentLowestY);
+        ServerLightSnapshot.Published lower = snapshot.publish(live, columns, LongOpenHashSet.of(lowerSection));
+        SkyLightSectionStorage.SkyDataLayerStorageMap published = new SkyLightSectionStorage.SkyDataLayerStorageMap(lower.sections(), lower.columns(), engine.currentLowestY);
+        SkyLightSectionStorage.SkyDataLayerStorageMap vanilla = engine.copy();
+
+        assertEquals(vanilla.currentLowestY, published.currentLowestY);
+        assertEquals(vanilla.topSections.get(column), published.topSections.get(column));
+        assertEquals(vanilla.topSections.get(missing), published.topSections.get(missing));
+        assertEquals(6, earlier.topSections.get(missing));
+        assertEquals(6, earlier.topSections.defaultReturnValue());
+    }
+
+    @Test
+    void changedMinimumAppliesToMissingAndRemovedColumnsButNotStoredHeights() {
+        ServerLightSnapshot snapshot = new ServerLightSnapshot();
+        Long2ObjectOpenHashMap<DataLayer> live = new Long2ObjectOpenHashMap<>();
+        Long2IntOpenHashMap columns = new Long2IntOpenHashMap();
+        columns.defaultReturnValue(6);
+        long keptSection = SectionPos.asLong(0, 5, 0);
+        long removedSection = SectionPos.asLong(1, 6, 0);
+        long keptColumn = SectionPos.getZeroNode(keptSection);
+        long removedColumn = SectionPos.getZeroNode(removedSection);
+        long missing = SectionPos.asLong(2, 0, 0);
+        live.put(keptSection, new DataLayer(new byte[2048]));
+        live.put(removedSection, new DataLayer(new byte[2048]));
+        columns.put(keptColumn, 6);
+        columns.put(removedColumn, 7);
+        ServerLightSnapshot.Published earlier = snapshot.publish(live, columns,
+                LongOpenHashSet.of(keptSection, removedSection));
+
+        live.remove(removedSection);
+        columns.remove(removedColumn);
+        columns.defaultReturnValue(-5);
+        ServerLightSnapshot.Published later = snapshot.publish(live, columns, LongOpenHashSet.of(removedSection));
+
+        assertEquals(6, later.columns().get(keptColumn));
+        assertTrue(later.columns().containsKey(keptColumn));
+        assertEquals(-5, later.columns().get(removedColumn));
+        assertFalse(later.columns().containsKey(removedColumn));
+        assertEquals(-5, later.columns().get(missing));
+        later.columns().defaultReturnValue(-5);
+        assertThrows(UnsupportedOperationException.class, () -> later.columns().defaultReturnValue(6));
+        assertEquals(6, earlier.columns().get(missing));
+        assertEquals(7, earlier.columns().get(removedColumn));
     }
 
     @Test
@@ -121,7 +190,7 @@ class ServerLightSnapshotTest {
         assertThrows(UnsupportedOperationException.class, view::keySet);
         assertThrows(UnsupportedOperationException.class, view::values);
 
-        // SkyLightStorage.Data sets the same default the engine's map carries; anything else
+        // SkyLightSectionStorage.SkyDataLayerStorageMap sets the same default the engine's map carries; anything else
         // would change what absent columns answer for every reader of the shared view.
         columns.defaultReturnValue(MIN_SECTION);
         assertEquals(MIN_SECTION, columns.get(SectionPos.asLong(5, 0, 5)));
