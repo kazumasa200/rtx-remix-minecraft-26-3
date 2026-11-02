@@ -84,6 +84,10 @@ add `-Drtxremix.particleFixture.fail=true` to inject a broken producer between
 two healthy groups. Six healthy quads must remain, with one error log and no
 partial broken geometry or repeated errors. Check bright/dark scenes, reload,
 world changes and RTX toggles in game; JVM tests alone do not verify the image.
+The fixture's [before](docs/images/extracted-quads-before.png) and
+[after](docs/images/extracted-quads-after.png) captures use the same camera and
+vanilla textures. This GPU needs #2's CHILD presentation support, so both
+graphical variants include that separately reviewed presentation path.
 
 Distant Horizons is an optional compile-only dependency (Modrinth Maven, never
 shipped). Its mixins live in a separate `rtx-remix-renderer.distanthorizons.mixins.json`
