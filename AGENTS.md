@@ -93,6 +93,20 @@ Distant Horizons is an optional compile-only dependency (Modrinth Maven, never
 shipped). Its mixins live in a separate `rtx-remix-renderer.distanthorizons.mixins.json`
 that loads only when Distant Horizons is installed (`lod/dh/`).
 
+Sodium 0.9.2 for 26.3 is compile-only and never bundled. Its conditional
+`rtx-remix-renderer.sodium.mixins.json` adapts section jobs under
+`terrain/sodium/`; without Sodium the vanilla capture path remains active.
+Loader metadata restricts the tested API version. The animation eligibility
+override and accessor are installed only by the optional Sodium configuration.
+
+ImmediatelyFast 1.17.1+26.3 is compile-only and never bundled. Its conditional
+mixins and helpers are under `compat/immediatelyfast/`; see
+[ImmediatelyFast Compatibility](docs/IMMEDIATELYFAST.md).
+The plugin applies map/sign hooks only to 1.17.1 (including build metadata).
+Other versions warn and skip those hooks; their rendering is unsupported.
+Shared glyph-page mirroring stays active, and no ImmediatelyFast option is
+changed. Version selection happens at startup, never per frame.
+
 Do not run Gradle while a client from the same checkout is up: staging can fail
 on locked DLLs or replace its live configuration. Stop the client or use another
 worktree. Build guards should prevent a silently wrong artifact, as the
@@ -154,6 +168,17 @@ lights over raw `long` handles from the JNI wrapper. `JoinBurstHold` keeps
 vanilla's terrain-download screen up for a bounded wait for stable frames after
 a world join, hiding first-sight mesh, pipeline, and BLAS costs without holding
 the screen indefinitely.
+
+**Presentation.** `gl/RemixPresentationWindow` hosts Vulkan in a child of
+Minecraft's SDL/OpenGL window by default; `-Drtxremix.presentation=parent`
+selects the original host. Invalid values warn and use the default child host.
+Mirrored input never bubbles into SDL twice, and
+cursor messages stay with SDL. `GlSurfaceMixin` records the completed texture's
+existing framebuffer for the GL-to-Vulkan copy. Window operations run on SDL's
+owner thread; `WindowMixin` completes parent destruction synchronously before
+the deferred native shutdown, including when an event-thread mod queues SDL
+operations. Independent teardown steps report accumulated errors after release;
+callbacks remain allocated while live windows or classes can invoke them.
 
 **Sky.** `SkyRenderer` branches on the dimension's sky type: the End keeps a
 constant dark dome and a skyless dimension a black one with no sky ambient. In
@@ -308,6 +333,17 @@ hook then calls the original initialization operation instead of seeding a
 palette that does not exist; ScalableLux keeps its own initialization hooks,
 storage, propagation and scheduling.
 
+With Sodium installed, its existing worker block loop feeds `BlockQuadEmitter`
+instead of building another raster terrain mesh. Sodium retains ownership of
+snapshots, discovery, block entities, cancellation and result acceptance.
+Capture ownership follows the build output until render-thread acceptance;
+rejected results release it. Existing recapture requests use Sodium's deferred
+job budget, including retained sections outside the raster frustum. Reload
+recapture waits for the new manager, and worker-context retirement releases
+capture buffers. Raster draws and translucent sorting are skipped only while
+Remix capture is active. Animation forwarding remains independent of raster
+visibility so retained geometry can animate in reflections and shadows.
+
 **LOD terrain.** With Distant Horizons 3.3.4 installed, `lod/LodTerrain` builds
 its far terrain as retained Remix instances beyond Minecraft's own terrain: the
 LOD mod decides which sections exist and which are drawn, three low-priority
@@ -368,13 +404,23 @@ each animation's state after `TextureAtlas.cycleAnimationFrames` and
 phase, and sends them in one batched `UpdateTextureFromMemory` call. Glyph pages
 are mirrored on upload (`CommandEncoderGlyphMirrorMixin`,
 `BitmapGlyphStagingMixin`), because vanilla assembles them on the GPU and never
-keeps them on the CPU. `BlockTextureManager` keeps only mostly translucent
+keeps them on the CPU. Mirrors use the actual GPU page dimensions, and texture
+closure unregisters only that page incarnation. ImmediatelyFast map capture
+uses the original image-backed map and restores the raster atlas state after
+submission. Its experimental sign buffering uses a bounded source-glyph cache
+for Remix, preserving text depth while the raster atlas stays active. Font
+generation and resource/world teardown invalidate prepared glyphs. Text and
+layout jointly identify cache entries; cache-hit lookup reuses a probe whose
+miss key is snapshotted before reentrant font preparation. `TextGlyphCapture`
+owns preparation and emission for both cached and ordinary text.
+`BlockTextureManager` keeps only mostly translucent
 sprites translucent; doors, flowers and the like become cutout. Only terrain
 whose sprite has texels in the emissive atlas takes an atlas material that
 samples it (`_emissive` buckets, `getAtlasMaterialWithoutEmission` for the
 rest): a face seen edge on samples the atlas's coarsest mip, where the glow of
 every lamp, torch and lava texel is averaged, and drew yellow lines along the
 planes through the camera at night.
+
 
 **Water and weather.** `WaterNormals` holds the water normal map, and raindrop
 rings from `RainRipples` are written into it as texture content each frame by

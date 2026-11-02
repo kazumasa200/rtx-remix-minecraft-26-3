@@ -31,13 +31,12 @@ import org.lwjgl.system.MemoryUtil;
  */
 public final class GlyphPageMirror {
 
-    /** Side of every page in pixels, as {@code GlyphAtlasTexture} hardcodes it for slots and UVs. */
-    public static final int PAGE_SIZE = 256;
     private static final int CHANNELS = 4;
 
     /** Implemented by the glyph atlas texture, so the page is reachable from the texture object. */
     public interface Owner {
         GlyphPageMirror rtxremix$glyphPageMirror();
+        void rtxremix$releaseGlyphPageMirror();
     }
 
     /**
@@ -53,18 +52,32 @@ public final class GlyphPageMirror {
     private static int stagingChannels;
 
     private final boolean intensity;
-    private final byte[] data = new byte[PAGE_SIZE * PAGE_SIZE * CHANNELS];
+    private final int width;
+    private final int height;
+    private final byte[] data;
     private long version;
 
     /**
+     * @param width actual GPU page width, including atlas resizing by other mods
+     * @param height actual GPU page height
      * @param intensity whether the page is an R8 texture read as coverage, which is the
      *                  case for a font whose glyphs report no colour, such as TrueType
      */
-    public GlyphPageMirror(boolean intensity) {
+    public GlyphPageMirror(int width, int height, boolean intensity) {
+        if (width <= 0 || height <= 0) {
+            throw new IllegalArgumentException("Invalid glyph page dimensions: " + width + "x" + height);
+        }
+        this.width = width;
+        this.height = height;
         this.intensity = intensity;
+        this.data = new byte[Math.multiplyExact(Math.multiplyExact(width, height), CHANNELS)];
     }
 
-    /** Tightly packed RGBA rows, {@link #PAGE_SIZE} square. Mutated in place by {@link #blit}. */
+    public int width() { return width; }
+
+    public int height() { return height; }
+
+    /** Tightly packed RGBA rows. Mutated in place by {@link #blit}. */
     public byte[] data() {
         return data;
     }
@@ -88,14 +101,14 @@ public final class GlyphPageMirror {
      */
     public void blit(int x, int y, int width, int height, int channels, ByteBuffer src, int srcRowPitch) {
         if (x < 0 || y < 0 || width < 0 || height < 0
-                || x + width > PAGE_SIZE || y + height > PAGE_SIZE) {
+                || width > this.width - x || height > this.height - y) {
             throw new IllegalArgumentException("glyph " + width + "x" + height + " at " + x + "," + y
-                    + " does not fit a " + PAGE_SIZE + "x" + PAGE_SIZE + " page");
+                    + " does not fit a " + this.width + "x" + this.height + " page");
         }
         int srcRow = src.position();
         for (int row = 0; row < height; row++, srcRow += srcRowPitch) {
             int s = srcRow;
-            int d = ((y + row) * PAGE_SIZE + x) * CHANNELS;
+            int d = ((y + row) * this.width + x) * CHANNELS;
             for (int col = 0; col < width; col++, s += channels, d += CHANNELS) {
                 int r = src.get(s) & 0xFF;
                 int g = channels > 1 ? src.get(s + 1) & 0xFF : 0;

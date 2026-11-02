@@ -7,6 +7,7 @@
         "WallBlockMixin"
     ],
     "client": [
+        "AbstractTextureMixin",
         "BakedQuadMixin",
         "BillboardParticleAccessor",
         "BiomeMixin",
@@ -32,6 +33,7 @@
         "FrustumAccessor",
         "GameRendererMixin",
         "GlBackendMixin",
+        "GlCommandEncoderAccessor",
         "GlSurfaceMixin",
         "GlyphAtlasTextureMixin",
         "GrassColorsMixin",
@@ -74,6 +76,7 @@
         "UnfocusedFramerateMixin",
         "ViewAreaAccessor",
         "WeatherEffectRendererMixin",
+        "WindowMixin",
         "WorldChunkMixin",
         "WorldRendererMixin"
     ],

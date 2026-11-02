@@ -1,0 +1,13 @@
+{
+    "required": true,
+    "minVersion": "0.8",
+    "package": "com.nvidia.rtxremix.minecraft.compat.immediatelyfast.mixin",
+    "plugin": "com.nvidia.rtxremix.minecraft.compat.immediatelyfast.ImmediatelyFastMixinPlugin",
+    "compatibilityLevel": "JAVA_25",
+    "client": [
+        "MapRenderStateMixin",
+        "MapRendererMixin",
+        "SignRendererMixin"
+    ],
+    "injectors": { "defaultRequire": 1 }
+}

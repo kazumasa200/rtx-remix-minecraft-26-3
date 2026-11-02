@@ -70,6 +70,7 @@ public final class DynamicTextureCache {
     private static final Map<AbstractTexture, Identifier> TEXTURE_IDS =
             Collections.synchronizedMap(new WeakHashMap<>());
     private static long nextVersion = 1L;
+    private static long glyphGeneration;
 
     // ---- Called from TextureManagerMixin ----
 
@@ -88,8 +89,25 @@ public final class DynamicTextureCache {
     }
 
     /** Registers the mirror of a glyph page under the id {@code FontStorage} gave it. */
-    public static void onRegisterGlyphPage(Identifier id, GlyphPageMirror page) {
-        GLYPH_PAGES.put(id, page);
+    public static void onRegisterGlyphPage(Identifier id, AbstractTexture texture, GlyphPageMirror page) {
+        TEXTURE_IDS.put(texture, id);
+        GlyphPageMirror previous = GLYPH_PAGES.put(id, page);
+        if (previous != null && previous != page) {
+            glyphGeneration++;
+        }
+    }
+
+    /** Releases only this registration; closing a replaced page must not remove its successor. */
+    public static void onReleaseGlyphPage(AbstractTexture texture, GlyphPageMirror page) {
+        Identifier id = TEXTURE_IDS.remove(texture);
+        if (id != null && GLYPH_PAGES.remove(id, page)) {
+            glyphGeneration++;
+        }
+    }
+
+    /** Render-thread epoch for prepared text whose glyph objects belong to font pages. */
+    public static long glyphGeneration() {
+        return glyphGeneration;
     }
 
     // ---- Called from upload-time mixins ----
@@ -123,7 +141,7 @@ public final class DynamicTextureCache {
         GlyphPageMirror page = GLYPH_PAGES.get(id);
         return page == null
                 ? null
-                : new Pixels(page.data(), GlyphPageMirror.PAGE_SIZE, GlyphPageMirror.PAGE_SIZE,
+                : new Pixels(page.data(), page.width(), page.height(),
                         page.version());
     }
 
