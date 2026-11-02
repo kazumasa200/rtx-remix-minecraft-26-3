@@ -77,6 +77,12 @@ Distant Horizons is an optional compile-only dependency (Modrinth Maven, never
 shipped). Its mixins live in a separate `rtx-remix-renderer.distanthorizons.mixins.json`
 that loads only when Distant Horizons is installed (`lod/dh/`).
 
+Sodium 0.9.2 for 26.3 is compile-only and never bundled. Its conditional
+`rtx-remix-renderer.sodium.mixins.json` adapts section jobs under
+`terrain/sodium/`; without Sodium the vanilla capture path remains active.
+Loader metadata restricts the tested API version. The animation eligibility
+override and accessor are installed only by the optional Sodium configuration.
+
 Do not run Gradle while a client from the same checkout is up: staging can fail
 on locked DLLs or replace its live configuration. Stop the client or use another
 worktree. Build guards should prevent a silently wrong artifact, as the
@@ -302,6 +308,17 @@ Replacement light engines may omit vanilla's sky-source palette. The surface
 hook then calls the original initialization operation instead of seeding a
 palette that does not exist; ScalableLux keeps its own initialization hooks,
 storage, propagation and scheduling.
+
+With Sodium installed, its existing worker block loop feeds `BlockQuadEmitter`
+instead of building another raster terrain mesh. Sodium retains ownership of
+snapshots, discovery, block entities, cancellation and result acceptance.
+Capture ownership follows the build output until render-thread acceptance;
+rejected results release it. Existing recapture requests use Sodium's deferred
+job budget, including retained sections outside the raster frustum. Reload
+recapture waits for the new manager, and worker-context retirement releases
+capture buffers. Raster draws and translucent sorting are skipped only while
+Remix capture is active. Animation forwarding remains independent of raster
+visibility so retained geometry can animate in reflections and shadows.
 
 **LOD terrain.** With Distant Horizons 3.3.4 installed, `lod/LodTerrain` builds
 its far terrain as retained Remix instances beyond Minecraft's own terrain: the

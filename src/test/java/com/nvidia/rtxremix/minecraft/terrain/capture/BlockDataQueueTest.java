@@ -106,6 +106,36 @@ class BlockDataQueueTest {
     }
 
     @Test
+    void nonblockingOfferKeepsBoundsAndReleasesRejectedPayloadForRecapture() {
+        BlockDataQueue.CaptureToken token = BlockDataQueue.beginCapture(19, 23);
+        int limit = BlockDataQueue.maxPendingItemsForTest();
+        for (int i = 0; i < limit; i++) BlockDataQueue.offer(emptyCapture(19, i, 23), token);
+        SectionBlockData rejected = meshCapture(19, 4, 23);
+        org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(2),
+                () -> BlockDataQueue.offer(rejected, token));
+        assertEquals(limit, BlockDataQueue.pendingCount());
+        assertEquals(0, BlockDataQueue.drainBackpressureWaits());
+        assertThrows(IllegalStateException.class, () -> rejected.meshData().surfaces());
+        List<BlockDataQueue.EvictedSection> recapture = new ArrayList<>();
+        BlockDataQueue.drainEvictedSections(recapture, 8);
+        assertEquals(List.of(new BlockDataQueue.EvictedSection(19, 4, 23)), recapture);
+    }
+
+    @Test
+    void nonblockingOfferDiscardsUnloadedIncarnationWithoutRetryingIt() {
+        BlockDataQueue.CaptureToken token = BlockDataQueue.beginCapture(25, 27);
+        SectionBlockData stale = meshCapture(25, 2, 27);
+        BlockDataQueue.markChunkUnloaded(25, 27);
+        BlockDataQueue.beginCapture(25, 27);
+        BlockDataQueue.offer(stale, token);
+        assertEquals(0, BlockDataQueue.pendingCount());
+        assertThrows(IllegalStateException.class, () -> stale.meshData().surfaces());
+        List<BlockDataQueue.EvictedSection> recapture = new ArrayList<>();
+        BlockDataQueue.drainEvictedSections(recapture, 8);
+        assertTrue(recapture.isEmpty());
+    }
+
+    @Test
     void chunkUnloadInvalidationIsIsolatedAndReleasesQueueAccounting() {
         SectionBlockData unloaded = emptyCapture(4, 1, 6);
         SectionBlockData retained = emptyCapture(-8, 2, 3);

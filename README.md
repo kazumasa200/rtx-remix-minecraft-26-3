@@ -124,6 +124,13 @@ some systems without changing image quality. To use the original presentation
 on a system that supports it, add `-Drtxremix.presentation=parent` to your
 launcher's JVM arguments and restart; see [Tuning](docs/TUNING.md#presentation).
 
+## Sodium compatibility
+
+With Sodium 0.9.2 installed, terrain is captured for path tracing through
+Sodium's optimized chunk builder. Sodium is optional and is not included;
+other Sodium versions prevent Minecraft from starting because their terrain
+capture APIs have not been validated.
+
 ## Crash Reports And Privacy
 
 The mod collects no data of its own. The RTX Remix runtime it carries can send

@@ -1,0 +1,20 @@
+{
+    "required": true,
+    "minVersion": "0.8",
+    "package": "com.nvidia.rtxremix.minecraft.terrain.sodium.mixin",
+    "plugin": "com.nvidia.rtxremix.minecraft.terrain.sodium.SodiumMixinPlugin",
+    "compatibilityLevel": "JAVA_25",
+    "client": [
+        "SpriteAnimationStateAccessor",
+        "SodiumAtlasAnimationForwarderMixin",
+        "SodiumRendererAccessor",
+        "SodiumLevelRendererMixin",
+        "SodiumMeshingTaskMixin",
+        "SodiumBuildOutputMixin",
+        "SodiumBuildContextMixin",
+        "SodiumSectionManagerMixin",
+        "SodiumWorldRendererMixin",
+        "SodiumChunkSectionMixin"
+    ],
+    "injectors": { "defaultRequire": 1 }
+}

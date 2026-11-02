@@ -16,6 +16,9 @@ also part of every mod file name.
 - On Windows, avoid Vulkan startup failures on systems that cannot share the
   game window. The original presentation mode remains available through a
   launch argument; a mistyped value warns and uses the default.
+- With Sodium 0.9.2 installed, terrain is captured for path tracing through its
+  optimized chunk builder. Sodium remains optional; other versions prevent
+  Minecraft from starting because their capture APIs are untested.
 
 ### Fixed
 
