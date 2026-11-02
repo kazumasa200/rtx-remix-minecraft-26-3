@@ -17,6 +17,7 @@ public final class ParticleGeometryBuffer implements AutoCloseable {
     private ByteBuffer indices;
     private int capacity;
     private int quads;
+    private int checkpoint;
     private int written;
     private int boundsMin, boundsMax;
     private boolean open;
@@ -29,6 +30,10 @@ public final class ParticleGeometryBuffer implements AutoCloseable {
     public int quadCount() { return quads; }
     public int capacity() { return capacity; }
     public boolean full() { return quads == MAX_QUADS; }
+
+    void checkpoint() { checkpoint = quads; }
+    void rollback() { quads = checkpoint; written = 0; open = false; }
+    void discard() { checkpoint = quads = written = 0; open = false; }
 
     public void beginQuad(int min, int max) {
         if (open || full()) throw new IllegalStateException("Particle page is not ready for another quad");
@@ -116,7 +121,7 @@ public final class ParticleGeometryBuffer implements AutoCloseable {
         DirectBufferPool.release(vertices);
         DirectBufferPool.release(indices);
         vertices = indices = null;
-        capacity = quads = written = 0;
+        capacity = checkpoint = quads = written = 0;
         open = false;
     }
 }

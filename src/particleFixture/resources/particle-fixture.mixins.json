@@ -1,0 +1,7 @@
+{
+  "required": true,
+  "package": "com.nvidia.rtxremix.fixture.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": ["ParticleEngineMixin"],
+  "injectors": { "defaultRequire": 1 }
+}

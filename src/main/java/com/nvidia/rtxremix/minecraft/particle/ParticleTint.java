@@ -42,4 +42,10 @@ public final class ParticleTint {
     public static boolean isSoot(Particle particle) {
         return particle instanceof SmokeParticle;
     }
+
+    /** The slot worker's exact soot bytes, for an explicit source that knows particle identity. */
+    public static int sootColor(int argb) {
+        int grey = (int) (SOOT_GREY * 255f);
+        return (argb & 0xff000000) | grey << 16 | grey << 8 | grey;
+    }
 }

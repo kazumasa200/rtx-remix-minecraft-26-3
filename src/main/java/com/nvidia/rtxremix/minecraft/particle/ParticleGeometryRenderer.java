@@ -36,6 +36,8 @@ public final class ParticleGeometryRenderer implements AutoCloseable {
     private boolean ready;
     private ParticleGeometryVertexConsumer vertexConsumer;
     private int capturedQuads, lastQuads, lastDraws;
+    private int sourceCheckpoint;
+    private boolean capturingSource;
 
     public ParticleGeometryRenderer(ParticleAtlasManager atlases) { this.atlases = atlases; }
 
@@ -58,12 +60,53 @@ public final class ParticleGeometryRenderer implements AutoCloseable {
     }
 
     public void finishFrame() { ready = true; }
+    /** A failed producer may not remove a healthy producer's prefix or leave an open quad. */
+    public void beginSource() {
+        sourceCheckpoint = capturedQuads;
+        capturingSource = true;
+        for (Layer layer : layers.values()) {
+            for (Bucket bucket : layer.buckets) if (bucket != null) {
+                bucket.checkpoint = bucket.current;
+                for (Page page : bucket.pages) page.buffer.checkpoint();
+            }
+        }
+    }
+    public void finishSource() {
+        for (Layer layer : layers.values()) {
+            if (layer.active != null) throw new IllegalStateException("Unfinished extracted particle quad");
+        }
+        capturingSource = false;
+    }
+    public void abortSource() {
+        if (!capturingSource) return;
+        if (vertexConsumer != null) vertexConsumer.abort();
+        for (Layer layer : layers.values()) {
+            layer.active = null;
+            for (Bucket bucket : layer.buckets) if (bucket != null) {
+                bucket.current = bucket.checkpoint;
+                for (Page page : bucket.pages) page.buffer.rollback();
+            }
+        }
+        capturedQuads = sourceCheckpoint;
+        capturingSource = false;
+    }
     public ParticleGeometryVertexConsumer vertexConsumer(SingleQuadParticle.Layer source) {
         if (vertexConsumer == null) vertexConsumer = new ParticleGeometryVertexConsumer();
         vertexConsumer.begin(layer(source), atlases.geometryBounds(source.textureAtlasLocation()));
         return vertexConsumer;
     }
-    public void discardFrame() { ready = false; lastQuads = lastDraws = 0; }
+    public void discardFrame() {
+        ready = capturingSource = false;
+        capturedQuads = lastQuads = lastDraws = 0;
+        if (vertexConsumer != null) vertexConsumer.abort();
+        for (Layer layer : layers.values()) {
+            layer.active = null;
+            for (Bucket bucket : layer.buckets) if (bucket != null) {
+                bucket.current = bucket.checkpoint = 0;
+                for (Page page : bucket.pages) page.buffer.discard();
+            }
+        }
+    }
     public int quadCount() { return lastQuads; }
     public int drawCount() { return lastDraws; }
 
@@ -71,6 +114,11 @@ public final class ParticleGeometryRenderer implements AutoCloseable {
         lastQuads = lastDraws = 0;
         if (!ready) return;
         ready = false;
+        int expected = 0;
+        for (Layer layer : layers.values()) for (Bucket bucket : layer.buckets) {
+            if (bucket != null) for (Page page : bucket.pages) expected += page.buffer.quadCount();
+        }
+        if (expected != capturedQuads) throw new IllegalStateException("Extracted particle quad counts disagree before submission");
         if (cutoutPointer == 0) cutoutPointer = cutout.allocNative(0);
         if (blendedPointer == 0) blendedPointer = blended.allocNative(0);
         for (Layer layer : layers.values()) {
@@ -155,13 +203,13 @@ public final class ParticleGeometryRenderer implements AutoCloseable {
     private static final class Bucket implements AutoCloseable {
         final RemixMaterial material;
         final ArrayList<Page> pages = new ArrayList<>();
-        int current;
+        int current, checkpoint;
         Bucket(ParticleMaterialTextures textures, int emission) {
             material = new RemixMaterial(textures.material(emission));
             try { RemixMaterialStore.get().create(material); }
             catch (RemixException e) { throw new IllegalStateException("Could not create extracted particle material", e); }
         }
-        void reset() { current = 0; for (Page page : pages) page.buffer.reset(); }
+        void reset() { current = checkpoint = 0; for (Page page : pages) page.buffer.reset(); }
         Page page() {
             if (current < pages.size() && pages.get(current).buffer.full()) current++;
             if (current == pages.size()) pages.add(new Page());

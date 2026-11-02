@@ -12,6 +12,7 @@ package com.nvidia.rtxremix.minecraft.particle;
 public interface ParticleGeometrySink {
     /** Intrinsic emission is 0..15; bounds are the full sprite UVs packed as half2. */
     void beginQuad(int emission, int boundsMin, int boundsMax);
+    /** Preserve authored ARGB; known soot sources can reuse {@link ParticleTint#sootColor}. */
     void vertex(float x, float y, float z, float u, float v, int argb);
     void endQuad();
 }

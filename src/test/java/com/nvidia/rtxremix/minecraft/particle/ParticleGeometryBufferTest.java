@@ -11,6 +11,35 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ParticleGeometryBufferTest {
+    @Test void failedProducerRollsBackCompleteAndOpenQuadsWithoutLosingHealthyPrefix() {
+        try (var buffer = new ParticleGeometryBuffer()) {
+            quad(buffer, 3);
+            buffer.checkpoint();
+            quad(buffer, 6);
+            buffer.beginQuad(0, 0);
+            buffer.vertex(99, 0, 0, 0, 0, -1);
+            buffer.rollback();
+            assertEquals(1, buffer.quadCount());
+            quad(buffer, 12);
+            var vertices = buffer.snapshotVertices();
+            try {
+                assertEquals(3, vertices.getFloat(0));
+                assertEquals(12, vertices.getFloat(4 * HardcodedVertex.STRIDE));
+                assertEquals(2 * 4 * HardcodedVertex.STRIDE, vertices.remaining());
+            } finally { DirectBufferPool.release(vertices); }
+        }
+    }
+
+    @Test void discardedPartialFrameCanBeReusedWithoutAnOpenQuad() {
+        try (var buffer = new ParticleGeometryBuffer()) {
+            buffer.beginQuad(0, 0);
+            buffer.vertex(1, 2, 3, 0, 0, -1);
+            buffer.discard();
+            buffer.reset();
+            quad(buffer, 8);
+            assertEquals(1, buffer.quadCount());
+        }
+    }
     @Test void shadingNormalMatchesVanillaBillboardConventionAfterRotation() {
         for (float angle : new float[]{0, .7f, 2.4f}) {
             var rotation = new org.joml.Quaternionf().rotateXYZ(angle * .3f, angle, .2f);

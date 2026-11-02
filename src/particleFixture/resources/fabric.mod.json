@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "rtx-remix-particle-fixture",
+  "version": "1.0.0",
+  "name": "Remix synthetic quad fixture",
+  "environment": "client",
+  "entrypoints": { "client": ["com.nvidia.rtxremix.fixture.ParticleFixture"] },
+  "mixins": ["particle-fixture.mixins.json"],
+  "depends": { "minecraft": "26.3", "fabric-api": "*", "rtx-remix-renderer": "*" }
+}

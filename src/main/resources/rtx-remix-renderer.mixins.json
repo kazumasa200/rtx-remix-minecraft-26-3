@@ -64,6 +64,7 @@
         "SectionCopyMixin",
         "SpriteAtlasAccessor",
         "SpriteAtlasTextureMixin",
+        "SingleQuadParticleLayerMixin",
         "SpriteBillboardParticleAccessor",
         "SpriteContentsAccessor",
         "StitcherMixin",

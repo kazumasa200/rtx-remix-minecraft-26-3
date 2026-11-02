@@ -6,6 +6,7 @@ package com.nvidia.rtxremix.minecraft.mixin;
 
 import com.nvidia.rtxremix.minecraft.texture.AtlasAnimationForwarder;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
+import com.nvidia.rtxremix.minecraft.texture.ParticleAtlasDependencies;
 import java.util.List;
 import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.client.renderer.texture.SpriteLoader;
@@ -56,5 +57,6 @@ public abstract class SpriteAtlasTextureMixin {
     @Inject(method = "upload", at = @At("RETURN"))
     private void rtxremix$onAtlasUploaded(SpriteLoader.Preparations stitchResult, CallbackInfo ci) {
         RemixEntitySubmitter.onMinecraftAtlasUploaded(location);
+        ParticleAtlasDependencies.uploaded(location);
     }
 }

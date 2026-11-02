@@ -48,6 +48,14 @@ import net.minecraft.resources.Identifier;
  */
 public class ParticleAtlasManager {
 
+    /** The existing particle-atlas intensity, shared by vanilla and extracted geometry. */
+    public static final float EMISSION_INTENSITY = 40.0f;
+
+    /** Resource readiness is retryable and must not quarantine an otherwise healthy producer. */
+    public static final class NotReady extends RuntimeException {
+        public NotReady(Identifier atlas) { super("Particle atlas is not stitched: " + atlas); }
+    }
+
     private static final Logger LOGGER = LoggerFactory.getLogger(ParticleAtlasManager.class);
 
     private final RemixRenderer renderer;
@@ -62,6 +70,30 @@ public class ParticleAtlasManager {
 
     private boolean initialized;
     private boolean initFailed;
+    private int preparedRevision = -1;
+
+    /** Runs at initialization/reload, before particle extraction; unrelated atlases are untouched. */
+    public void prepareDeclaredAtlases() {
+        initialize();
+        int revision = ParticleAtlasDependencies.revision();
+        if (!initialized || preparedRevision == revision) return;
+        Minecraft client = Minecraft.getInstance();
+        LabPBRConverter.VariantCache variants = null;
+        for (Identifier id : ParticleAtlasDependencies.atlases()) {
+            if (TextureAtlas.LOCATION_PARTICLES.equals(id) || TextureAtlas.LOCATION_ITEMS.equals(id)
+                    || TextureAtlas.LOCATION_BLOCKS.equals(id) || geometryTextures.containsKey(id)) continue;
+            TextureAtlas atlas = stitchedAtlas(client, id);
+            if (atlas == null) continue;
+            if (variants == null) variants = LabPBRConverter.buildVariantCache(client.getResourceManager());
+            try {
+                buildAtlasMaterial(atlas, "custom_particle_atlas_" + geometryTextures.size(), "", variants);
+                geometryBounds(id);
+            } catch (RuntimeException failure) {
+                LOGGER.error("Could not prepare particle atlas {} during resource initialization", id, failure);
+            }
+        }
+        preparedRevision = revision;
+    }
 
     public ParticleAtlasManager(RemixRenderer renderer) {
         this.renderer = renderer;
@@ -222,7 +254,7 @@ public class ParticleAtlasManager {
         RemixMaterial atlasMaterial = buildOpaqueMaterial(albedoTex, normalTex, heightTex,
                 roughnessTex, metallicTex, emissiveTex);
         geometryTextures.put(atlas.location(), new ParticleMaterialTextures(albedoTex, normalTex, heightTex,
-                roughnessTex, metallicTex, emissiveTex, 40.0f,
+                roughnessTex, metallicTex, emissiveTex, EMISSION_INTENSITY,
                 authoredEmissionBounds.stream().mapToLong(Long::longValue).sorted().toArray()));
         if (atlasMaterial != null) {
             LOGGER.info("{} initialized ({}x{}, {} sprites, normal={}, height={}, emissive={})",
@@ -250,7 +282,7 @@ public class ParticleAtlasManager {
                 .albedoTexture(albedo.getHandle())
                 .filterMode(0);
         if (normal != null)   mb.normalTexture(normal.getHandle());
-        if (emissive != null) mb.emissiveTexture(emissive.getHandle()).emissiveIntensity(40.0f);
+        if (emissive != null) mb.emissiveTexture(emissive.getHandle()).emissiveIntensity(EMISSION_INTENSITY);
 
         return registerMaterial(mb.opaqueExt(ob.build()).build());
     }
@@ -265,7 +297,7 @@ public class ParticleAtlasManager {
         ParticleSpriteBounds bounds = geometryBounds.get(atlasId);
         if (bounds != null) return bounds;
         TextureAtlas atlas = stitchedAtlas(Minecraft.getInstance(), atlasId);
-        if (atlas == null) throw new IllegalStateException("Particle atlas is not stitched: " + atlasId);
+        if (atlas == null) throw new NotReady(atlasId);
         bounds = ParticleSpriteBounds.sprites(((SpriteAtlasAccessor) atlas).getSprites().values());
         geometryBounds.put(atlasId, bounds);
         return bounds;
@@ -279,7 +311,11 @@ public class ParticleAtlasManager {
         ParticleMaterialTextures textures = geometryTextures.get(atlasId);
         if (textures != null) return textures;
         TextureAtlas atlas = stitchedAtlas(Minecraft.getInstance(), atlasId);
-        if (atlas == null) throw new IllegalStateException("Particle atlas is not stitched: " + atlasId);
+        if (atlas == null) throw new NotReady(atlasId);
+        // A layer created during extraction cannot be predicted by a resource preloader.
+        // Loading here preserves its first frame; early registration avoids this fallback.
+        LOGGER.warn("Particle atlas {} was declared after resource preparation; capturing now. "
+                + "Register its layer/atlas during resource initialization to avoid first-use work", atlasId);
         buildAtlasMaterial(atlas, "custom_particle_atlas_" + geometryTextures.size(), "",
                 LabPBRConverter.buildVariantCache(Minecraft.getInstance().getResourceManager()));
         textures = geometryTextures.get(atlasId);
@@ -329,6 +365,7 @@ public class ParticleAtlasManager {
         itemMaterial = null;
         geometryTextures.clear();
         geometryBounds.clear();
+        preparedRevision = -1;
         initialized = false;
         initFailed = false;
     }
