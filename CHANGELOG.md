@@ -11,6 +11,12 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Added
+
+- On Windows, avoid Vulkan startup failures on systems that cannot share the
+  game window. The original presentation mode remains available through a
+  launch argument; a mistyped value warns and uses the default.
+
 ### Fixed
 
 - Distant land, such as Distant Horizons' LOD buildings, no longer shows through
@@ -82,6 +88,7 @@ LOD terrain may use, and fixes for yellow lines at night and torch glow.
   image, hidden behind blocks as without RTX.
 - Mobs from GeckoLib mods that draw a layer over the body, such as a pet's
   armour slot, are no longer black.
+
 
 ## 0.3.0 - 2026-10-28
 
