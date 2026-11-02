@@ -8,6 +8,7 @@ import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import net.minecraft.resources.Identifier;
+import net.minecraft.client.renderer.texture.TextureAtlas;
 
 /** Atlas dependencies are declared by quad layers, not discovered by scanning unrelated textures. */
 public final class ParticleAtlasDependencies {
@@ -16,7 +17,10 @@ public final class ParticleAtlasDependencies {
     private ParticleAtlasDependencies() {}
     /** Call during resource registration for a layer that is constructed only while rendering. */
     public static void register(Identifier atlas) {
-        if (atlas == null || ids.contains(atlas)) return;
+        // Vanilla's atlases retain their existing initialization and upload path.
+        if (atlas == null || TextureAtlas.LOCATION_PARTICLES.equals(atlas)
+                || TextureAtlas.LOCATION_ITEMS.equals(atlas) || TextureAtlas.LOCATION_BLOCKS.equals(atlas)
+                || ids.contains(atlas)) return;
         synchronized (ParticleAtlasDependencies.class) {
             if (ids.contains(atlas)) return;
             var next = new LinkedHashSet<>(ids);

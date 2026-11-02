@@ -5,6 +5,7 @@
 package com.nvidia.rtxremix.minecraft.texture;
 
 import net.minecraft.resources.Identifier;
+import net.minecraft.client.renderer.texture.TextureAtlas;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -12,6 +13,10 @@ class ParticleAtlasDependenciesTest {
     @Test void declaredDependenciesInvalidatePreparationWithoutScanningUnrelatedUploads() {
         var id = Identifier.fromNamespaceAndPath("particle_fixture", "declared");
         int before = ParticleAtlasDependencies.revision();
+        ParticleAtlasDependencies.register(TextureAtlas.LOCATION_PARTICLES);
+        ParticleAtlasDependencies.register(TextureAtlas.LOCATION_ITEMS);
+        ParticleAtlasDependencies.register(TextureAtlas.LOCATION_BLOCKS);
+        assertEquals(before, ParticleAtlasDependencies.revision(), "Vanilla atlas preparation must remain unchanged");
         var previous = ParticleAtlasDependencies.atlases();
         ParticleAtlasDependencies.register(id);
         assertEquals(before + 1, ParticleAtlasDependencies.revision());

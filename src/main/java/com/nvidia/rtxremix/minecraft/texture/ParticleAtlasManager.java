@@ -74,8 +74,9 @@ public class ParticleAtlasManager {
 
     /** Runs at initialization/reload, before particle extraction; unrelated atlases are untouched. */
     public void prepareDeclaredAtlases() {
+        if (ParticleAtlasDependencies.atlases().isEmpty()) return;
         int revision = ParticleAtlasDependencies.revision();
-        if (initialized && preparedRevision == revision) return;
+        if (preparedRevision == revision) return;
         prepareDeclaredAtlases(revision);
     }
 

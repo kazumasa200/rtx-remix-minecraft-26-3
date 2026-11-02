@@ -1076,11 +1076,6 @@ public class RemixRenderer {
             if (particleGeometryRenderer != null) particleGeometryRenderer.discardFrame();
             return;
         }
-        // Atlas work belongs to initialization/reload, before extraction starts.
-        if (!particleAtlasManager.isInitialized()) {
-            if (particleGeometryRenderer != null) particleGeometryRenderer.discardFrame();
-            return;
-        }
         if (particleGeometryRenderer != null) particleGeometryRenderer.beginFrame(camera);
         if (particleGeometryFailures != null) particleGeometryFailures.beginFrame();
         boolean begun = particleGeometryRenderer != null;
@@ -1093,6 +1088,10 @@ public class RemixRenderer {
                 var source = ParticleGeometryAdapters.forState(state);
                 if (source == null || !source.hasGeometry(state)) continue;
                 if (!begun) {
+                    // Common atlases keep their original lifecycle. Usually the vanilla
+                    // worker has already initialized them; retain frame-zero geometry too.
+                    particleAtlasManager.initialize();
+                    if (!particleAtlasManager.isInitialized()) continue;
                     particleGeometryRenderer = new ParticleGeometryRenderer(particleAtlasManager);
                     particleGeometryRenderer.beginFrame(camera);
                     begun = true;

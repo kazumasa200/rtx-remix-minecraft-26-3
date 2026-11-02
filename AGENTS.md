@@ -547,8 +547,9 @@ ARGB and full sprite bounds, group by layer/material, and page at 8192 quads.
 A reusable consumer and reload-scoped UV grid handle cropped public streams;
 equal layer descriptors share a batch. A malformed/throwing producer rolls back
 its own vertices, logs once per state class and is quarantined while other
-sources continue. Declared atlases prepare at initialization/reload without
-scanning unrelated textures. A layer first constructed during extraction still
+sources continue. Additional declared atlases prepare at initialization/reload
+without scanning unrelated textures; vanilla's standard atlases retain their
+existing worker/first-source initialization order. A layer first constructed during extraction still
 needs synchronous loading to retain its first frame: register its atlas through
 `ParticleAtlasDependencies` during resource initialization to avoid that fallback.
 Only explicit intrinsic attributes or authored atlas masks provide emission;
