@@ -74,9 +74,14 @@ public class ParticleAtlasManager {
 
     /** Runs at initialization/reload, before particle extraction; unrelated atlases are untouched. */
     public void prepareDeclaredAtlases() {
-        initialize();
         int revision = ParticleAtlasDependencies.revision();
-        if (!initialized || preparedRevision == revision) return;
+        if (initialized && preparedRevision == revision) return;
+        prepareDeclaredAtlases(revision);
+    }
+
+    private void prepareDeclaredAtlases(int revision) {
+        initialize();
+        if (!initialized) return;
         Minecraft client = Minecraft.getInstance();
         LabPBRConverter.VariantCache variants = null;
         for (Identifier id : ParticleAtlasDependencies.atlases()) {
