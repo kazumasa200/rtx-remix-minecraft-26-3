@@ -419,19 +419,12 @@ public final class RemixSubmitCollector implements SubmitNodeCollector {
                           int outlineColor) {
         Font font = Minecraft.getInstance().font;
         glyphs.begin(pose, lightCoords, displayMode);
-        if (outlineColor == 0) {
-            font.prepareText(string, x, y, color, dropShadow, false, backgroundColor).visit(glyphs);
-        } else {
-            // Glow ink: the outline first, then the text over it, as vanilla orders them.
-            glyphs.displayMode = Font.DisplayMode.NORMAL;
-            font.prepare8xTextOutline(string, x, y, outlineColor).visit(glyphs);
-            glyphs.displayMode = Font.DisplayMode.POLYGON_OFFSET;
-            font.prepareText(string, x, y, color, false, false, 0).visit(glyphs);
-        }
+        TextGlyphCapture.prepare(font, string, x, y, dropShadow, displayMode, color,
+                backgroundColor, outlineColor, glyphs);
     }
 
     /** Draws each laid-out glyph and effect into the capture under the text's pose. */
-    private final class TextGlyphs implements Font.GlyphVisitor {
+    private final class TextGlyphs implements TextGlyphCapture.Sink {
         private final Matrix4f pose = new Matrix4f();
         private int lightCoords;
         private Font.DisplayMode displayMode = Font.DisplayMode.NORMAL;
@@ -443,8 +436,13 @@ public final class RemixSubmitCollector implements SubmitNodeCollector {
         }
 
         @Override
+        public void displayMode(Font.DisplayMode mode) {
+            displayMode = mode;
+        }
+
+        @Override
         public void acceptRenderable(TextRenderable renderable) {
-            renderable.render(pose, provider.getBuffer(renderable.renderType(displayMode)), lightCoords, false);
+            TextGlyphCapture.render(renderable, displayMode, pose, provider, lightCoords);
         }
     }
 

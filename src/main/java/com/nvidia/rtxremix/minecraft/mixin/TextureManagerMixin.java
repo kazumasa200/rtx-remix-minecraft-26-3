@@ -39,7 +39,7 @@ public class TextureManagerMixin {
         if (texture instanceof DynamicTexture nib) {
             DynamicTextureCache.onRegisterTexture(id, texture, nib.getPixels());
         } else if (texture instanceof GlyphPageMirror.Owner page) {
-            DynamicTextureCache.onRegisterGlyphPage(id, page.rtxremix$glyphPageMirror());
+            DynamicTextureCache.onRegisterGlyphPage(id, texture, page.rtxremix$glyphPageMirror());
         }
     }
 }

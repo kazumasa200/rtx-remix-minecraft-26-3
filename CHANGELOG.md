@@ -19,6 +19,9 @@ also part of every mod file name.
 - With Sodium 0.9.2 installed, terrain is captured for path tracing through its
   optimized chunk builder. Sodium remains optional; other versions prevent
   Minecraft from starting because their capture APIs are untested.
+- With ImmediatelyFast 1.17.1 installed, maps and cached sign text appear in the
+  path-traced image while its optimizations stay enabled. Other versions warn
+  and skip the map/sign adapter; their rendering remains untested.
 
 ### Fixed
 

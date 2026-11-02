@@ -51,7 +51,7 @@ class RemixEntitySubmitterCoverageCutoutTest {
     @Test
     void glyphPagesCutAtHalfCoverage() {
         Identifier page = Identifier.fromNamespaceAndPath("minecraft", "default/7");
-        DynamicTextureCache.onRegisterGlyphPage(page, new GlyphPageMirror(false));
+        DynamicTextureCache.onRegisterGlyphPage(page, new net.minecraft.client.renderer.texture.AbstractTexture() {}, new GlyphPageMirror(256, 256, false));
 
         assertEquals(128, RemixEntitySubmitter.cutoutAlphaReferenceValue(page));
     }

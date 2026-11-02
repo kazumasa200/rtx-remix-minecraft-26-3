@@ -34,6 +34,7 @@ import com.nvidia.rtxremix.minecraft.sky.SkyRenderer;
 import com.nvidia.rtxremix.minecraft.terrain.ChunkManager;
 import com.nvidia.rtxremix.minecraft.lod.LodTerrain;
 import com.nvidia.rtxremix.minecraft.texture.AtlasAnimationForwarder;
+import com.nvidia.rtxremix.minecraft.compat.immediatelyfast.SignTextGeometryCache;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import com.nvidia.rtxremix.minecraft.texture.ParticleAtlasManager;
 import com.nvidia.rtxremix.minecraft.particle.RemixParticleRenderer.PreparedFrame;
@@ -574,6 +575,7 @@ public class RemixRenderer {
         boolean recaptureTerrain = pendingTerrainRecaptureAfterTextureReload;
         pendingTextureReload = false;
         LOGGER.info("Reloading textures, materials, and terrain");
+        SignTextGeometryCache.clear();
         joinInFlightParticleRenderTask();
         discardPendingParticleFrame();
         AtlasAnimationForwarder.clear();
@@ -1550,6 +1552,7 @@ public class RemixRenderer {
      */
     private void doClearWorld() {
         LOGGER.info("Clearing world resources...");
+        SignTextGeometryCache.clear();
         joinInFlightParticleRenderTask();
         discardPendingParticleFrame();
         

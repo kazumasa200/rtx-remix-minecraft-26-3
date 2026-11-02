@@ -37,14 +37,14 @@ class DynamicTextureCacheTest {
     @Test
     void aGlyphPageIsReadLiveAndOutlivesClear() {
         Identifier id = Identifier.fromNamespaceAndPath("minecraft", "default/0");
-        GlyphPageMirror page = new GlyphPageMirror(false);
-        DynamicTextureCache.onRegisterGlyphPage(id, page);
+        GlyphPageMirror page = new GlyphPageMirror(256, 256, false);
+        DynamicTextureCache.onRegisterGlyphPage(id, newTexture(), page);
 
         assertTrue(DynamicTextureCache.isGlyphPage(id));
         DynamicTextureCache.Pixels empty = DynamicTextureCache.get(id);
         assertSame(page.data(), empty.data());
-        assertEquals(GlyphPageMirror.PAGE_SIZE, empty.width());
-        assertEquals(GlyphPageMirror.PAGE_SIZE, empty.height());
+        assertEquals(256, empty.width());
+        assertEquals(256, empty.height());
         assertEquals(0L, empty.version());
 
         page.blit(0, 0, 1, 1, 4, ByteBuffer.wrap(new byte[] {1, 2, 3, 4}), 4);
@@ -60,11 +60,11 @@ class DynamicTextureCacheTest {
     @Test
     void aPageReRegisteredUnderItsIdReplacesItsPredecessor() {
         Identifier id = Identifier.fromNamespaceAndPath("minecraft", "default/1");
-        GlyphPageMirror replaced = new GlyphPageMirror(false);
-        GlyphPageMirror fresh = new GlyphPageMirror(true);
-        DynamicTextureCache.onRegisterGlyphPage(id, replaced);
+        GlyphPageMirror replaced = new GlyphPageMirror(256, 256, false);
+        GlyphPageMirror fresh = new GlyphPageMirror(256, 256, true);
+        DynamicTextureCache.onRegisterGlyphPage(id, newTexture(), replaced);
 
-        DynamicTextureCache.onRegisterGlyphPage(id, fresh);
+        DynamicTextureCache.onRegisterGlyphPage(id, newTexture(), fresh);
 
         assertSame(fresh.data(), DynamicTextureCache.get(id).data());
     }
@@ -179,6 +179,46 @@ class DynamicTextureCacheTest {
 
         assertNull(DynamicTextureCache.get(id));
         assertFalse(DynamicTextureCache.isGlyphPage(id));
+    }
+
+    @Test
+    void aResizedGlyphPageReportsActualDimensionsAndReleasesItsPixels() {
+        Identifier id = Identifier.fromNamespaceAndPath("minecraft", "compat-test/resized-font");
+        AbstractTexture texture = newTexture();
+        GlyphPageMirror page = new GlyphPageMirror(1024, 512, false);
+        DynamicTextureCache.onRegisterGlyphPage(id, texture, page);
+        DynamicTextureCache.Pixels pixels = DynamicTextureCache.get(id);
+        assertEquals(1024, pixels.width());
+        assertEquals(512, pixels.height());
+        assertSame(page.data(), pixels.data());
+        long generation = DynamicTextureCache.glyphGeneration();
+
+        DynamicTextureCache.onReleaseGlyphPage(texture, page);
+
+        assertNull(DynamicTextureCache.get(id));
+        assertFalse(DynamicTextureCache.isGlyphPage(id));
+        assertTrue(DynamicTextureCache.glyphGeneration() > generation);
+    }
+
+    @Test
+    void closingAnOldPageCannotUnregisterTheReplacementWithTheSameId() {
+        Identifier id = Identifier.fromNamespaceAndPath("minecraft", "compat-test/reloaded-font");
+        AbstractTexture oldTexture = newTexture();
+        AbstractTexture newTexture = newTexture();
+        GlyphPageMirror oldPage = new GlyphPageMirror(1024, 1024, true);
+        GlyphPageMirror newPage = new GlyphPageMirror(256, 256, true);
+        DynamicTextureCache.onRegisterGlyphPage(id, oldTexture, oldPage);
+        long generation = DynamicTextureCache.glyphGeneration();
+        DynamicTextureCache.onRegisterGlyphPage(id, newTexture, newPage);
+        assertTrue(DynamicTextureCache.glyphGeneration() > generation);
+
+        DynamicTextureCache.onReleaseGlyphPage(oldTexture, oldPage);
+        DynamicTextureCache.onReleaseGlyphPage(oldTexture, oldPage);
+
+        assertSame(newPage.data(), DynamicTextureCache.get(id).data());
+        assertEquals(256, DynamicTextureCache.get(id).width());
+        DynamicTextureCache.onReleaseGlyphPage(newTexture, newPage);
+        assertNull(DynamicTextureCache.get(id));
     }
 
     /**

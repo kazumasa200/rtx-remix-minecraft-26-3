@@ -131,6 +131,14 @@ Sodium's optimized chunk builder. Sodium is optional and is not included;
 other Sodium versions prevent Minecraft from starting because their terrain
 capture APIs have not been validated.
 
+## ImmediatelyFast compatibility
+
+With ImmediatelyFast 1.17.1 installed, maps and cached sign text remain visible
+in the path-traced image while its optimizations stay enabled. Other versions
+log a warning and skip the map/sign adapter; their rendering is untested.
+ImmediatelyFast is optional and not included. See
+[ImmediatelyFast compatibility](docs/IMMEDIATELYFAST.md).
+
 ## Crash Reports And Privacy
 
 The mod collects no data of its own. The RTX Remix runtime it carries can send

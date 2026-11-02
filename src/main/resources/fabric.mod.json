@@ -28,7 +28,8 @@
     "mixins": [
         "rtx-remix-renderer.mixins.json",
         "rtx-remix-renderer.distanthorizons.mixins.json",
-        "rtx-remix-renderer.sodium.mixins.json"
+        "rtx-remix-renderer.sodium.mixins.json",
+        "rtx-remix-renderer.immediatelyfast.mixins.json"
     ],
     "accessWidener": "rtx-remix-renderer.accesswidener",
     "depends": {

@@ -9,7 +9,9 @@ import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.blaze3d.font.GlyphBitmap;
 import com.mojang.renderpearl.api.textures.GpuTexture;
 import com.nvidia.rtxremix.minecraft.texture.GlyphPageMirror;
+import com.nvidia.rtxremix.minecraft.texture.DynamicTextureCache;
 import net.minecraft.client.gui.font.FontTexture;
+import net.minecraft.client.renderer.texture.AbstractTexture;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -38,9 +40,18 @@ public abstract class GlyphAtlasTextureMixin implements GlyphPageMirror.Owner {
         // Created on first use: hasColor is assigned by the constructor, so a field
         // initialiser could not read it.
         if (rtxremix$mirror == null) {
-            rtxremix$mirror = new GlyphPageMirror(!colored);
+            GpuTexture texture = ((AbstractTexture) (Object) this).getTexture();
+            rtxremix$mirror = new GlyphPageMirror(texture.getWidth(0), texture.getHeight(0), !colored);
         }
         return rtxremix$mirror;
+    }
+
+    @Override
+    public void rtxremix$releaseGlyphPageMirror() {
+        if (rtxremix$mirror != null) {
+            DynamicTextureCache.onReleaseGlyphPage((AbstractTexture) (Object) this, rtxremix$mirror);
+            rtxremix$mirror = null;
+        }
     }
 
     @WrapOperation(

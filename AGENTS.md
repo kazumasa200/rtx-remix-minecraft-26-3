@@ -83,6 +83,14 @@ Sodium 0.9.2 for 26.3 is compile-only and never bundled. Its conditional
 Loader metadata restricts the tested API version. The animation eligibility
 override and accessor are installed only by the optional Sodium configuration.
 
+ImmediatelyFast 1.17.1+26.3 is compile-only and never bundled. Its conditional
+mixins and helpers are under `compat/immediatelyfast/`; see
+[ImmediatelyFast Compatibility](docs/IMMEDIATELYFAST.md).
+The plugin applies map/sign hooks only to 1.17.1 (including build metadata).
+Other versions warn and skip those hooks; their rendering is unsupported.
+Shared glyph-page mirroring stays active, and no ImmediatelyFast option is
+changed. Version selection happens at startup, never per frame.
+
 Do not run Gradle while a client from the same checkout is up: staging can fail
 on locked DLLs or replace its live configuration. Stop the client or use another
 worktree. Build guards should prevent a silently wrong artifact, as the
@@ -380,13 +388,23 @@ each animation's state after `TextureAtlas.cycleAnimationFrames` and
 phase, and sends them in one batched `UpdateTextureFromMemory` call. Glyph pages
 are mirrored on upload (`CommandEncoderGlyphMirrorMixin`,
 `BitmapGlyphStagingMixin`), because vanilla assembles them on the GPU and never
-keeps them on the CPU. `BlockTextureManager` keeps only mostly translucent
+keeps them on the CPU. Mirrors use the actual GPU page dimensions, and texture
+closure unregisters only that page incarnation. ImmediatelyFast map capture
+uses the original image-backed map and restores the raster atlas state after
+submission. Its experimental sign buffering uses a bounded source-glyph cache
+for Remix, preserving text depth while the raster atlas stays active. Font
+generation and resource/world teardown invalidate prepared glyphs. Text and
+layout jointly identify cache entries; cache-hit lookup reuses a probe whose
+miss key is snapshotted before reentrant font preparation. `TextGlyphCapture`
+owns preparation and emission for both cached and ordinary text.
+`BlockTextureManager` keeps only mostly translucent
 sprites translucent; doors, flowers and the like become cutout. Only terrain
 whose sprite has texels in the emissive atlas takes an atlas material that
 samples it (`_emissive` buckets, `getAtlasMaterialWithoutEmission` for the
 rest): a face seen edge on samples the atlas's coarsest mip, where the glow of
 every lamp, torch and lava texel is averaged, and drew yellow lines along the
 planes through the camera at night.
+
 
 **Water and weather.** `WaterNormals` holds the water normal map, and raindrop
 rings from `RainRipples` are written into it as texture content each frame by
