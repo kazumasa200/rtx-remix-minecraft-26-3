@@ -213,6 +213,15 @@ public final class BlockQuadEmitter {
         return INSTANCE.get();
     }
 
+    /** Releases a retiring build worker's buffers, without creating an emitter. */
+    public static void releaseCurrent() {
+        BlockQuadEmitter emitter = INSTANCE.get();
+        if (emitter == null) return;
+        emitter.abortSection();
+        emitter.writer.releaseBuffers();
+        INSTANCE.remove();
+    }
+
     public static int getWaterTopOcclusionRadius() {
         return WATER_TOP_CULL_RADIUS;
     }
@@ -264,6 +273,17 @@ public final class BlockQuadEmitter {
     }
 
     public boolean isActive() { return active; }
+
+    /** Releases an unfinished build immediately, including cancellation without a result. */
+    public void abortSection() {
+        if (!active) return;
+        active = false;
+        writer.releaseBuffers();
+        lights.clear();
+        parts.clear();
+        frapiState = null;
+        frapiWorld = null;
+    }
     public int getBlockCount() { return blockCount; }
     public int getFluidCount() { return fluidCount; }
 

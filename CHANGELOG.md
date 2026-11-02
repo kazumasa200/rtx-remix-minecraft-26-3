@@ -13,6 +13,12 @@ also part of every mod file name.
 
 ### Added
 
+- On Windows, avoid Vulkan startup failures on systems that cannot share the
+  game window. The original presentation mode remains available through a
+  launch argument; a mistyped value warns and uses the default.
+- With Sodium 0.9.2 installed, terrain is captured for path tracing through its
+  optimized chunk builder. Sodium remains optional; other versions prevent
+  Minecraft from starting because their capture APIs are untested.
 - With ImmediatelyFast 1.17.1 installed, maps and cached sign text appear in the
   path-traced image while its optimizations stay enabled. Other versions warn
   and skip the map/sign adapter; their rendering remains untested.

@@ -77,6 +77,12 @@ Distant Horizons is an optional compile-only dependency (Modrinth Maven, never
 shipped). Its mixins live in a separate `rtx-remix-renderer.distanthorizons.mixins.json`
 that loads only when Distant Horizons is installed (`lod/dh/`).
 
+Sodium 0.9.2 for 26.3 is compile-only and never bundled. Its conditional
+`rtx-remix-renderer.sodium.mixins.json` adapts section jobs under
+`terrain/sodium/`; without Sodium the vanilla capture path remains active.
+Loader metadata restricts the tested API version. The animation eligibility
+override and accessor are installed only by the optional Sodium configuration.
+
 ImmediatelyFast 1.17.1+26.3 is compile-only and never bundled. Its conditional
 mixins and helpers are under `compat/immediatelyfast/`; see
 [ImmediatelyFast Compatibility](docs/IMMEDIATELYFAST.md).
@@ -146,6 +152,17 @@ lights over raw `long` handles from the JNI wrapper. `JoinBurstHold` keeps
 vanilla's terrain-download screen up for a bounded wait for stable frames after
 a world join, hiding first-sight mesh, pipeline, and BLAS costs without holding
 the screen indefinitely.
+
+**Presentation.** `gl/RemixPresentationWindow` hosts Vulkan in a child of
+Minecraft's SDL/OpenGL window by default; `-Drtxremix.presentation=parent`
+selects the original host. Invalid values warn and use the default child host.
+Mirrored input never bubbles into SDL twice, and
+cursor messages stay with SDL. `GlSurfaceMixin` records the completed texture's
+existing framebuffer for the GL-to-Vulkan copy. Window operations run on SDL's
+owner thread; `WindowMixin` completes parent destruction synchronously before
+the deferred native shutdown, including when an event-thread mod queues SDL
+operations. Independent teardown steps report accumulated errors after release;
+callbacks remain allocated while live windows or classes can invoke them.
 
 **Sky.** `SkyRenderer` branches on the dimension's sky type: the End keeps a
 constant dark dome and a skyless dimension a black one with no sky ambient. In
@@ -299,6 +316,17 @@ Replacement light engines may omit vanilla's sky-source palette. The surface
 hook then calls the original initialization operation instead of seeding a
 palette that does not exist; ScalableLux keeps its own initialization hooks,
 storage, propagation and scheduling.
+
+With Sodium installed, its existing worker block loop feeds `BlockQuadEmitter`
+instead of building another raster terrain mesh. Sodium retains ownership of
+snapshots, discovery, block entities, cancellation and result acceptance.
+Capture ownership follows the build output until render-thread acceptance;
+rejected results release it. Existing recapture requests use Sodium's deferred
+job budget, including retained sections outside the raster frustum. Reload
+recapture waits for the new manager, and worker-context retirement releases
+capture buffers. Raster draws and translucent sorting are skipped only while
+Remix capture is active. Animation forwarding remains independent of raster
+visibility so retained geometry can animate in reflections and shadows.
 
 **LOD terrain.** With Distant Horizons 3.3.4 installed, `lod/LodTerrain` builds
 its far terrain as retained Remix instances beyond Minecraft's own terrain: the

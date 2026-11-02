@@ -155,6 +155,37 @@ public final class BlockDataQueue {
             return;
         }
 
+        publishReserved(state, data, capture, bytes);
+    }
+
+    /**
+     * Takes ownership without waiting, using the queue's capacity policy. A full
+     * queue releases the payload and requests a resident-section recapture.
+     */
+    public static void offer(SectionBlockData data, CaptureToken capture) {
+        offer(data, capture, estimateBytes(data));
+    }
+
+    /** Publishes a capture whose retained size was already calculated by its builder. */
+    public static void offer(SectionBlockData data, CaptureToken capture, long bytes) {
+        QueueState state = STATE.get();
+        if (!isCaptureCurrent(state, data, capture)) {
+            releaseMeshData(data);
+            return;
+        }
+        if (!tryReserveCapacity(state, bytes)) {
+            releaseMeshData(data);
+            if (isCaptureCurrent(state, data, capture)) {
+                state.evictedSections.add(new EvictedSection(
+                        data.sectionPos().getX(), data.sectionPos().getY(), data.sectionPos().getZ()));
+            }
+            return;
+        }
+        publishReserved(state, data, capture, bytes);
+    }
+
+    private static void publishReserved(QueueState state, SectionBlockData data,
+                                        CaptureToken capture, long bytes) {
         if (!beginPublish(state)) {
             releaseCapacity(state, bytes);
             state.signalCapacityWaiters();
@@ -472,7 +503,7 @@ public final class BlockDataQueue {
         return Thread.currentThread().getName().equals("Render thread");
     }
 
-    private static long estimateBytes(SectionBlockData data) {
+    public static long estimateBytes(SectionBlockData data) {
         long bytes = 128;
         if (data.opacityBitmap() != null) {
             bytes += (long) data.opacityBitmap().length * Long.BYTES;

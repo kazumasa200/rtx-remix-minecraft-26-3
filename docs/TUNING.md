@@ -21,6 +21,12 @@ The named owner class defines each property's current default, accepted range,
 and invalid-value behaviour. Sizes are in bytes and durations in nanoseconds
 unless the key name says otherwise.
 
+## Presentation
+
+| Key | Effect | Owner |
+|---|---|---|
+| `rtxremix.presentation` | Windows presentation host, selected once at startup: `child` (default) uses a separate non-OpenGL child window; `parent` uses the original SDL/OpenGL window on systems that support sharing it. Values are case-sensitive; an invalid or blank value logs a warning and uses `child`. Restart after changing this setting | `PresentationMode` |
+
 ## Terrain Capture
 
 Vanilla's chunk workers capture section geometry and hand it to the render
