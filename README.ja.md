@@ -95,6 +95,10 @@ Mod 自体はデータを集めません。同梱の RTX Remix ランタイム�
 
 描画距離、フレームレート、空、雲、レンズ、光、露出、素材は、設定ファイルを触らずにゲームのオプション画面で変えられます。画質の段階は Remix の Graphics Settings を開くボタンから選べます。
 
+## Windows の Vulkan 表示
+
+Windows では表示用のウィンドウを分け、一部の環境で Vulkan の起動に失敗する問題を避けます。画質は変わりません。従来の表示方式が動く環境でそれを使う場合は、ランチャーの JVM 引数に `-Drtxremix.presentation=parent` を追加して再起動してください。詳しくは [Tuning](docs/TUNING.md#presentation) を参照してください。
+
 ## Sodium との互換性
 
 Sodium 0.9.2 を入れると、Sodium の最適化されたチャンク構築を使って地形をパストレーシング用に取り込みます。Sodium は必須ではなく、同梱もしていません。他のバージョンでは取り込み用の API を検証していないため、Minecraft の起動を停止します。

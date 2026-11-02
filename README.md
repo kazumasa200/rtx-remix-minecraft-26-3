@@ -117,6 +117,13 @@ Building and running from source has its own
 [prerequisites](docs/GETTING_STARTED.md#prerequisites), including Prism
 Launcher, signed in to a Microsoft account that owns Minecraft: Java Edition.
 
+## Windows Vulkan presentation
+
+On Windows, a separate presentation window avoids a Vulkan startup failure on
+some systems without changing image quality. To use the original presentation
+on a system that supports it, add `-Drtxremix.presentation=parent` to your
+launcher's JVM arguments and restart; see [Tuning](docs/TUNING.md#presentation).
+
 ## Sodium compatibility
 
 With Sodium 0.9.2 installed, terrain is captured for path tracing through

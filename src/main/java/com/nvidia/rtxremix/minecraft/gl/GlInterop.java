@@ -124,23 +124,27 @@ public final class GlInterop {
         glFlush();
     }
 
-    public void copyFromFramebuffer(int sourceFbo) {
+    /** Copies the final texture with the same clipping and vertical placement as GL presentation. */
+    public void copyFromFramebuffer(int sourceFbo, int sourceWidth, int sourceHeight) {
         drainStaleGlErrors();
         if (!colorImage.available()) {
             return;
         }
         int destinationFbo = colorImage.framebuffer();
+        int copyWidth = Math.min(sourceWidth, colorImage.width);
+        int copyHeight = Math.min(sourceHeight, colorImage.height);
+        int destinationY = Math.max(0, colorImage.height - sourceHeight);
         glBlitNamedFramebuffer(
                 sourceFbo,
                 destinationFbo,
                 0,
                 0,
-                colorImage.width,
-                colorImage.height,
+                copyWidth,
+                copyHeight,
                 0,
-                0,
-                colorImage.width,
-                colorImage.height,
+                destinationY,
+                copyWidth,
+                destinationY + copyHeight,
                 GL_COLOR_BUFFER_BIT,
                 GL_NEAREST);
         checkGlError("glBlitNamedFramebuffer");
