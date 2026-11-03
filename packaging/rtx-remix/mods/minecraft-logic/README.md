@@ -245,6 +245,7 @@ from several places with a shared channel.
 | `confs/zones/<name>.conf` | Distance falloff: 0 to 1 | 11000 | 0.01 | Half-second half-life |
 | Map `biomes/<biome>.conf` | Camera is in that biome: 0 or 1 | 6500 | 0.01 | Half-second half-life |
 | `confs/biomes/<biome>.conf` | Camera is in that biome: 0 or 1 | 6000 | 0.01 | Half-second half-life |
+| `confs/weather/lightning.conf` | A lightning bolt flashing: 0 or 1 | 5600 | 0.01 | Immediate, held 1.5 s after the last flash |
 | `confs/weather/thunder.conf` | Vanilla thunder gradient: 0 to 1 | 5500 | 0.01 | Immediate; vanilla ramps the gradient over about five seconds |
 | `confs/weather/rain.conf` | Vanilla rain gradient: 0 to 1 | 5000 | 0.01 | Immediate; vanilla ramps the gradient over about five seconds |
 | `confs/time/night.conf` | Fixed Overworld schedule | 4003 | 0.50 | The clock curve below |
@@ -373,6 +374,10 @@ thunder simply fall away to the time profiles below. Both follow the vanilla
 gradient directly, which already ramps over about five seconds, so no further
 smoothing is added; [volumetric settling](#volumetric-settling) keeps the fog
 in step with the ramp. Thunder is stronger than rain.
+
+`lightning.conf` is full while a lightning bolt flashes and for 1.5 seconds
+after, in any weather, and off otherwise. It slows the auto exposure so the
+flash lights the scene rather than being exposed away.
 
 ### Water
 

@@ -16,6 +16,7 @@ import com.nvidia.rtxremix.minecraft.cloud.CloudRenderer;
 import com.nvidia.rtxremix.minecraft.cloud.CloudStyle;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
 import com.nvidia.rtxremix.minecraft.sky.SkyLook;
+import com.nvidia.rtxremix.minecraft.lens.LensEffects;
 import com.nvidia.rtxremix.minecraft.lens.LensLook;
 import com.nvidia.rtxremix.minecraft.sky.SkyRenderer;
 import com.nvidia.rtxremix.minecraft.weather.Puddles;
@@ -310,6 +311,9 @@ public final class RtxSettingsFactory {
         list.add(RtxSetting.ofBool("debug.puddleMask", SettingGroup.DEBUG_VIEWS,
                 "rtxremix.setting.debug.puddleMask", "rtxremix.setting.debug.puddleMask.tip",
                 false, Puddles::isMaskShown, Puddles::setMaskShown));
+        list.add(RtxSetting.ofBool("debug.domeClouds", SettingGroup.DEBUG_VIEWS,
+                "rtxremix.setting.debug.domeClouds", "rtxremix.setting.debug.domeClouds.tip",
+                false, LensEffects::isDomeCloudsShown, LensEffects::setDomeCloudsShown));
 
         // --- Tonemapping ---
         list.add(floatSetting("post.exposure", SettingGroup.TONEMAPPING,

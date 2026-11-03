@@ -785,7 +785,7 @@ public final class BlockQuadEmitter {
                 spriteId, su0, sv0, su1, sv1, layerName);
     }
 
-    private static SpriteFinder blockSpriteFinder() {
+    public static SpriteFinder blockSpriteFinder() {
         Minecraft client = Minecraft.getInstance();
         if (client == null) {
             return null;
@@ -807,7 +807,7 @@ public final class BlockQuadEmitter {
      * so their quads are exactly what {@link BlockStateModelPart#getQuads} returns.
      * A modded model or part may emit different quads through FRAPI.
      */
-    private static boolean isVanillaModel(BlockStateModel model, List<BlockStateModelPart> parts) {
+    public static boolean isVanillaModel(BlockStateModel model, List<BlockStateModelPart> parts) {
         if (!VANILLA_CLASS.get(model.getClass())) {
             return false;
         }

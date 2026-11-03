@@ -78,6 +78,11 @@ public class SkyRenderer {
     private static final float OVERCAST_MEAN_G = 0.26890025f;
     private static final float OVERCAST_MEAN_B = 0.31064802f;
     private static final float WEATHER_UPDATE_DELTA = 1.0e-4f;
+    /**
+     * Radiance a lightning flash adds to the overcast dome ({@link LightningFlash#reach}), so the
+     * whole sky lights with the land, by night as by day.
+     */
+    private static final float LIGHTNING_SKY_RADIANCE = 8.0f;
     private static final Identifier SUN_TEXTURE =
             Identifier.withDefaultNamespace("textures/environment/sun.png");
     private static final Identifier MOON_PHASES_TEXTURE =
@@ -192,6 +197,11 @@ public class SkyRenderer {
 
     private static boolean enabled = true;
     private static boolean skyAmbientRectEnabled = DEFAULT_SKY_AMBIENT_RECT_ENABLED;
+
+    /** How strongly the aurora showed last frame, 0 when it did not. Render thread only. */
+    public static float auroraVisibility() {
+        return SkyLayers.auroraVisibility;
+    }
     private static float skyDomeMultiplier = 1.0f;
 
     public SkyRenderer(RemixRenderer renderer) {
@@ -430,7 +440,8 @@ public class SkyRenderer {
             return false;
         }
 
-        float domeIntensity = weather.intensity() * skyDomeMultiplier;
+        float domeIntensity = (weather.intensity() + LIGHTNING_SKY_RADIANCE * LightningFlash.reach())
+                * skyDomeMultiplier;
         boolean needsUpdate = overcastDomeLightAsset == null
                 || Math.abs(weather.opacity() - lastWeatherOpacity) > WEATHER_UPDATE_DELTA
                 || Math.abs(domeIntensity - lastWeatherIntensity) > WEATHER_UPDATE_DELTA;

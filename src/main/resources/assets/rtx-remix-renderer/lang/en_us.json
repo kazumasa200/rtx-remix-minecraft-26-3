@@ -186,6 +186,8 @@
   "rtxremix.setting.materials.puddleReflection.tip": "How strongly rain puddles reflect. Off reflects as clear water does, which barely shows on bright ground; higher values reflect more and darken the water a little, up to a mirror. Applies when you stop moving the slider.",
   "rtxremix.setting.debug.puddleMask": "Show Puddle Mask",
   "rtxremix.setting.debug.puddleMask.tip": "Paints rain puddles red, by how much water stands there, to show where they lie and how their edges fade. For finding problems only.",
+  "rtxremix.setting.debug.domeClouds": "Show Dome Clouds Only",
+  "rtxremix.setting.debug.domeClouds.tip": "Leaves the Unbound clouds as RTX Remix draws them on the sky dome, instead of drawing them again per pixel over the image, and draws no cloud shadows. Shows whether a flaw in the clouds comes from the per-pixel clouds. For finding problems only.",
 
   "rtxremix.setting.post.exposure": "Exposure",
   "rtxremix.setting.post.exposure.tip": "Makes the whole scene brighter or darker. Changing it manually overrides gameplay profiles for this option.",

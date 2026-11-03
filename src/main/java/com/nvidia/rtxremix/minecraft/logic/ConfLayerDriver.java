@@ -6,6 +6,7 @@ package com.nvidia.rtxremix.minecraft.logic;
 
 import com.nvidia.rtxremix.RemixAPI;
 import com.nvidia.rtxremix.RemixException;
+import com.nvidia.rtxremix.minecraft.sky.LightningFlash;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -91,6 +92,8 @@ public final class ConfLayerDriver {
     static final float SEND_EPSILON = 1.0e-4f;
     /** Clamp per-frame dt so hitches don't teleport smoothed values. */
     private static final float MAX_FRAME_DT_SECONDS = 0.25f;
+    /** Seconds the lightning layer holds after the last flash. */
+    static final float LIGHTNING_HOLD_SECONDS = 1.5f;
 
     // Fixed Minecraft day schedule. These are intentionally code constants,
     // not an authoring schema: artists tune four predictable conf files while
@@ -145,14 +148,14 @@ public final class ConfLayerDriver {
 
     /**
      * The fixed layer catalog: water, automatic view distance and its LOD
-     * extension, volumetric settling, weather, and four fixed time-of-day
-     * profiles (10 rows, one per
+     * extension, volumetric settling, weather and a lightning flash, and four
+     * fixed time-of-day profiles (11 rows, one per
      * shipped conf; ConfLayerDriverTest cross-checks them against the shipped
      * confs). Biome and zone layers are NOT listed here: they are discovered
      * from their conf file names at acquire and reload time, so a new authored
      * look needs no code.
-     * Priorities: water dominates everything, zones beat biomes, thunder
-     * beats rain, time supplies the environmental foundation, and the
+     * Priorities: water dominates everything, zones beat biomes, lightning
+     * beats thunder, which beats rain, time supplies the environmental foundation, and the
      * integration-owned controllers (automatic view distance, its LOD
      * extension just above it, volumetric settling) sit below every
      * situational profile so authors can intentionally override their keys. The four time priorities must stay
@@ -181,6 +184,8 @@ public final class ConfLayerDriver {
                 "confs/view_distance_lod.conf", 3001f, 0.01f, false, LayerSource.MOD));
         table.add(new LayerSpec(LogicChannels.VOLUMETRICS_SETTLING,
                 "confs/volumetrics/settling.conf", 3100f, 0.01f, false, LayerSource.MOD));
+        table.add(new LayerSpec(LogicChannels.WEATHER_LIGHTNING, "confs/weather/lightning.conf", 5600f, 0.01f, false,
+                LayerSource.MOD));
         table.add(new LayerSpec(LogicChannels.WEATHER_THUNDER, "confs/weather/thunder.conf", 5500f, 0.01f, false,
                 LayerSource.MOD));
         table.add(new LayerSpec(LogicChannels.WEATHER_RAIN, "confs/weather/rain.conf", 5000f, 0.01f, false,
@@ -396,6 +401,7 @@ public final class ConfLayerDriver {
     private final SettlingEnvelope settling = new SettlingEnvelope();
     private float lastRainGradient;
     private float lastThunderGradient;
+    private float secondsSinceLightning = LIGHTNING_HOLD_SECONDS;
 
     public ConfLayerDriver() {
         for (LayerSpec spec : STATIC_LAYER_TABLE) {
@@ -735,6 +741,8 @@ public final class ConfLayerDriver {
         setTarget(LogicChannels.TIME_DUSK, time.dusk());
         setTarget(LogicChannels.TIME_NIGHT, time.night());
         boolean weatherMoving = targetWeather(world, tickDelta);
+        secondsSinceLightning = LightningFlash.strength() > 0.0f ? 0.0f : secondsSinceLightning + dtSeconds;
+        setTarget(LogicChannels.WEATHER_LIGHTNING, lightningStrength(secondsSinceLightning));
 
         // Resolve the camera-position biome once (vanilla namespace only) and
         // target its authored layer when one was discovered. An unconfigured
@@ -770,6 +778,15 @@ public final class ConfLayerDriver {
             advance(layer, dtSeconds);
             sendIfChanged(layer);
         }
+    }
+
+    /**
+     * The lightning layer's strength: full while a bolt flashes and for
+     * {@link #LIGHTNING_HOLD_SECONDS} after, since a storm's bolts come in strokes a moment apart
+     * and the exposure must not follow any of them.
+     */
+    static float lightningStrength(float secondsSinceFlash) {
+        return secondsSinceFlash < LIGHTNING_HOLD_SECONDS ? 1.0f : 0.0f;
     }
 
     /**

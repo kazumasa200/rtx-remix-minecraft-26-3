@@ -22,12 +22,31 @@ also part of every mod file name.
 - With ImmediatelyFast 1.17.1 installed, maps and cached sign text appear in the
   path-traced image while its optimizations stay enabled. Other versions warn
   and skip the map/sign adapter; their rendering remains untested.
+- Rain falls through leaves here and there instead of stopping at every
+  treetop.
+- A debug view, Show Dome Clouds Only, leaves the Unbound clouds as RTX Remix
+  draws them, to tell whether a flaw comes from the per-pixel clouds.
+
+### Changed
+
+- A lightning bolt flashes over the whole land and sky, day or night, instead of
+  lighting only the ground beside the strike; the camera's exposure no longer
+  cancels the flash.
 
 ### Fixed
 
 - Distant land, such as Distant Horizons' LOD buildings, no longer shows through
   a nearby torch's glow as pale outlines at night, and the torch's flame no
   longer vanishes against it.
+- At night the Unbound clouds keep one colour wherever you look: the aurora and
+  the moon's glow no longer tint them green, purple or pale, the moonlight no
+  longer leaks through their edges in blocks, and a fire burning behind a hill
+  no longer lights a disc of sky over the clouds above it.
+- After jumping the time of day, the Unbound clouds no longer turn orange and
+  blue for a moment before settling.
+- With Continuity, connected-texture packs such as Patrix keep their normal and
+  specular maps on every block face, and rain puddles no longer show the pack's
+  "enable connected textures" placeholder text.
 
 ## 0.4.0-pre.1 - 2026-11-01
 

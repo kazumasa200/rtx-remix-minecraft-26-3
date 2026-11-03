@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Map;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.Resource;
@@ -516,8 +517,18 @@ public final class LabPBRConverter {
     }
 
     public static VariantCache buildVariantCache(ResourceManager rm) {
-        return new VariantCache(rm.listResources("textures", LabPBRConverter::isVariantResource));
+        Map<Identifier, Resource> resources = new HashMap<>(rm.listResources("textures", LabPBRConverter::isVariantResource));
+        // Continuity names a connected-texture tile under optifine/ as the sprite
+        // continuity_reserved/<path> and redirects only its own reads there, so the _n and _s a
+        // pack ships beside each tile were never found and those faces lost their PBR.
+        rm.listResources(OPTIFINE, LabPBRConverter::isVariantResource).forEach((id, resource) ->
+                resources.putIfAbsent(Identifier.fromNamespaceAndPath(id.getNamespace(),
+                        CONTINUITY_TEXTURES + id.getPath().substring(OPTIFINE.length() + 1)), resource));
+        return new VariantCache(resources);
     }
+
+    private static final String OPTIFINE = "optifine";
+    private static final String CONTINUITY_TEXTURES = "textures/continuity_reserved/";
 
     private static boolean isVariantResource(Identifier id) {
         String path = id.getPath();

@@ -157,6 +157,10 @@ and shows at once.
 **Show Puddle Mask** paints rain puddles red, by how much water stands there:
 where they lie and how their edges fade.
 
+**Show Dome Clouds Only** leaves the Unbound clouds as the runtime draws them on
+the sky dome, without the lens drawing them again per pixel or drawing their
+shadows: whether a flaw in the clouds comes from the per-pixel clouds.
+
 Add a debug view here, as a switch in `SettingGroup.DEBUG_VIEWS`, rather than as
 code put in for one investigation and taken out after it.
 

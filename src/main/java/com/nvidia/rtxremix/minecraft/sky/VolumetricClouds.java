@@ -127,6 +127,7 @@ final class VolumetricClouds {
     private long lastDispatchNanos;
     private int dispatches;
     private boolean restart = true;
+    private int seenTimeJump = SkyTimeJump.generation();
     private double lastCameraX;
     private double lastCameraY;
     private double lastCameraZ;
@@ -184,6 +185,11 @@ final class VolumetricClouds {
             // and its reflections stepped along with it; on the move it is marched thirty times.
             boolean moving = cameraPos.distanceToSqr(lastCameraX, lastCameraY, lastCameraZ)
                     > MOVING_BLOCKS * MOVING_BLOCKS;
+            // After a jump in the time of day the panorama starts over from the new light.
+            if (SkyTimeJump.generation() != seenTimeJump) {
+                seenTimeJump = SkyTimeJump.generation();
+                restart = true;
+            }
             // A lightning flash lasts a few frames, so it is marched every frame while it changes.
             long interval = LightningFlash.changing() ? 0L
                     : moving ? MOVING_DISPATCH_INTERVAL_NANOS : DISPATCH_INTERVAL_NANOS;

@@ -26,6 +26,7 @@ import com.nvidia.rtxremix.minecraft.asset.RemixMeshStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixMeshSurface;
 import com.nvidia.rtxremix.minecraft.asset.RemixTexture;
 import com.nvidia.rtxremix.minecraft.asset.RemixTextureStore;
+import com.nvidia.rtxremix.minecraft.terrain.capture.BlockQuadEmitter;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import com.nvidia.rtxremix.minecraft.texture.WaterNormals;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
@@ -33,10 +34,15 @@ import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.List;
+import net.fabricmc.fabric.api.client.renderer.v1.Renderer;
+import net.fabricmc.fabric.api.client.renderer.v1.mesh.MutableQuadView;
+import net.fabricmc.fabric.api.client.renderer.v1.mesh.QuadEmitter;
+import net.fabricmc.fabric.api.client.renderer.v1.sprite.SpriteFinder;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.color.block.BlockTintSource;
 import net.minecraft.client.model.geom.builders.UVPair;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.geometry.BakedQuad;
@@ -575,8 +581,16 @@ public final class Puddles {
         BlockState state = level.getBlockState(pos);
         Minecraft client = Minecraft.getInstance();
         random.setSeed(state.getSeed(pos));
-        client.getModelManager().getBlockStateModelSet().get(state).collectParts(random, parts);
+        BlockStateModel model = client.getModelManager().getBlockStateModelSet().get(state);
+        model.collectParts(random, parts);
         try {
+            // A modded model, such as Continuity's connected textures, shows its own sprite for
+            // each position only through FRAPI; its parts give the base sprite, and Patrix's base
+            // grass top reads "enable connected textures", which the puddles then copied.
+            if (!BlockQuadEmitter.isVanillaModel(model, parts)) {
+                lookUpModdedGround(level, textures, i, state, model);
+                return;
+            }
             for (int p = 0; p < parts.size(); p++) {
                 for (BakedQuad quad : parts.get(p).getQuads(Direction.UP)) {
                     BakedQuad.MaterialInfo material = quad.materialInfo();
@@ -594,19 +608,67 @@ public final class Puddles {
                         faceT[v] = (UVPair.unpackV(uv) - sprite.getV0()) / dv;
                     }
                     if (!groundMap(faceX, faceZ, faceS, faceT, blockMap, i * 6)) continue;
-                    int tint = 0xFFFFFF;
-                    if (material.isTinted()) {
-                        BlockTintSource source = client.getBlockColors().getTintSource(state, material.tintIndex());
-                        if (source != null) tint = source.colorInWorld(state, level, pos);
-                    }
                     blockSamples[i] = samples;
-                    blockTint[i] = tint;
+                    blockTint[i] = material.isTinted() ? tint(client, level, state, material.tintIndex()) : 0xFFFFFF;
                     return;
                 }
             }
         } finally {
             parts.clear();
         }
+    }
+
+    private int tint(Minecraft client, ClientLevel level, BlockState state, int tintIndex) {
+        BlockTintSource source = client.getBlockColors().getTintSource(state, tintIndex);
+        return source != null ? source.colorInWorld(state, level, pos) : 0xFFFFFF;
+    }
+
+    // The block a modded model is emitting its quads for, while it does.
+    private QuadEmitter groundEmitter;
+    private SpriteFinder groundFinder;
+    private ClientLevel groundLevel;
+    private BlockTextureManager groundTextures;
+    private BlockState groundState;
+    private int groundIndex;
+
+    /** {@link #lookUpGround} through the model's own quads, as FRAPI emits them for this position. */
+    private void lookUpModdedGround(ClientLevel level, BlockTextureManager textures, int i,
+                                    BlockState state, BlockStateModel model) {
+        if (groundEmitter == null) groundEmitter = Renderer.get().quadEmitter(this::captureGround);
+        groundFinder = BlockQuadEmitter.blockSpriteFinder();
+        if (groundFinder == null) return;
+        groundLevel = level;
+        groundTextures = textures;
+        groundState = state;
+        groundIndex = i;
+        random.setSeed(state.getSeed(pos));
+        try {
+            model.emitQuads(groundEmitter, level, pos, state, random, direction -> false);
+        } finally {
+            groundLevel = null;
+            groundTextures = null;
+            groundState = null;
+        }
+    }
+
+    private void captureGround(MutableQuadView quad) {
+        int i = groundIndex;
+        if (blockSamples[i] != null || quad.faceNormal().y() < 0.99f) return;
+        TextureAtlasSprite sprite = groundFinder.find(quad);
+        int[] samples = sprite != null ? groundTextures.spriteSamples(sprite, TEXELS) : null;
+        if (samples == null) return;
+        float du = sprite.getU1() - sprite.getU0();
+        float dv = sprite.getV1() - sprite.getV0();
+        for (int v = 0; v < 3; v++) {
+            faceX[v] = quad.x(v);
+            faceZ[v] = quad.z(v);
+            faceS[v] = (quad.u(v) - sprite.getU0()) / du;
+            faceT[v] = (quad.v(v) - sprite.getV0()) / dv;
+        }
+        if (!groundMap(faceX, faceZ, faceS, faceT, blockMap, i * 6)) return;
+        blockSamples[i] = samples;
+        blockTint[i] = quad.tintIndex() >= 0
+                ? tint(Minecraft.getInstance(), groundLevel, groundState, quad.tintIndex()) : 0xFFFFFF;
     }
 
     /**

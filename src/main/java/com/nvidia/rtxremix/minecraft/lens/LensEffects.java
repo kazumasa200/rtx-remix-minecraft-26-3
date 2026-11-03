@@ -22,6 +22,8 @@ import org.joml.Vector4f;
 import com.nvidia.rtxremix.minecraft.sky.CloudField;
 import com.nvidia.rtxremix.minecraft.sky.LightningFlash;
 import com.nvidia.rtxremix.minecraft.sky.SkyLook;
+import com.nvidia.rtxremix.minecraft.sky.SkyRenderer;
+import com.nvidia.rtxremix.minecraft.sky.SkyTimeJump;
 import org.lwjgl.opengl.EXTTextureFilterAnisotropic;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL45C;
@@ -60,6 +62,12 @@ import java.util.SplittableRandom;
  * bindings are put back.
  */
 public final class LensEffects {
+
+    /** Whether the runtime's dome clouds are left as they are, a debug view; render thread only. */
+    private static boolean domeCloudsShown;
+
+    public static boolean isDomeCloudsShown() { return domeCloudsShown; }
+    public static void setDomeCloudsShown(boolean shown) { domeCloudsShown = shown; }
 
     // The near plane the Remix camera renders with; the far plane comes with the camera.
     private static final float NEAR_PLANE = 0.05f;
@@ -375,8 +383,10 @@ public final class LensEffects {
     // spreads a lamp's colour over the sky around it, which the sky's statistics took for the sky:
     // the clouds behind a torch turned red, and so did the sky read through their thin edges.
     // Within it the clear sky is not measured, and all the image shows over the sky expected there
-    // counts as glow. A lamp's glow shrinks with its distance, so the reach does too.
-    // The includer declares Sources, SourceCount and Aspect.
+    // counts as glow. A lamp's glow shrinks with its distance, so the reach does too. A lamp the
+    // land hides glows on nothing: a fire a storm had set burning behind a ridge laid a disc of
+    // the sky's light over the clouds above it.
+    // The includer declares Sources, SourceCount and Aspect, and samples depth.
     private static final String LAMP_GLOW_READING = """
             // In screen heights from a lamp at LAMP_GLOW_DISTANCE or nearer: glow throughout
             // inside the first, none past the second.
@@ -388,6 +398,12 @@ public final class LensEffects {
                 float near = 0.0;
                 for (int i = 0; i < SourceCount; i++) {
                     if (abs(Sources[i].z - 1.0) < 0.5) {
+                        continue;
+                    }
+                    // Land well in front of the lamp hides it; the block a torch stands on can
+                    // cover its centre and still let its flame show. A lamp in the hand is in
+                    // front of everything.
+                    if (Sources[i].z < 1.5 && distanceAt(Sources[i].xy) < Sources[i].w - max(4.0, 0.25 * Sources[i].w)) {
                         continue;
                     }
                     float reach = LAMP_GLOW_DISTANCE / max(Sources[i].w, LAMP_GLOW_DISTANCE);
@@ -888,6 +904,29 @@ public final class LensEffects {
             }
             """;
 
+    // The moon's halo and the aurora are the sky's own light beyond the atmosphere, and the
+    // runtime's bloom spreads them over the clouds around. Measured, they went into the clouds'
+    // calibration and the clear sky's rows and map, which keep what they last saw, and clouds
+    // anywhere turned green or pale. Neither is measured.
+    private static final String SKY_LIGHT_NEAR = """
+            // Toward the moon, with whether it is up, and how strongly the aurora shows.
+            uniform vec4 Moon;
+            uniform float Aurora;
+
+            // Within this angle of the moon its halo outshines the night sky.
+            const float MOON_HALO_COS = 0.97;
+            // The aurora's curtains, and the bloom around them, reach no higher.
+            const float AURORA_TOP = 0.87;
+
+            bool skyLightNear(vec3 ray) {
+                if (Moon.w > 0.0 && dot(ray, Moon.xyz) > MOON_HALO_COS) {
+                    return true;
+                }
+                // The curtains hang within about 80 degrees of north, toward -z.
+                return Aurora > 0.0 && ray.y < AURORA_TOP && -ray.z > 0.2 * length(ray.xz);
+            }
+            """;
+
     // The screen sampled once on a coarse grid, one texel per sample, for the passes below that
     // gather statistics from it: the decoded image with, for a sample showing sky, the sine of
     // its elevation plus two in alpha (zero for land), and the dome's clouds and the atmosphere
@@ -900,7 +939,7 @@ public final class LensEffects {
             layout(location = 2) out vec4 sampledSky;
             """ + "const vec2 SAMPLE_GRID = vec2(" + SAMPLE_COLUMNS + ".0, " + SAMPLE_ROWS + ".0);\n"
             + CloudField.defines() + SCENE_SAMPLING + DEPTH_SAMPLING + VIEW_RAY + COLOUR_SPACE + PANORAMA_SAMPLING
-            + ATMOSPHERE_SAMPLING + LAMP_GLOW + """
+            + ATMOSPHERE_SAMPLING + LAMP_GLOW + SKY_LIGHT_NEAR + """
             uniform float Clouds;
 
             void main() {
@@ -911,7 +950,7 @@ public final class LensEffects {
                 bool sky = isSky(distanceAt(uv)) && isSky(distanceAt(uv + vec2(texel.x, 0.0)))
                     && isSky(distanceAt(uv - vec2(texel.x, 0.0))) && isSky(distanceAt(uv + vec2(0.0, texel.y)))
                     && isSky(distanceAt(uv - vec2(0.0, texel.y)))
-                    && lampGlow(uv) < 0.25;
+                    && lampGlow(uv) < 0.25 && !skyLightNear(normalize(viewRay(uv)));
                 sampledScene = vec4(srgbToLinear(scene(uv)), sky ? 2.0 + normalize(viewRay(uv)).y : 0.0);
                 sampledClouds = sky && Clouds > 0.0 ? shownClouds(uv) : vec4(0.0);
                 sampledSky = vec4(sky && Clouds > 0.0 ? atmosphereAt(normalize(viewRay(uv))) : vec3(0.0), 1.0);
@@ -956,6 +995,10 @@ public final class LensEffects {
             uniform float RowFollow;
             // The luminance of the upper sky's mean radiance, which lights the clouds.
             uniform float SkyLuminance;
+            // 0 for a moment after a jump in the time of day, while the image still shows the old
+            // light: measured then, the clouds took noon's colours into midnight. The clouds'
+            // row holds its guess meanwhile and the sky's rows hold what they had.
+            uniform float Measure;
 
             // The image's tone curve keeps the mid-tones brighter than Reinhard's through the same
             // sky: at one and a half times the exposure, guessed clouds matched measured ones to a
@@ -1067,11 +1110,11 @@ public final class LensEffects {
                 int bin = int(gl_FragCoord.x);
                 vec4 previous = texelFetch(CalibrationPrevious, ivec2(gl_FragCoord.xy), 0);
                 if (gl_FragCoord.y > 2.0) {
-                    fragColor = Phase > 0.5 ? residualBin(bin, previous) : previous;
+                    fragColor = Measure > 0.5 && Phase > 0.5 ? residualBin(bin, previous) : previous;
                     return;
                 }
                 if (gl_FragCoord.y > 1.0) {
-                    fragColor = Phase < 0.5 ? skyBin(bin, previous) : previous;
+                    fragColor = Measure > 0.5 && Phase < 0.5 ? skyBin(bin, previous) : previous;
                     return;
                 }
                 vec3 shown = vec3(0.0);
@@ -1102,7 +1145,7 @@ public final class LensEffects {
                         }
                     }
                 }
-                if (weights < 3.0 || min(marched.r, min(marched.g, marched.b)) < 1.0e-4 * weights) {
+                if (Measure < 0.5 || weights < 3.0 || min(marched.r, min(marched.g, marched.b)) < 1.0e-4 * weights) {
                     if (previous.a >= 1.0 || skySamples < 8.0 || SkyLuminance <= 0.0) {
                         fragColor = previous;
                         return;
@@ -1205,7 +1248,7 @@ public final class LensEffects {
             layout(location = 2) out vec4 clearSky;
             layout(location = 3) out vec4 clearExcess;
             """ + CloudField.defines() + SCENE_SAMPLING + DEPTH_SAMPLING + VIEW_RAY + COLOUR_SPACE
-            + PANORAMA_SAMPLING + ATMOSPHERE_SAMPLING + CLOUD_EXPOSURE + LAMP_GLOW + """
+            + PANORAMA_SAMPLING + ATMOSPHERE_SAMPLING + CLOUD_EXPOSURE + LAMP_GLOW + SKY_LIGHT_NEAR + """
 
             // How far the image's clear sky is taken to differ from the atmosphere, in stops: a
             // star or the moon takes in a texel no more than the lower bound, and what lies above
@@ -1234,7 +1277,7 @@ public final class LensEffects {
                     MIN_CLEAR_STOPS, MAX_CLEAR_STOPS);
                 overClouds = vec4((image - cloudLight(shown)) * thick, thick);
                 skyBehind = vec4((1.0 - shown.a) * modelled * thick, thick);
-                float measured = clear * (1.0 - lampGlow(uv));
+                float measured = skyLightNear(direction) ? 0.0 : clear * (1.0 - lampGlow(uv));
                 clearSky = vec4(stops * measured, measured);
                 clearExcess = vec4(max(image - modelled * exp2(stops * (1.0 - lampGlow(uv))), 0.0) * clear, clear);
             }
@@ -1848,6 +1891,13 @@ public final class LensEffects {
             // How much brighter than the atmosphere brought to the clear sky around the sky read
             // through thin dome clouds may be.
             const float THIN_SKY_MARGIN = 1.1;
+            // Toward the moon, with whether it is up; its halo is laid behind thick dome clouds
+            // out to this angle.
+            uniform vec4 Moon;
+            const float MOON_HALO_FADE_COS = 0.9;
+            // How far the marched clouds replace the dome's, 0 to 1: after a jump in the time of
+            // day the image's own clouds show until the calibration has measured the new light.
+            uniform float CloudsShown;
 
             vec4 glowMap(vec2 uv, float layer) {
                 vec2 texel = 0.5 / vec2(textureSize(Glow, int(GLOW_LEVEL)).xy);
@@ -1904,26 +1954,37 @@ public final class LensEffects {
                         - GLOW_FLOOR * (cloudLight(shown) + (1.0 - shown.a) * modelled), 0.0)
                     : vec3(0.0);
                 float trust = glow.a + excess.a;
-                vec3 bloom = trust > 1.0e-3
-                    ? (overClouds * glow.a + excess.rgb) / trust * min(trust * 4.0, 1.0)
-                    : vec3(0.0);
+                float fill = trust > 1.0e-3 ? min(trust * 4.0, 1.0) / trust : 0.0;
+                // What the clear sky shows beyond the atmosphere is a lamp's bloom only around the
+                // lamp. Elsewhere it is the sky's own light, the moon's halo and the aurora, which
+                // lies behind the clouds and stays in the sky read out of the image: laid over the
+                // clouds coarse, or behind them where the dome hides it, it tinted whole clouds
+                // green and purple toward the aurora and drew the moon's light through their edges
+                // in blocks.
+                float lamp = lampGlow(uv);
+                vec3 skyLight = excess.rgb * fill * (1.0 - lamp);
+                vec3 bloom = (overClouds * glow.a + excess.rgb * lamp) * fill;
                 float thick = smoothstep(0.02, 0.1, shown.a);
                 // Around a lamp, where the dome shows no thick cloud whose speckle would come
                 // with it, the image's own glow is kept rather than the coarse one: laid back
                 // coarse, a torch's glow spread into a wide pink ring over the sky.
                 bloom = mix(bloom, max(image - cloudLight(shown) - (1.0 - shown.a) * modelled, 0.0),
-                    lampGlow(uv) * (1.0 - thick));
+                    lamp * (1.0 - thick));
                 vec3 behind = max(image - bloom - cloudLight(shown), 0.0) / max(1.0 - shown.a, 1.0e-3);
                 // Thin dome clouds' light that their calibration, measured on opaque cloud, does
                 // not take out of the image stays in the sky read through them, and showed as
                 // pale wisps and rims where the marched clouds have none. Clear sky keeps its stars.
                 behind = mix(behind, min(behind, modelled * THIN_SKY_MARGIN), smoothstep(0.005, 0.02, shown.a));
-                behind = mix(behind, modelled, thick);
+                // The moon's halo is smooth and runs on behind the dome's thick clouds, where the
+                // image cannot show it: without it the halo stopped at the outlines of the dome's
+                // holes, which the marched clouds do not share, and lit their edges in blocks.
+                float halo = Moon.w * smoothstep(MOON_HALO_FADE_COS, 1.0, dot(direction, Moon.xyz));
+                behind = mix(behind, modelled + skyLight * halo, thick);
                 vec3 replaced = cloudLight(marched) + (1.0 - marched.a) * behind + bloom;
                 // Where neither has a cloud the image stays as it is, even where the coarse bloom
                 // reads brighter than the sky it lies on.
                 float change = smoothstep(0.0, 0.02, max(marched.a, shown.a));
-                return mix(colour, linearToSrgb(replaced), change * (1.0 - Rain));
+                return mix(colour, linearToSrgb(replaced), change * (1.0 - Rain) * CloudsShown);
             }
 
             // The haze's share at each pixel and the share of it that shows sky, settled over
@@ -2350,6 +2411,16 @@ public final class LensEffects {
     /** The calibration's rows resolved for reading, as {@code CALIBRATION_RESOLVE_FRAGMENT_SHADER} leaves them. */
     private int resolvedCalibration;
     private float calibrationFollow = 1.0f;
+    private int seenTimeJump = SkyTimeJump.generation();
+    /**
+     * Until then, after a jump in the time of day, the image still shows the old light: from
+     * noon to midnight the runtime's land and dome clouds took about four seconds to darken,
+     * while its clear sky changed at once.
+     */
+    private long skySettledNanos = Long.MIN_VALUE / 2;
+    private static final long SKY_SETTLE_NANOS = 4_000_000_000L;
+    /** Then the marched clouds fade back in over this long, while the calibration settles. */
+    private static final long SKY_FADE_NANOS = 1_000_000_000L;
     private int vertexArray;
     private int framebuffer;
     private Program glintProgram;
@@ -2550,7 +2621,11 @@ public final class LensEffects {
         // Under water the sky shows through the waves, which the runtime refracts and a march
         // along the straight view cannot: the dome's clouds stay, and land fades into the water.
         float haze = submerged ? 0.0f : SkyLook.getAerialHaze();
-        boolean clouds = CloudField.ready();
+        if (SkyTimeJump.generation() != seenTimeJump) {
+            seenTimeJump = SkyTimeJump.generation();
+            forgetSky();
+        }
+        boolean clouds = CloudField.ready() && !domeCloudsShown;
         boolean overClouds = clouds && !submerged;
         float caustics = causticStrength();
         if ((depthOfField <= 0.0f && flare <= 0.0f && haze <= 0.0f && !clouds && caustics <= 0.0f)
@@ -2637,6 +2712,7 @@ public final class LensEffects {
                 samplesProgram.set("AtmosphereRadiance", CloudField.skyRadiance());
                 samplesProgram.set("Aspect", aspect);
                 samplesProgram.setSources(sources, lampCount);
+                setSkyLight(samplesProgram);
                 GL45C.glDrawArrays(GL45C.GL_TRIANGLES, 0, 3);
                 GlStateManager._glBindFramebuffer(GL45C.GL_DRAW_FRAMEBUFFER, framebuffer);
             }
@@ -2705,6 +2781,7 @@ public final class LensEffects {
                 cloudCalibrationProgram.use();
                 cloudCalibrationProgram.set("Follow", calibrationFollow);
                 cloudCalibrationProgram.set("Phase", calibrationPhase);
+                cloudCalibrationProgram.set("Measure", System.nanoTime() >= skySettledNanos ? 1.0f : 0.0f);
                 cloudCalibrationProgram.set("RowFollow", 1.0f - (1.0f - calibrationFollow) * (1.0f - calibrationFollow));
                 calibrationPhase = 1 - calibrationPhase;
                 float[] light = CloudField.light();
@@ -2731,6 +2808,7 @@ public final class LensEffects {
                 glowProgram.set("AtmosphereRadiance", CloudField.skyRadiance());
                 glowProgram.set("Aspect", aspect);
                 glowProgram.setSources(sources, lampCount);
+                setSkyLight(glowProgram);
                 GL45C.glDrawArrays(GL45C.GL_TRIANGLES, 0, 3);
                 GL45C.glGenerateTextureMipmap(glowTexture);
                 GlStateManager._glBindFramebuffer(GL45C.GL_DRAW_FRAMEBUFFER, framebuffer);
@@ -2805,6 +2883,9 @@ public final class LensEffects {
                         (float) (cameraY - Math.floor(cameraY)), (float) (cameraZ - Math.floor(cameraZ)));
             }
             compositeProgram.setSources(sources, lampCount);
+            setMoon(compositeProgram);
+            compositeProgram.set("CloudsShown", Math.clamp(
+                    (System.nanoTime() - skySettledNanos) / (float) SKY_FADE_NANOS, 0.0f, 1.0f));
             GL45C.glDrawArrays(GL45C.GL_TRIANGLES, 0, 3);
             historyValid = overClouds;
 
@@ -3043,6 +3124,34 @@ public final class LensEffects {
         program.set("CameraBlock", (int) Math.floor(cameraX), (int) Math.floor(cameraY), (int) Math.floor(cameraZ));
         program.set("SunDirection", sunDirection[0], sunDirection[1], sunDirection[2]);
         program.set("WaterIor", waterIor);
+    }
+
+    /**
+     * Drops every measurement of the sky and history of the clouds and the haze, after a jump in
+     * the time of day: eased from the old light, the clouds took noon's colours into midnight.
+     */
+    private void forgetSky() {
+        for (int texture : new int[] {calibration[0], calibration[1], skyBands[0], skyBands[1],
+                horizonFilled[0], horizonFilled[1]}) {
+            if (texture > 0) {
+                GL45C.glClearTexImage(texture, 0, GL45C.GL_RGBA, GL45C.GL_FLOAT, (java.nio.FloatBuffer) null);
+            }
+        }
+        historyValid = false;
+        hazeValid = false;
+        skySettledNanos = System.nanoTime() + SKY_SETTLE_NANOS;
+    }
+
+    /** Toward the moon, with whether it is up. */
+    private void setMoon(Program program) {
+        program.set("Moon", -sunDirection[0], -sunDirection[1], -sunDirection[2],
+                -sunDirection[1] > 0.0f ? 1.0f : 0.0f);
+    }
+
+    /** Where the moon's halo and the aurora lie, which the statistics passes leave unmeasured. */
+    private void setSkyLight(Program program) {
+        setMoon(program);
+        program.set("Aurora", SkyRenderer.auroraVisibility());
     }
 
     /** The depth and view ray inputs every pass that reads depth shares. */

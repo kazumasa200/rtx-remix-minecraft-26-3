@@ -307,16 +307,23 @@ class ConfLayerDriverTest {
                 "# header\n\n  rtx.volumetrics.transmittanceMeasurementDistanceMeters = 120.0\n"));
     }
 
+    @Test
+    void lightningLayerHoldsPastTheFlash() {
+        assertEquals(1.0f, ConfLayerDriver.lightningStrength(0.0f));
+        assertEquals(1.0f, ConfLayerDriver.lightningStrength(ConfLayerDriver.LIGHTNING_HOLD_SECONDS - 0.01f));
+        assertEquals(0.0f, ConfLayerDriver.lightningStrength(ConfLayerDriver.LIGHTNING_HOLD_SECONDS));
+    }
+
     // --- layer table invariants ---
 
     @Test
-    void staticTableHasTenUniqueRows() {
+    void staticTableHasElevenUniqueRows() {
         // 1 water + 2 view-distance controllers + 1 volumetric settling
-        // controller + 2 weather + 4 time profiles. Optional biome and zone
-        // rows are discovered from disk.
+        // controller + 2 weather + 1 lightning + 4 time profiles. Optional
+        // biome and zone rows are discovered from disk.
         assertEquals(67, ConfLayerDriver.vanillaBiomeNames().size(),
                 "vanilla 26.3 biome count (Biomes)");
-        assertEquals(10, ConfLayerDriver.STATIC_LAYER_TABLE.size());
+        assertEquals(11, ConfLayerDriver.STATIC_LAYER_TABLE.size());
         Set<String> names = new HashSet<>();
         Set<String> paths = new HashSet<>();
         for (var spec : ConfLayerDriver.STATIC_LAYER_TABLE) {
@@ -389,6 +396,8 @@ class ConfLayerDriverTest {
                 expected = 11000f;
             } else if (spec.name().startsWith(LogicChannels.BIOME_PREFIX)) {
                 expected = 6000f;
+            } else if (spec.name().equals(LogicChannels.WEATHER_LIGHTNING)) {
+                expected = 5600f;
             } else if (spec.name().equals(LogicChannels.WEATHER_THUNDER)) {
                 expected = 5500f;
             } else if (spec.name().equals(LogicChannels.WEATHER_RAIN)) {

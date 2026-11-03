@@ -123,8 +123,11 @@ next launch. A missing or unacquirable `water.conf` prevents renderer
 initialization and the error names the file; any other conf that fails to
 acquire is skipped with a warning naming it, and `/rtx conf reload` retries it.
 
-Baseline LabPBR textures live in `src/main/resources/assets/` and load through
-Fabric's `fabric` resource pack below user packs. Development setup, `rtx install`,
+Baseline LabPBR textures live in `src/main/resources/assets/` and load as the
+mod's own resource pack, `rtx-remix-renderer`, below user packs: Fabric API for
+26.3 lists each mod's resources as a pack of its own, and the `fabric` id the
+tools still write into `options.txt` no longer exists, so the game drops it with a
+warning at launch. Development setup, `rtx install`,
 and the release installer use `packaging/migrate_resource_packs.ps1` to remove
 their exactly identified legacy baseline copies and migrate existing pack order.
 `assets/minecraft/atlases/blocks.json` and `items.json` filter LabPBR `_n`, `_s`
@@ -217,7 +220,9 @@ own frame index. Still shots for the screenshot tool use their own codec
 
 **Gameplay-driven conf layers.** `ConfLayerDriver` fades a fixed table of mod
 layers (water, view distance and its LOD extension, volumetric settling, rain,
-thunder, and four times of day) by gameplay state. Option layers come from a mod
+thunder, a lightning flash, and four times of day) by gameplay state. The
+lightning layer slows the auto exposure while a bolt flashes and for a moment
+after, or the exposure undid the flash within a fifth of a second. Option layers come from a mod
 root shipping archetypes, acquired at init, and a world root inside a save
 supplying zone and biome profiles, acquired on join. A world layer sits just
 above its mod counterpart, so a map overrides per option rather than replacing
@@ -437,7 +442,10 @@ changes, so an edge creeps rather than jumps.
 `RemixWeatherRenderer` redraws vanilla's rain and snow over the Remix image,
 occluded through the interop depth texture; rain refracts a copy of the main
 target as the lens left it, since it draws opaquely. Vanilla's own weather and
-cloud draws are skipped.
+cloud draws are skipped. While RTX is on, one leaf-topped rain column in four,
+picked by position, falls on through the canopy to the ground
+(`RainThroughLeaves`, `WeatherEffectRendererMixin`): vanilla stops every column at
+the leaves, and no rain fell under a tree.
 
 **Lens.** `lens/LensEffects` is a GL pass after the Remix composite and before
 the weather: depth of field focused on what the crosshair rests on, flares from
@@ -511,16 +519,26 @@ and away, and showed as pale or dark rims where the dome's clouds outlast the
 marched ones, so a quarter-resolution pass also maps, read coarse, how the
 image's clear sky around differs from it, in stops, up to twice it. The same pass
 maps what the image shows beyond that over clear sky, and beyond their light and
-the sky behind them over the dome's thick clouds: the runtime's bloom, which the
-composite takes out of the image before it replaces the clouds and lays back
-over all of it, since a lamp's glow otherwise stopped at the skyline. A torch
-beside the camera at night brightens the sky many times over; taken as an error
-of the atmosphere and put back only over the clouds, its glow was cut off at
-them, with a dark rim wherever thin dome cloud stood beside. Around the lamps
-the flare sources place on screen, the clear sky is not measured and all the
-image shows over the sky expected there counts as glow, kept as the image shows
-it where the dome holds no thick cloud: measured as sky, a torch's bloom turned
-the clouds behind it red, and laid back coarse it spread into a wide pink ring.
+the sky behind them over the dome's thick clouds: the runtime's bloom over the
+dome's clouds, which the composite takes out of the image before it replaces the
+clouds and lays back over all of it, since a lamp's glow otherwise stopped at the
+skyline. A torch beside the camera at night brightens the sky many times over;
+taken as an error of the atmosphere and put back only over the clouds, its glow
+was cut off at them, with a dark rim wherever thin dome cloud stood beside. Over
+clear sky what lies beyond the atmosphere is a lamp's bloom only around the lamp;
+elsewhere it is the sky's own light, the moon's halo and the aurora, which stays
+in the sky behind the clouds, and toward the moon its halo runs on, coarse, behind
+the dome's thick clouds too: laid over the clouds, it tinted them green and purple
+toward the aurora and lit their edges by the moon in blocks. Neither the moon's
+halo nor the aurora's half of the sky (`SkyRenderer.auroraVisibility`) is sampled
+for the clouds' calibration and the clear sky's rows and map, which keep what they
+last saw: the runtime's bloom of them coloured clouds anywhere afterwards. Around
+the lamps the flare sources place on screen, unless the land in front hides them,
+the clear sky is not measured and all the image shows over the sky expected there
+counts as glow, kept as the image shows it where the dome holds no thick cloud:
+measured as sky, a torch's bloom turned the clouds behind it red, and laid back
+coarse it spread into a wide pink ring; around a fire a storm had set burning
+behind a ridge, it laid a disc of the sky's light over the clouds above it.
 A lamp's flame and bloom lie in front of everything but carry the depth of
 what lies behind, so around a lamp the haze and the clouds only brighten the
 image and, after sunset, the clouds' shadows leave it: faded, clouded or
@@ -601,7 +619,10 @@ off about fifteen times a torch while a lantern's flame lit only its glass.
 Changing the block-light multipliers updates existing lights in place over a few
 frames (`ChunkManager.refreshBlockLightIntensities`); terrain is not rebuilt. A
 lightning bolt carries a bluish sphere light a few blocks up from the strike
-while it shows, which lights no fog: lit in the volumetrics, the whole sky
+while it shows, and the nearest bolt flashes over all the land through a broad
+distant light from high up it, weaker the farther the bolt, while the overcast
+dome brightens with it (`LightningFlash.reach`): the sphere alone lit only the
+ground beside it. Neither lights fog: lit in the volumetrics, the whole sky
 turned white with each strike. A
 hand-held item whose placed block shows a lit particle gets the same element in
 hand, emitted once the item's pose is on the matrix stack
@@ -611,8 +632,15 @@ held item's lit element is burning: the local player's Toggle Held Lights key
 puts out everything in their own hands, and by default an open flame goes out
 for any holder whose eyes are under water. When the time of day jumps by more
 than a hundredth of a day in one frame, `LightManager` clears the runtime's
-radiance cache (`rtx.spatiallyHashedRadianceCache.resetHistory`), which would
-otherwise keep the old light for half a minute where few paths refresh it.
+radiance caches (`rtx.spatiallyHashedRadianceCache.resetHistory`, and
+`rtx.neuralRadianceCache.resetHistory` for the presets that use it), which would
+otherwise keep the old light for half a minute where few paths refresh it, and
+marks the jump (`SkyTimeJump`): the clouds' panorama is marched afresh, the lens
+drops its measurements of the sky and its histories, and for four seconds it
+shows the image's own clouds, then fades its marched ones back in over one. The
+runtime's land and dome clouds take about four seconds to darken from noon into
+midnight while its clear sky changes at once; measured meanwhile, the lens's
+clouds went orange and blue, then white.
 
 Terrain block lights are per-frame draws, not retained instances: every frame
 `ChunkManager.draw` submits each surviving `TerrainLight` (the `RemixLight`

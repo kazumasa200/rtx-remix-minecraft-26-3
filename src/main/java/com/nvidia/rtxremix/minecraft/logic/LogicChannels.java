@@ -19,6 +19,7 @@ public final class LogicChannels {
     public static final String VOLUMETRICS_SETTLING = "mc.volumetrics.settling";
     public static final String WEATHER_RAIN = "mc.weather.rain";
     public static final String WEATHER_THUNDER = "mc.weather.thunder";
+    public static final String WEATHER_LIGHTNING = "mc.weather.lightning";
     public static final String ZONE_PREFIX = "mc.zone.";
     public static final String BIOME_PREFIX = "mc.biome.";
     public static final String TIME_PREFIX = "mc.time.";

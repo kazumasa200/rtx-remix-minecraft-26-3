@@ -87,6 +87,8 @@ final class SkyLayers {
     private final RemixMesh[] auroraMeshes = new RemixMesh[AURORA_CURTAINS];
     private CompletableFuture<byte[]> pendingAurora;
     private final float[] lastAuroraIntensity = new float[AURORA_CURTAINS];
+    /** How strongly the aurora showed last frame, 0 to its intensity setting. Render thread only. */
+    static float auroraVisibility;
 
     private final Transform transform = new Transform();
     private final BlockPos.MutableBlockPos biomePos = new BlockPos.MutableBlockPos();
@@ -169,6 +171,7 @@ final class SkyLayers {
         float step = seconds / AURORA_BIOME_FADE_SECONDS;
         coldBiome = Math.clamp(coldBiome + (cold ? step : -step), 0.0f, 1.0f);
         float visibility = strength * darkSky * coldBiome;
+        auroraVisibility = auroraTexture == null ? 0.0f : visibility;
         if (visibility <= 0.0f && auroraTexture == null) return;
 
         if (auroraTexture == null) {
@@ -376,6 +379,7 @@ final class SkyLayers {
 
     /** Destroys every asset; the next frame rebuilds them. */
     void destroy() {
+        auroraVisibility = 0.0f;
         destroyCirrus();
         if (pendingCirrus != null) pendingCirrus.cancel(false);
         pendingCirrus = null;
