@@ -44,6 +44,9 @@ also part of every mod file name.
   no longer lights a disc of sky over the clouds above it.
 - After jumping the time of day, the Unbound clouds no longer turn orange and
   blue for a moment before settling.
+- Beyond the vanilla render distance, Distant Horizons' glass is see-through
+  instead of solid pale blocks, and lava and glowing blocks such as glowstone
+  glow.
 - With Continuity, connected-texture packs such as Patrix keep their normal and
   specular maps on every block face, and rain puddles no longer show the pack's
   "enable connected textures" placeholder text.

@@ -20,21 +20,26 @@ final class LodGeometry {
 
     final ByteBuffer data;
     final int quadCount;
+    /** The opaque buffers' quads, which come first; the translucent ones (glass, ice) follow. */
+    final int opaqueQuads;
     private final AtomicInteger refs = new AtomicInteger(1);
 
-    private LodGeometry(ByteBuffer data, int quadCount) {
+    private LodGeometry(ByteBuffer data, int quadCount, int opaqueQuads) {
         this.data = data;
         this.quadCount = quadCount;
+        this.opaqueQuads = opaqueQuads;
     }
 
     /** Copies the buffers' remaining bytes; the caller keeps ownership of them. */
     static LodGeometry copyOf(List<ByteBuffer> opaque, List<ByteBuffer> transparent) {
-        int bytes = remaining(opaque) + remaining(transparent);
+        int opaqueBytes = remaining(opaque);
+        int bytes = opaqueBytes + remaining(transparent);
         ByteBuffer data = DirectBufferPool.acquire(Math.max(bytes, 1));
         put(data, opaque);
         put(data, transparent);
         data.flip();
-        return new LodGeometry(data, bytes / LodMeshBuilder.DH_QUAD_BYTES);
+        return new LodGeometry(data, bytes / LodMeshBuilder.DH_QUAD_BYTES,
+                opaqueBytes / LodMeshBuilder.DH_QUAD_BYTES);
     }
 
     void retain() {

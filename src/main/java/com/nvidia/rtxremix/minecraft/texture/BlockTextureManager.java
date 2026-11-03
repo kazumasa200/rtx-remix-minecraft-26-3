@@ -983,7 +983,7 @@ public class BlockTextureManager {
         return true;
     }
 
-    float terrainEmissionIntensity() {
+    public float terrainEmissionIntensity() {
         return terrainEmissionIntensity(appliedTerrainEmissionMultiplier);
     }
 

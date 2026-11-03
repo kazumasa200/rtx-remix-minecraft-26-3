@@ -366,6 +366,19 @@ buffers (`LodBufferContainerMixin`), and stopping capture rebuilds them. Its
 vanilla fade is skipped then too (`ClientApiFadeMixin`): fading the main
 target's terrain toward its empty textures drew black wherever the main target's
 depth held land.
+LOD quads carry the LOD mod's one averaged colour per block, which lights the
+ground as vertex colour over a white texel. The runtime takes emission and a
+translucent surface's transmittance only from textures, so lava and glowing
+blocks (the LOD mod's `LAVA` and `ILLUMINATED` materials) and its translucent
+buffer (glass, ice) carry their colour as coordinates into a palette texture of
+every colour at five bits a channel (`LodPalette`): the former glow at the
+terrain's emission, the latter are thin-walled glass tinted by the block's hue.
+Drawn as plain ground, glass stood as pale solid blocks and lava did not glow.
+The LOD mod names a material by block id before it asks about light, so
+glowstone and lit redstone lamps came out as stone; every block that gives off
+light, liquids aside, is marked illuminated through its block-state event
+(`DistantHorizonsCompat`), bound before a world loads since the LOD mod caches a
+state's material.
 
 **Allocation.** The collector's concurrent work is what stretches frames at
 high render distance, so the hot vanilla paths that run per section or per

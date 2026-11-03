@@ -8,6 +8,7 @@ import com.nvidia.rtxremix.InstanceCategoryBit;
 import com.nvidia.rtxremix.InstanceInfoBlendEXT;
 import com.nvidia.rtxremix.MaterialInfo;
 import com.nvidia.rtxremix.MaterialInfoOpaqueEXT;
+import com.nvidia.rtxremix.MaterialInfoTranslucentEXT;
 import com.nvidia.rtxremix.RemixAPI;
 import com.nvidia.rtxremix.TextureFormat;
 import com.nvidia.rtxremix.TexturePurpose;
@@ -67,6 +68,10 @@ public final class LodTerrain {
     private static final boolean DISTANT_HORIZONS =
             FabricLoader.getInstance().isModLoaded("distanthorizons");
     private static final long INSTALL_BUDGET_NS = 1_000_000L;
+    /** Common glass, as Minecraft's own glass takes it. */
+    private static final float GLASS_IOR = 1.52f;
+    /** A glass face's thickness; its transmittance is measured over the same, so a face passes its tint once. */
+    private static final float GLASS_WALL = 0.05f;
     /**
      * Low-priority threads building meshes. One fell some eighty sections behind a camera
      * flying across the city, and the sections it had not reached showed LOD ground over
@@ -152,12 +157,16 @@ public final class LodTerrain {
     private int clipCenterX = Integer.MIN_VALUE;
     private int clipCenterZ = Integer.MIN_VALUE;
     private RemixMaterial groundMaterial;
+    private RemixTexture palette;
+    private RemixMaterial glassMaterial;
+    private RemixMaterial glowMaterial;
 
     public LodTerrain(PerformanceTimer timer) {
         this.timer = timer;
         cntAwaited = timer.registerCounter("Lod.Awaited");
         cntLingering = timer.registerCounter("Lod.Lingering");
         cntHeld = timer.registerCounter("Lod.Held");
+        if (DISTANT_HORIZONS) DistantHorizonsCompat.bindEvents();
     }
 
     public boolean isEnabled() {
@@ -239,6 +248,8 @@ public final class LodTerrain {
             if (section.enabled) setSwap(section, SWAP_AWAITED);
         }
         retirement.clear();
+        // Every instance is gone, so the emission strength can change with the reload.
+        destroyPaletteMaterials();
     }
 
     /** Drops everything when the world goes; the next world's sections arrive afresh. */
@@ -251,6 +262,16 @@ public final class LodTerrain {
         builder.shutdownNow();
         if (groundMaterial != null && !groundMaterial.isDeleted()) groundMaterial.destroy();
         groundMaterial = null;
+        destroyPaletteMaterials();
+        if (palette != null && !palette.isDeleted()) palette.destroy();
+        palette = null;
+    }
+
+    private void destroyPaletteMaterials() {
+        if (glassMaterial != null && !glassMaterial.isDeleted()) glassMaterial.destroy();
+        if (glowMaterial != null && !glowMaterial.isDeleted()) glowMaterial.destroy();
+        glassMaterial = null;
+        glowMaterial = null;
     }
 
     private void setCapturing(boolean on) {
@@ -557,6 +578,8 @@ public final class LodTerrain {
         RemixMaterial ground = groundMaterial();
         RemixMaterial water = textures != null ? textures.getWaterSurfaceMaterial() : null;
         if (ground == null) return;
+        RemixMaterial glass = glassMaterial();
+        RemixMaterial glow = textures != null ? glowMaterial(textures.terrainEmissionIntensity()) : null;
 
         while (buildsInFlight < MAX_BUILDS_IN_FLIGHT && !buildQueue.isEmpty()) {
             LodSection section = buildQueue.poll();
@@ -579,7 +602,7 @@ public final class LodTerrain {
                 Throwable failure = null;
                 try {
                     mesh = LodMeshBuilder.build(geometry, buildClip, section.minX, section.minZ,
-                            ground, water);
+                            ground, water, glass, glow);
                 } catch (Throwable t) {
                     failure = t;
                 } finally {
@@ -715,5 +738,71 @@ public final class LodTerrain {
             groundMaterial = null;
         }
         return groundMaterial;
+    }
+
+    private RemixTexture palette() {
+        if (palette != null && !palette.isDeleted()) return palette;
+        ByteBuffer pixels = LodPalette.fill(DirectBufferPool.acquire(LodPalette.WIDTH * LodPalette.HEIGHT * 4));
+        try {
+            palette = RemixTextureStore.get().create(new RemixTexture(LodPalette.WIDTH, LodPalette.HEIGHT,
+                    TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR, pixels));
+        } catch (RuntimeException e) {
+            LOGGER.error("Failed to create the LOD colour palette", e);
+            palette = null;
+        }
+        return palette;
+    }
+
+    /**
+     * Glass, ice and the LOD mod's other translucent blocks: each face lets its
+     * palette tint through, as a thin wall, so a pane neither refracts by a whole
+     * block nor darkens with the block's depth.
+     */
+    private RemixMaterial glassMaterial() {
+        if (glassMaterial != null && !glassMaterial.isDeleted()) return glassMaterial;
+        RemixTexture texture = palette();
+        if (texture == null) return null;
+        try {
+            MaterialInfo info = MaterialInfo.builder()
+                    .albedoTexture(texture.getHandle())
+                    .filterMode(0)
+                    .translucentExt(MaterialInfoTranslucentEXT.builder()
+                            .refractiveIndex(GLASS_IOR)
+                            .transmittanceTexture(texture.getHandle())
+                            .transmittanceMeasurementDistance(GLASS_WALL)
+                            .thinWall(GLASS_WALL)
+                            .build())
+                    .build();
+            glassMaterial = RemixMaterialStore.get().create(new RemixMaterial(info, List.of(texture), null));
+        } catch (RuntimeException e) {
+            LOGGER.error("Failed to create the LOD glass material", e);
+            glassMaterial = null;
+        }
+        return glassMaterial;
+    }
+
+    /** Lava and blocks that give off light glow in their own colour at the terrain's emission. */
+    private RemixMaterial glowMaterial(float intensity) {
+        if (glowMaterial != null && !glowMaterial.isDeleted()) return glowMaterial;
+        RemixTexture texture = palette();
+        if (texture == null) return null;
+        try {
+            MaterialInfo info = MaterialInfo.builder()
+                    .albedoTexture(texture.getHandle())
+                    .emissiveTexture(texture.getHandle())
+                    .emissiveIntensity(intensity)
+                    .filterMode(0)
+                    .opaqueExt(MaterialInfoOpaqueEXT.builder()
+                            .albedoConstant(1f, 1f, 1f)
+                            .roughnessConstant(0.9f)
+                            .metallicConstant(0f)
+                            .build())
+                    .build();
+            glowMaterial = RemixMaterialStore.get().create(new RemixMaterial(info, List.of(texture), null));
+        } catch (RuntimeException e) {
+            LOGGER.error("Failed to create the LOD glow material", e);
+            glowMaterial = null;
+        }
+        return glowMaterial;
     }
 }

@@ -38,6 +38,10 @@ final class LodMeshBuilder {
     static final int DH_QUAD_BYTES = 4 * DH_VERTEX_BYTES;
     /** {@code EDhApiBlockMaterial.WATER}. */
     static final int WATER_MATERIAL = 12;
+    /** {@code EDhApiBlockMaterial.LAVA}. */
+    static final int LAVA_MATERIAL = 6;
+    /** {@code EDhApiBlockMaterial.ILLUMINATED}: blocks that give off light. */
+    static final int ILLUMINATED_MATERIAL = 15;
     static final float SINK = 1f / 32f;
     /** Brings LOD water from the block top down to a still water surface. */
     static final float WATER_SINK = 0.125f;
@@ -45,6 +49,7 @@ final class LodMeshBuilder {
     private static final int STRIDE = HardcodedVertex.STRIDE;
     private static final int INDEX_BYTES = 6 * Integer.BYTES;
     private static final int OPAQUE = 0xFF000000;
+    private static final int WHITE = 0xFFFFFFFF;
     private static final int NO_BOUNDS = 0;
     private static final int WATER_BOUNDS_MIN = HardcodedVertex.packHalf2x16(0f, 0f);
     private static final int WATER_BOUNDS_MAX = HardcodedVertex.packHalf2x16(1f, 1f);
@@ -172,26 +177,39 @@ final class LodMeshBuilder {
 
     /**
      * Builds the mesh, or returns null when the clip removes every quad.
-     * {@code water} may be null, which draws water as plain ground.
+     * {@code water}, {@code glass} and {@code glow} may be null, which draws
+     * those quads as plain ground.
      */
     static RemixMesh build(LodGeometry geometry, Clip clip, int originX, int originZ,
-                           RemixMaterial solid, RemixMaterial water) {
-        Bucket ground = new Bucket(false);
-        Bucket waterBucket = water != null ? new Bucket(true) : ground;
+                           RemixMaterial solid, RemixMaterial water,
+                           RemixMaterial glass, RemixMaterial glow) {
+        Bucket ground = new Bucket(Paint.VERTEX);
+        Bucket waterBucket = water != null ? new Bucket(Paint.WATER) : ground;
+        Bucket glassBucket = glass != null ? new Bucket(Paint.GLASS) : ground;
+        Bucket glowBucket = glow != null ? new Bucket(Paint.PALETTE) : ground;
         try {
-            convert(geometry, clip, originX, originZ, ground, waterBucket);
-            List<RemixMeshSurface> surfaces = new ArrayList<>(2);
+            convert(geometry, clip, originX, originZ, ground, waterBucket, glassBucket, glowBucket);
+            List<RemixMeshSurface> surfaces = new ArrayList<>(4);
             ground.addSurface(surfaces, solid);
             if (waterBucket != ground) waterBucket.addSurface(surfaces, water);
+            if (glassBucket != ground) glassBucket.addSurface(surfaces, glass);
+            if (glowBucket != ground) glowBucket.addSurface(surfaces, glow);
             return surfaces.isEmpty() ? null : new RemixMesh(surfaces.toArray(new RemixMeshSurface[0]));
         } finally {
             ground.release();
-            if (waterBucket != ground) waterBucket.release();
+            waterBucket.release();
+            glassBucket.release();
+            glowBucket.release();
         }
     }
 
     static void convert(LodGeometry geometry, Clip clip, int originX, int originZ,
                         Bucket ground, Bucket water) {
+        convert(geometry, clip, originX, originZ, ground, water, ground, ground);
+    }
+
+    static void convert(LodGeometry geometry, Clip clip, int originX, int originZ,
+                        Bucket ground, Bucket water, Bucket glass, Bucket glow) {
         ByteBuffer data = geometry.data.duplicate().order(ByteOrder.LITTLE_ENDIAN);
         for (int quad = 0; quad < geometry.quadCount; quad++) {
             int base = quad * DH_QUAD_BYTES;
@@ -214,7 +232,17 @@ final class LodMeshBuilder {
             int face = data.get(base + 13);
             if (face < DOWN || face > EAST) continue;
 
-            Bucket bucket = material == WATER_MATERIAL ? water : ground;
+            Bucket bucket;
+            if (material == WATER_MATERIAL) {
+                bucket = water;
+            } else if (material == LAVA_MATERIAL || material == ILLUMINATED_MATERIAL) {
+                bucket = glow;
+            } else if (quad >= geometry.opaqueQuads) {
+                bucket = glass;
+            } else {
+                bucket = ground;
+            }
+            if (bucket.paint == Paint.GLASS) color = LodPalette.glassTint(color);
             QuadRect rect = new QuadRect(face, originX + x0, originX + x1, y0, y1,
                     originZ + z0, originZ + z1);
             emitClipped(rect, clip, originX, originZ, color, bucket);
@@ -303,15 +331,33 @@ final class LodMeshBuilder {
         }
     }
 
+    /** Where a surface's colour comes from. */
+    enum Paint {
+        /** The baked vertex colour over one white texel. */
+        VERTEX,
+        /** The water texture at world-space coordinates. */
+        WATER,
+        /** The colour's {@link LodPalette} texel, which emission can read. */
+        PALETTE,
+        /** The {@link LodPalette} texel of the colour's glass tint, read as transmittance. */
+        GLASS
+    }
+
     /** Growable vertex and index data for one surface, from {@link DirectBufferPool}. */
     static final class Bucket {
+        final Paint paint;
         final boolean water;
         ByteBuffer vertices;
         ByteBuffer indices;
         int quads;
 
+        Bucket(Paint paint) {
+            this.paint = paint;
+            this.water = paint == Paint.WATER;
+        }
+
         Bucket(boolean water) {
-            this.water = water;
+            this(water ? Paint.WATER : Paint.VERTEX);
         }
 
         void quad(float ax, float ay, float az, float bx, float by, float bz,
@@ -342,17 +388,24 @@ final class LodMeshBuilder {
             vertices.putFloat(at + 12, nx);
             vertices.putFloat(at + 16, ny);
             vertices.putFloat(at + 20, nz);
-            if (water) {
-                // World-space UVs, as Minecraft's own water gets them.
-                float tile = BlockTextureManager.getWaterTileSize();
-                vertices.putFloat(at + 24, (x + originX) / tile);
-                vertices.putFloat(at + 28, (z + originZ) / tile);
-            } else {
+            switch (paint) {
+                case WATER -> {
+                    // World-space UVs, as Minecraft's own water gets them.
+                    float tile = BlockTextureManager.getWaterTileSize();
+                    vertices.putFloat(at + 24, (x + originX) / tile);
+                    vertices.putFloat(at + 28, (z + originZ) / tile);
+                }
+                case PALETTE, GLASS -> {
+                    vertices.putFloat(at + 24, LodPalette.u(color));
+                    vertices.putFloat(at + 28, LodPalette.v(color));
+                }
                 // The ground material's texture is one white texel.
-                vertices.putFloat(at + 24, 0.5f);
-                vertices.putFloat(at + 28, 0.5f);
+                case VERTEX -> {
+                    vertices.putFloat(at + 24, 0.5f);
+                    vertices.putFloat(at + 28, 0.5f);
+                }
             }
-            vertices.putInt(at + 32, color);
+            vertices.putInt(at + 32, paint == Paint.PALETTE || paint == Paint.GLASS ? WHITE : color);
             vertices.putInt(at + 36, water ? WATER_BOUNDS_MIN : NO_BOUNDS);
             vertices.putInt(at + 40, water ? WATER_BOUNDS_MAX : NO_BOUNDS);
             for (int pad = 44; pad < STRIDE; pad += 4) vertices.putInt(at + pad, 0);
