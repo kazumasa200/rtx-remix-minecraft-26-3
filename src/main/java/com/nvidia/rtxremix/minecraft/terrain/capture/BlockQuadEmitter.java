@@ -27,7 +27,7 @@ import net.minecraft.client.renderer.block.ModelBlockRenderer;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
-import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.data.AtlasIds;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.geometry.BakedQuad;
 import net.minecraft.core.BlockPos;
@@ -790,9 +790,9 @@ public final class BlockQuadEmitter {
         if (client == null) {
             return null;
         }
-        return client.getTextureManager().getTexture(TextureAtlas.LOCATION_BLOCKS) instanceof TextureAtlas atlas
-                ? atlas.spriteFinder()
-                : null;
+        // A read of the atlas map, safe on a section worker. TextureManager.getTexture loads a
+        // texture it does not hold, a GL call, and crashed a Sodium worker under water.
+        return client.getAtlasManager().getAtlasOrThrow(AtlasIds.BLOCKS).spriteFinder();
     }
 
     private static int multiplyRgb(int argb, int tint) {
