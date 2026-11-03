@@ -28,6 +28,7 @@ class LodMeshBuilderTest {
     private final LodMeshBuilder.Bucket water = new LodMeshBuilder.Bucket(true);
     private final LodMeshBuilder.Bucket glass = new LodMeshBuilder.Bucket(LodMeshBuilder.Paint.GLASS);
     private final LodMeshBuilder.Bucket glow = new LodMeshBuilder.Bucket(LodMeshBuilder.Paint.PALETTE);
+    private final LodMeshBuilder.Bucket lamp = new LodMeshBuilder.Bucket(LodMeshBuilder.Paint.PALETTE);
 
     @AfterEach
     void releaseBuckets() {
@@ -35,6 +36,7 @@ class LodMeshBuilderTest {
         water.release();
         glass.release();
         glow.release();
+        lamp.release();
     }
 
     @Test
@@ -100,10 +102,12 @@ class LodMeshBuilderTest {
         convertSplit(dh, quads(0), LodMeshBuilder.Clip.NONE, 0, 0);
 
         assertEquals(0, ground.quads);
-        assertEquals(2, glow.quads);
+        assertEquals(1, glow.quads, "lava glows at the terrain's emission");
+        assertEquals(1, lamp.quads, "other blocks that give off light glow dimmer");
         assertEquals(0xFFFFFFFF, glow.vertices.getInt(32), "the vertex colour leaves the texel alone");
         assertEquals(LodPalette.u(0xD06010), glow.vertices.getFloat(24));
         assertEquals(LodPalette.v(0xD06010), glow.vertices.getFloat(28));
+        assertEquals(LodPalette.u(0xF0E090), lamp.vertices.getFloat(24));
     }
 
     @Test
@@ -168,7 +172,7 @@ class LodMeshBuilderTest {
         translucent.flip();
         LodGeometry geometry = LodGeometry.copyOf(List.of(opaque), List.of(translucent));
         try {
-            LodMeshBuilder.convert(geometry, clip, originX, originZ, ground, water, glass, glow);
+            LodMeshBuilder.convert(geometry, clip, originX, originZ, ground, water, glass, glow, lamp);
         } finally {
             geometry.release();
         }

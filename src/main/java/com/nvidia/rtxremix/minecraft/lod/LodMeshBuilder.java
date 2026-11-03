@@ -177,39 +177,44 @@ final class LodMeshBuilder {
 
     /**
      * Builds the mesh, or returns null when the clip removes every quad.
-     * {@code water}, {@code glass} and {@code glow} may be null, which draws
-     * those quads as plain ground.
+     * {@code water}, {@code glass}, {@code glow} and {@code lamp} may be null,
+     * which draws those quads as plain ground. Lava takes {@code glow}, every
+     * other block that gives off light {@code lamp}.
      */
     static RemixMesh build(LodGeometry geometry, Clip clip, int originX, int originZ,
                            RemixMaterial solid, RemixMaterial water,
-                           RemixMaterial glass, RemixMaterial glow) {
+                           RemixMaterial glass, RemixMaterial glow, RemixMaterial lamp) {
         Bucket ground = new Bucket(Paint.VERTEX);
         Bucket waterBucket = water != null ? new Bucket(Paint.WATER) : ground;
         Bucket glassBucket = glass != null ? new Bucket(Paint.GLASS) : ground;
         Bucket glowBucket = glow != null ? new Bucket(Paint.PALETTE) : ground;
+        Bucket lampBucket = lamp != null ? new Bucket(Paint.PALETTE) : ground;
         try {
-            convert(geometry, clip, originX, originZ, ground, waterBucket, glassBucket, glowBucket);
-            List<RemixMeshSurface> surfaces = new ArrayList<>(4);
+            convert(geometry, clip, originX, originZ, ground, waterBucket, glassBucket, glowBucket,
+                    lampBucket);
+            List<RemixMeshSurface> surfaces = new ArrayList<>(5);
             ground.addSurface(surfaces, solid);
             if (waterBucket != ground) waterBucket.addSurface(surfaces, water);
             if (glassBucket != ground) glassBucket.addSurface(surfaces, glass);
             if (glowBucket != ground) glowBucket.addSurface(surfaces, glow);
+            if (lampBucket != ground) lampBucket.addSurface(surfaces, lamp);
             return surfaces.isEmpty() ? null : new RemixMesh(surfaces.toArray(new RemixMeshSurface[0]));
         } finally {
             ground.release();
             waterBucket.release();
             glassBucket.release();
             glowBucket.release();
+            lampBucket.release();
         }
     }
 
     static void convert(LodGeometry geometry, Clip clip, int originX, int originZ,
                         Bucket ground, Bucket water) {
-        convert(geometry, clip, originX, originZ, ground, water, ground, ground);
+        convert(geometry, clip, originX, originZ, ground, water, ground, ground, ground);
     }
 
     static void convert(LodGeometry geometry, Clip clip, int originX, int originZ,
-                        Bucket ground, Bucket water, Bucket glass, Bucket glow) {
+                        Bucket ground, Bucket water, Bucket glass, Bucket glow, Bucket lamp) {
         ByteBuffer data = geometry.data.duplicate().order(ByteOrder.LITTLE_ENDIAN);
         for (int quad = 0; quad < geometry.quadCount; quad++) {
             int base = quad * DH_QUAD_BYTES;
@@ -235,8 +240,10 @@ final class LodMeshBuilder {
             Bucket bucket;
             if (material == WATER_MATERIAL) {
                 bucket = water;
-            } else if (material == LAVA_MATERIAL || material == ILLUMINATED_MATERIAL) {
+            } else if (material == LAVA_MATERIAL) {
                 bucket = glow;
+            } else if (material == ILLUMINATED_MATERIAL) {
+                bucket = lamp;
             } else if (quad >= geometry.opaqueQuads) {
                 bucket = glass;
             } else {

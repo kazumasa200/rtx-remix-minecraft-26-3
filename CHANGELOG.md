@@ -17,6 +17,12 @@ also part of every mod file name.
   path-traced scene, which saves GPU memory and acceleration-structure work;
   they come back once you go underground (#21).
 
+### Fixed
+
+- Distant Horizons: torches and other glowing blocks beyond the vanilla
+  render distance glow softly instead of lighting whole rooftops white at
+  night; lava keeps its full glow (#23).
+
 ## 0.4.0-pre.2 - 2026-11-03
 
 ### Added

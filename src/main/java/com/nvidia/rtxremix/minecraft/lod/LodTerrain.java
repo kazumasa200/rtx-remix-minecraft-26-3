@@ -72,6 +72,9 @@ public final class LodTerrain {
     private static final float GLASS_IOR = 1.52f;
     /** A glass face's thickness; its transmittance is measured over the same, so a face passes its tint once. */
     private static final float GLASS_WALL = 0.05f;
+    /** Share of the terrain's emission at which blocks that give off light, lava aside, glow. */
+    private static final float LAMP_EMISSION = Math.max(0f,
+            Float.parseFloat(System.getProperty("rtxremix.lod.lampEmission", "0.2")));
     /**
      * Low-priority threads building meshes. One fell some eighty sections behind a camera
      * flying across the city, and the sections it had not reached showed LOD ground over
@@ -160,6 +163,7 @@ public final class LodTerrain {
     private RemixTexture palette;
     private RemixMaterial glassMaterial;
     private RemixMaterial glowMaterial;
+    private RemixMaterial lampMaterial;
 
     public LodTerrain(PerformanceTimer timer) {
         this.timer = timer;
@@ -270,8 +274,10 @@ public final class LodTerrain {
     private void destroyPaletteMaterials() {
         if (glassMaterial != null && !glassMaterial.isDeleted()) glassMaterial.destroy();
         if (glowMaterial != null && !glowMaterial.isDeleted()) glowMaterial.destroy();
+        if (lampMaterial != null && !lampMaterial.isDeleted()) lampMaterial.destroy();
         glassMaterial = null;
         glowMaterial = null;
+        lampMaterial = null;
     }
 
     private void setCapturing(boolean on) {
@@ -580,6 +586,7 @@ public final class LodTerrain {
         if (ground == null) return;
         RemixMaterial glass = glassMaterial();
         RemixMaterial glow = textures != null ? glowMaterial(textures.terrainEmissionIntensity()) : null;
+        RemixMaterial lamp = textures != null ? lampMaterial(textures.terrainEmissionIntensity()) : null;
 
         while (buildsInFlight < MAX_BUILDS_IN_FLIGHT && !buildQueue.isEmpty()) {
             LodSection section = buildQueue.poll();
@@ -602,7 +609,7 @@ public final class LodTerrain {
                 Throwable failure = null;
                 try {
                     mesh = LodMeshBuilder.build(geometry, buildClip, section.minX, section.minZ,
-                            ground, water, glass, glow);
+                            ground, water, glass, glow, lamp);
                 } catch (Throwable t) {
                     failure = t;
                 } finally {
@@ -781,9 +788,26 @@ public final class LodTerrain {
         return glassMaterial;
     }
 
-    /** Lava and blocks that give off light glow in their own colour at the terrain's emission. */
+    /** Lava glows in its own colour at the terrain's emission. */
     private RemixMaterial glowMaterial(float intensity) {
         if (glowMaterial != null && !glowMaterial.isDeleted()) return glowMaterial;
+        glowMaterial = paletteGlow(intensity, "glow");
+        return glowMaterial;
+    }
+
+    /**
+     * Other blocks that give off light glow at {@link #LAMP_EMISSION} of the terrain's emission.
+     * The LOD mod draws an area of many blocks as one of them, so a rooftop torch became a box
+     * several blocks across, which at the full emission lit the roofs around and bloomed to
+     * white (#23); the block's own texture glows only where its flame is.
+     */
+    private RemixMaterial lampMaterial(float intensity) {
+        if (lampMaterial != null && !lampMaterial.isDeleted()) return lampMaterial;
+        lampMaterial = paletteGlow(intensity * LAMP_EMISSION, "lamp");
+        return lampMaterial;
+    }
+
+    private RemixMaterial paletteGlow(float intensity, String name) {
         RemixTexture texture = palette();
         if (texture == null) return null;
         try {
@@ -798,11 +822,10 @@ public final class LodTerrain {
                             .metallicConstant(0f)
                             .build())
                     .build();
-            glowMaterial = RemixMaterialStore.get().create(new RemixMaterial(info, List.of(texture), null));
+            return RemixMaterialStore.get().create(new RemixMaterial(info, List.of(texture), null));
         } catch (RuntimeException e) {
-            LOGGER.error("Failed to create the LOD glow material", e);
-            glowMaterial = null;
+            LOGGER.error("Failed to create the LOD {} material", name, e);
+            return null;
         }
-        return glowMaterial;
     }
 }

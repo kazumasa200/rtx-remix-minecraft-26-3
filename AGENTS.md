@@ -400,9 +400,13 @@ ground as vertex colour over a white texel. The runtime takes emission and a
 translucent surface's transmittance only from textures, so lava and glowing
 blocks (the LOD mod's `LAVA` and `ILLUMINATED` materials) and its translucent
 buffer (glass, ice) carry their colour as coordinates into a palette texture of
-every colour at five bits a channel (`LodPalette`): the former glow at the
-terrain's emission, the latter are thin-walled glass tinted by the block's hue.
-Drawn as plain ground, glass stood as pale solid blocks and lava did not glow.
+every colour at five bits a channel (`LodPalette`): lava glows at the terrain's
+emission and the other glowing blocks at a fifth of it (`LodTerrain.LAMP_EMISSION`),
+and the translucent buffer is thin-walled glass tinted by the block's hue. Drawn as plain
+ground, glass stood as pale solid blocks and lava did not glow. The LOD mod
+draws an area of many blocks as one of them, so a rooftop torch became a box
+several blocks across, which at the full emission lit the roofs around and
+bloomed to white.
 The LOD mod names a material by block id before it asks about light, so
 glowstone and lit redstone lamps came out as stone; every block that gives off
 light, liquids aside, is marked illuminated through its block-state event
