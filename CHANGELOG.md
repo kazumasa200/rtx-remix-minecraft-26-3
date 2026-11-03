@@ -11,6 +11,8 @@ also part of every mod file name.
 
 ## Unreleased
 
+## 0.4.0-pre.2 - 2026-11-03
+
 ### Added
 
 - On Windows, avoid Vulkan startup failures on systems that cannot share the
@@ -32,6 +34,8 @@ also part of every mod file name.
 - A lightning bolt flashes over the whole land and sky, day or night, instead of
   lighting only the ground beside the strike; the camera's exposure no longer
   cancels the flash.
+- Terrain appears much sooner when many chunks load at once, such as when Bobby
+  loads its cached chunks while you fly.
 
 ### Fixed
 
