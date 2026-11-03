@@ -40,6 +40,7 @@ also part of every mod file name.
   keeps beyond the render distance are no longer kept in the path-traced scene.
 - With Sodium, building a chunk whose blocks draw through the Fabric renderer,
   as Continuity's connected textures do, no longer crashes the game.
+- Seen from under water, a dirt path's sides no longer show through.
 - Distant land, such as Distant Horizons' LOD buildings, no longer shows through
   a nearby torch's glow as pale outlines at night, and the torch's flame no
   longer vanishes against it.

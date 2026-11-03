@@ -47,6 +47,13 @@ class BlockQuadEmitterSharedFaceTest {
     }
 
     @Test
+    void waterMeetsADirtPathSide() {
+        // The water's side face lies on the path's own; it moves into the path (#20).
+        assertTrue(BlockQuadEmitter.meetsNeighbourFace(
+                Blocks.WATER.defaultBlockState(), Blocks.DIRT_PATH.defaultBlockState(), Direction.EAST));
+    }
+
+    @Test
     void touchingCutoutLeavesMeetEachOther() {
         assertTrue(BlockQuadEmitter.meetsNeighbourFace(LEAVES, LEAVES, Direction.UP));
     }

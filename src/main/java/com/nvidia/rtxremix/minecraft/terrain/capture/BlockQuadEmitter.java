@@ -949,6 +949,7 @@ public final class BlockQuadEmitter {
         }
 
         // Side faces
+        BlockState fluidBlock = getCachedBlockState(world, fluidPos.getX(), fluidPos.getY(), fluidPos.getZ());
         for (Direction dir : HORIZONTAL_DIRECTIONS) {
             fluidCheckPos.set(
                 fluidPos.getX() + dir.getStepX(),
@@ -985,6 +986,17 @@ public final class BlockQuadEmitter {
                             lx, ly + sideH1, lz + 1, lx, ly + sideH0, lz);
                 }
                 default -> { continue; }
+            }
+
+            // Against a block short of a full cube (a dirt path) the side lies on the block's
+            // own face, and from under water the ray restarted past the translucent side
+            // carried on past that face too, so the block showed hollow. Moved into the
+            // block, as see-through block faces are, the block's face is met first.
+            if (meetsNeighbourFace(fluidBlock, sideState, dir)) {
+                for (int v = 0; v < 4; v++) {
+                    tempPositions[v * 3] += dir.getStepX() * SHARED_FACE_PUSH;
+                    tempPositions[v * 3 + 2] += dir.getStepZ() * SHARED_FACE_PUSH;
+                }
             }
 
             float fnx = dir.getStepX(), fny = 0, fnz = dir.getStepZ();
