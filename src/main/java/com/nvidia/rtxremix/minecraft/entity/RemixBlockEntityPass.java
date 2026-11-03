@@ -13,6 +13,7 @@ import java.util.List;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher;
 import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -92,6 +93,7 @@ public final class RemixBlockEntityPass {
         ctx.begin(true);
         List<RemixVertexConsumerProvider.CapturedLayer> layers;
         try {
+            collector.setBlockOrigin(be.getBlockPos());
             dispatcher.submit(state, matrices, collector, camera);
             layers = provider.endEntity();
         } catch (Exception e) {
@@ -103,6 +105,7 @@ public final class RemixBlockEntityPass {
             // one look nested. The bone count stays readable for the snapshot below.
             matrices.reset();
             ctx.reset();
+            collector.setBlockOrigin(BlockPos.ZERO);
         }
         frameCaptureNanos += System.nanoTime() - captureStart;
         if (layers.isEmpty()) {

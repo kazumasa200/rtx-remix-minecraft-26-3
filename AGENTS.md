@@ -625,7 +625,11 @@ keyed by owner, category, layer, and part; strips and beams stream transient
 meshes per frame. `OverlayComposite` paints cutout overlay layers, such as a
 villager's profession, a sheep's wool or a GeckoLib model's layer drawn again
 vertex by vertex, into a copy of the body texture so they do not render black. `RemixBlockDamagePass` submits static terrain damage
-decals. `CopperBeaconBlockEntityRenderer` submits the articulated beacon model;
+decals. Vanilla draws the End portal's and gateway's starfield in a shader from
+screen position, with position-only faces; `EndPortalFaces` lays vanilla's layers
+along the face in world space instead, the stars glowing over a dark sky and
+drifting with the day, and sinks a portal's layers to different depths inside its
+block so they part as the camera moves. `CopperBeaconBlockEntityRenderer` submits the articulated beacon model;
 the mount stays in terrain. `CopperBeaconPose` is shared with the per-frame disk
 light. Server-authoritative block-entity state owns the axis parameters and
 anchor tick; clients reconstruct motion from those and synchronized world time.

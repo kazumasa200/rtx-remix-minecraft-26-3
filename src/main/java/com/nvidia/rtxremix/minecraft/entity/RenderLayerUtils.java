@@ -15,6 +15,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.WeakHashMap;
 import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.renderer.blockentity.AbstractEndPortalRenderer;
 import net.minecraft.client.renderer.rendertype.RenderSetup;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.resources.Identifier;
@@ -158,7 +159,11 @@ final class RenderLayerUtils {
         RenderPipeline pipeline = layer.pipeline();
         boolean beaconBeamProgram = pipeline == RenderPipelines.BEACON_BEAM_OPAQUE
                 || pipeline == RenderPipelines.BEACON_BEAM_TRANSLUCENT;
-        return classifyStreamedPerFrame(topology(layer).orElse(Topology.QUADS), beaconBeamProgram);
+        // The End portal's stars drift with the day too (EndPortalFaces).
+        boolean endPortalStars = extractTexture(layer)
+                .filter(AbstractEndPortalRenderer.END_PORTAL_LOCATION::equals).isPresent();
+        return classifyStreamedPerFrame(topology(layer).orElse(Topology.QUADS),
+                beaconBeamProgram || endPortalStars);
     }
 
     static boolean classifyStreamedPerFrame(Topology topology, boolean beaconBeamProgram) {

@@ -41,6 +41,9 @@ also part of every mod file name.
 - With Sodium, building a chunk whose blocks draw through the Fabric renderer,
   as Continuity's connected textures do, no longer crashes the game.
 - Seen from under water, a dirt path's sides no longer show through.
+- End portals and gateways show vanilla's drifting starfield instead of a dark
+  plane, with the stars glowing; a portal's stars lie at different depths, so
+  it looks deep as you move.
 - Distant land, such as Distant Horizons' LOD buildings, no longer shows through
   a nearby torch's glow as pale outlines at night, and the torch's flame no
   longer vanishes against it.
