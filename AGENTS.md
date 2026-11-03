@@ -303,6 +303,27 @@ the wrong mesh or none. The audit that finds them runs through light and
 retirement backpressure, which only holds back removals: a city's light backlog
 stopped it. The performance report counts every live Remix mesh, instance and
 material (`Remix.*`) against the GPU-resident scene's fixed capacities.
+While the camera is above ground, a column more than four chunks away builds
+without the sections that, with their six neighbours, hold no sky light and no
+fluid that runs up into sky light (`DeepCaveCull`, `Chunk.CulledCaveSections`):
+light inside a solid block reads zero, so the ground under open air would go if
+a section were judged alone, and the fluid keeps the sea floor that deep water
+leaves unlit while water held in rock does not. Block light does not count: a
+cave lit by lava or glow lichen is no more seen from above than a dark one.
+Most sections deep in rock hold no sky layer and read, as vanilla reads them,
+the bottom row of the first layer above. Light-only rebuilds are
+dropped (`ClientChunkManagerMixin`, `LightStorageMixin`), so a cave opened to
+the sky beside a column that did not change kept its sections out; a sky light
+change marks its column and the four beside it to be judged again once any
+build in flight is done (`SkippedSectionRebuilds.recordSkyLightChanged`). With
+Sodium, a camera above ground captures few cave sections, since its walk does
+not reach them; the cull matters once the camera has been underground, where
+they are captured and stay. Going
+underground (no sky light at the
+camera, or eight blocks of ground over it) rebuilds those columns whole, nearest
+first at the usual budget, after ten frames; coming up culls them again only
+after five seconds, so walking in and out of a cave mouth does not rebuild the
+view each time.
 Visibility is vanilla's `SectionOcclusionGraph`; the 1.21.1 allocation-free
 walk and coarse frustum index were not ported. Vanilla compiles a section only
 once it is in view, and the path tracer needs the ground behind and beside the

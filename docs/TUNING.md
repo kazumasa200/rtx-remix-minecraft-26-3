@@ -87,6 +87,8 @@ per-frame budgets.
 | `rtxremix.chunk.maxPendingMeshBytes` | Bytes of merged but not yet installed geometry | `ChunkManager` |
 | `rtxremix.chunk.captureDrainBudgetNs` | Render-thread time per frame spent taking section captures, in `blockDataQueue.maxDrainItems` batches, 2 ms by default | `ChunkManager` |
 | `rtxremix.chunk.maxCapturesPerFrame` | Section captures taken per frame at most, 256 by default | `ChunkManager` |
+| `rtxremix.chunk.deepCaveCull` | `false` keeps unlit cave sections in distant columns' meshes while the camera is above ground | `DeepCaveCull` |
+| `rtxremix.chunk.deepCaveNearChunks` | Chunks around the camera whose columns keep their unlit cave sections, 4 by default | `DeepCaveCull` |
 | `rtxremix.chunk.installBudgetNs` | Render-thread time per frame spent installing columns | `ChunkManager` |
 | `rtxremix.chunk.maxInstalledColumnsPerFrame` | Columns published per frame | `ChunkManager` |
 | `rtxremix.chunk.columnStreamSettleFrames` | Frames a column waits for its neighbours before publishing | `ChunkManager` |

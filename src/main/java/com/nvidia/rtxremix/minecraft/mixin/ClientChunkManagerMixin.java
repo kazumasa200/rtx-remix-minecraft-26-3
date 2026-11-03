@@ -50,6 +50,7 @@ public abstract class ClientChunkManagerMixin {
     private void rtxremix$skipLightOnlyRebuild(LightLayer type, SectionPos pos, CallbackInfo ci) {
         if (RtxRemixMod.isRtxEnabled()) {
             SkippedSectionRebuilds.recordLightOnly();
+            if (type == LightLayer.SKY) SkippedSectionRebuilds.recordSkyLightChanged(pos.asLong());
             ci.cancel();
         }
     }

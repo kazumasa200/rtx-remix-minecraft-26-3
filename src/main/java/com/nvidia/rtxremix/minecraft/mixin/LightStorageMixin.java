@@ -97,6 +97,9 @@ public abstract class LightStorageMixin<M extends DataLayerStorageMap<M>> implem
                 visibleSectionData = updatingSectionData;
                 changedSections.clear();
                 SkippedSectionRebuilds.recordLightOnly(sectionsAffectedByLightUpdates.size());
+                if (layer == LightLayer.SKY) {
+                    sectionsAffectedByLightUpdates.forEach(SkippedSectionRebuilds::recordSkyLightChanged);
+                }
                 sectionsAffectedByLightUpdates.clear();
                 ci.cancel();
             }

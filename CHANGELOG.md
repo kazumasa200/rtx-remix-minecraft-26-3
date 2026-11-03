@@ -11,6 +11,12 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Changed
+
+- Above ground, unlit caves deep in distant terrain are left out of the
+  path-traced scene, which saves GPU memory and acceleration-structure work;
+  they come back once you go underground (#21).
+
 ## 0.4.0-pre.2 - 2026-11-03
 
 ### Added

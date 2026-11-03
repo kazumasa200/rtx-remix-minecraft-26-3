@@ -100,6 +100,13 @@ public class ChunkManager {
     private final ArrayList<ColumnRenderState> dirtyBuildScratch = new ArrayList<>();
 
     private ClientLevel currentWorld;
+    private final DeepCaveCull caveCull = new DeepCaveCull();
+    private DeepCaveCull.LevelDarkness caveDarkness;
+    private ClientLevel caveDarknessWorld;
+    private int caveCullCx = Integer.MIN_VALUE;
+    private int caveCullCz = Integer.MIN_VALUE;
+    /** Sections the published columns leave out, held with the other gauges. */
+    private int heldCulledCaveSections;
     /**
      * Live count of pages across every render column, maintained where activePages changes.
      * Published through {@link TerrainDiagnostics#retainedPages()} as Chunk.RetainedPages,
@@ -475,6 +482,12 @@ public class ChunkManager {
         boolean urgentBuild;
         long dirtySinceFrame = Long.MIN_VALUE;
         long settleUntilFrame;
+        /** Whether the last build found sections {@link DeepCaveCull} would leave out. */
+        boolean hasDarkSections;
+        /** Sections the last build left out. */
+        int culledSections;
+        /** Set when sky light changed since the last build judged the cull; see {@link #updateCaveCull}. */
+        boolean cullStale;
 
         ColumnRenderState(long key, int cx, int cz) {
             this.key = key;
@@ -572,7 +585,7 @@ public class ChunkManager {
             cntKnownSections, cntColumns, cntPublishedColumns, cntGeometryColumns,
             cntMissingColumns, cntMissingSections, cntRetainedPages,
             cntPagesInstalled, cntInstallBytes, cntInstancesAdded, cntInstancesRemoved,
-            cntMeshesDestroyed;
+            cntMeshesDestroyed, cntCulledCaveSections, cntUnderground;
     private int cntFloodIncrementalUs;
     private int perfBfs = -1;
     private volatile TerrainDiagnostics lastTerrainDiagnostics = TerrainDiagnostics.EMPTY;
@@ -816,6 +829,8 @@ public class ChunkManager {
                 cntInstancesAdded = timer.registerCounter("Chunk.InstancesAdded");
                 cntInstancesRemoved = timer.registerCounter("Chunk.InstancesRemoved");
                 cntMeshesDestroyed = timer.registerCounter("Chunk.MeshesDestroyed");
+                cntCulledCaveSections = timer.registerCounter("Chunk.CulledCaveSections");
+                cntUnderground = timer.registerCounter("Chunk.Underground");
                 perfBfs      = timer.registerSection("Chunk.BFS");
             }
 
@@ -832,6 +847,7 @@ public class ChunkManager {
                         (int) Math.floor(cam.y),
                         (int) Math.floor(cam.z));
                 syncLightCullDistance();
+                updateCaveCull(pcx, pcz, cam);
 
                 long maintenanceDeadline = System.nanoTime() + MAINTENANCE_TIME_BUDGET_NS;
                 drainColumnUnloads(maintenanceDeadline, pcx, pcz);
@@ -887,6 +903,8 @@ public class ChunkManager {
                 timer.count(cntMissingColumns, diag.columnsMissingGeometry());
                 timer.count(cntMissingSections, diag.missingGeometrySections());
                 timer.count(cntRetainedPages, diag.retainedPages());
+                timer.count(cntCulledCaveSections, heldCulledCaveSections);
+                timer.count(cntUnderground, caveCull.underground() ? 1 : 0);
 
                 retirementQueue.drainFrame();
 
@@ -1395,7 +1413,8 @@ public class ChunkManager {
             boolean streamSettled = terrainFrame >= state.settleUntilFrame;
             boolean maxWaitElapsed = state.dirtySinceFrame != Long.MIN_VALUE
                     && terrainFrame - state.dirtySinceFrame >= COLUMN_STREAM_MAX_WAIT_FRAMES;
-            if (state.dirtyMask != 0 && !state.buildInFlight
+            if ((state.dirtyMask != 0 || state.cullStale && state.hasPublishedState)
+                    && !state.buildInFlight
                     && (state.urgentBuild || streamSettled || maxWaitElapsed)) {
                 dirtyBuildScratch.add(state);
             }
@@ -1417,8 +1436,9 @@ public class ChunkManager {
             if (column == null || column.isEmpty()) continue;
 
             List<TerrainState.SectionSnapshot> snapshots = terrain.createSnapshot(column);
+            cullDeepSections(state, snapshots, playerCx, playerCz);
             int[] fingerprints = columnCategoryFingerprints(snapshots);
-            int requestedMask = state.dirtyMask;
+            int requestedMask = state.dirtyMask | (state.cullStale ? (1 << CAT_COUNT) - 1 : 0);
             int buildMask = requestedMask;
             if (state.hasPublishedState) {
                 for (int category = 0; category < CAT_COUNT; category++) {
@@ -1431,6 +1451,7 @@ public class ChunkManager {
             }
             if (buildMask == 0) {
                 state.dirtyMask &= ~requestedMask;
+                state.cullStale = false;
                 clearDirtyTimingIfClean(state);
                 state.publishedTopSectionY = topSectionY(column);
                 publish(state);
@@ -1456,6 +1477,7 @@ public class ChunkManager {
             // released (retain throws) leaves nothing to unwind.
             retainSnapshots(snapshots);
             state.dirtyMask &= ~requestedMask;
+            state.cullStale = false;
             clearDirtyTimingIfClean(state);
             state.buildInFlight = true;
             pendingResults.incrementAndGet();
@@ -1490,6 +1512,71 @@ public class ChunkManager {
             }
         }
         dirtyBuildScratch.clear();
+    }
+
+    /**
+     * Rebuilds the columns whose deep-cave cull changes: every column with dark sections beyond
+     * the near box when the camera goes underground or comes up, and those that cross the box's
+     * edge when the camera crosses a chunk. The builds queue at the usual budget, nearest first.
+     */
+    private void updateCaveCull(int pcx, int pcz, Vec3 cam) {
+        if (!DeepCaveCull.ENABLED || currentWorld == null) {
+            SkippedSectionRebuilds.drainSkyLightColumns(key -> { });
+            return;
+        }
+        boolean flipped = caveCull.updateUnderground(DeepCaveCull.cameraUnderground(currentWorld,
+                (int) Math.floor(cam.x), (int) Math.floor(cam.y), (int) Math.floor(cam.z)));
+        int oldCx = caveCullCx;
+        int oldCz = caveCullCz;
+        boolean moved = pcx != oldCx || pcz != oldCz;
+        caveCullCx = pcx;
+        caveCullCz = pcz;
+        int allCategories = (1 << CAT_COUNT) - 1;
+        // Sky light that changed without a block change, as when a cave beside a column opens,
+        // rebuilds nothing, and a section is judged with its side neighbours, so the column and
+        // the four beside it are judged again once any build in flight is done. Marking them
+        // dirty would throw that build away.
+        SkippedSectionRebuilds.drainSkyLightColumns(key -> {
+            int cx = (int) (key >> 32);
+            int cz = (int) key;
+            for (int i = 0; i < 5; i++) {
+                int nx = cx + (i == 1 ? 1 : i == 2 ? -1 : 0);
+                int nz = cz + (i == 3 ? 1 : i == 4 ? -1 : 0);
+                ColumnRenderState state = renderColumns.get(packChunkKey(nx, nz));
+                if (state != null && !DeepCaveCull.near(nx, nz, pcx, pcz)) state.cullStale = true;
+            }
+        });
+        if (!flipped && !(moved && caveCull.active())) return;
+        for (ColumnRenderState state : renderColumns.values()) {
+            if (!state.hasDarkSections) continue;
+            boolean nearNow = DeepCaveCull.near(state.cx, state.cz, pcx, pcz);
+            boolean rebuild = flipped
+                    ? !nearNow
+                    : nearNow != DeepCaveCull.near(state.cx, state.cz, oldCx, oldCz);
+            if (rebuild) markColumnDirty(state.cx, state.cz, allCategories, false);
+        }
+    }
+
+    /** Removes from a column's build the sections {@link DeepCaveCull} leaves out. */
+    private void cullDeepSections(ColumnRenderState state,
+                                  List<TerrainState.SectionSnapshot> snapshots, int pcx, int pcz) {
+        state.hasDarkSections = false;
+        state.culledSections = 0;
+        if (!DeepCaveCull.ENABLED || currentWorld == null) return;
+        if (caveDarknessWorld != currentWorld) {
+            caveDarkness = new DeepCaveCull.LevelDarkness(currentWorld);
+            caveDarknessWorld = currentWorld;
+        }
+        boolean cull = caveCull.active() && !DeepCaveCull.near(state.cx, state.cz, pcx, pcz);
+        for (int i = snapshots.size() - 1; i >= 0; i--) {
+            if (!DeepCaveCull.culled(caveDarkness, state.cx, snapshots.get(i).yOff() >> 4, state.cz)) {
+                continue;
+            }
+            state.hasDarkSections = true;
+            if (!cull) return;
+            snapshots.remove(i);
+            state.culledSections++;
+        }
     }
 
     private void installReadyMeshes(RemixAPI api) {
@@ -1928,16 +2015,19 @@ public class ChunkManager {
         int withGeometry = 0;
         int missing = 0;
         int missingSections = 0;
+        int culledCaveSections = 0;
         for (TerrainState.ChunkColumn column : terrain.columns()) {
             ColumnRenderState state = renderColumns.get(packChunkKey(column.cx, column.cz));
             if (state != null && state.hasPublishedState) {
                 published++;
                 if (state.hasGeometry()) withGeometry++;
+                culledCaveSections += state.culledSections;
             } else {
                 missing++;
                 missingSections += column.sectionCount();
             }
         }
+        heldCulledCaveSections = culledCaveSections;
         lastTerrainDiagnostics = new TerrainDiagnostics(
                 terrain.columnCount(), published, withGeometry, missing,
                 missingSections, retainedPageCount, terrain.sectionCount(),
@@ -2138,6 +2228,8 @@ public class ChunkManager {
         clearLightWork();
         retirementQueue.clear();
         currentWorld = null;
+        caveDarkness = null;
+        caveDarknessWorld = null;
         for (int i = pendingCaptureIndex; i < pending.size(); i++) {
             releaseMeshData(pending.get(i).data());
         }
