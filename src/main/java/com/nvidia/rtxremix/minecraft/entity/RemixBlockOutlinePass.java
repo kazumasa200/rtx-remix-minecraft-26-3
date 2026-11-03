@@ -15,6 +15,7 @@ import com.nvidia.rtxremix.minecraft.asset.RemixMaterialStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixMesh;
 import com.nvidia.rtxremix.minecraft.asset.RemixMeshStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixMeshSurface;
+import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import net.minecraft.client.renderer.state.level.BlockOutlineRenderState;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.Minecraft;
@@ -171,9 +172,9 @@ public final class RemixBlockOutlinePass implements AutoCloseable {
         RemixMeshStore.get().create(outlineMesh);
 
         instanceTransform.setTranslation(
-                (float) outline.cameraX(),
-                (float) outline.cameraY(),
-                (float) outline.cameraZ());
+                SceneSpace.x(outline.cameraX()),
+                SceneSpace.y(outline.cameraY()),
+                SceneSpace.z(outline.cameraZ()));
         api.drawInstance(
                 outlineMesh.getHandle(),
                 instanceTransform.matrix,

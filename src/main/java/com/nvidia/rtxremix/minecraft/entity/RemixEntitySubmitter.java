@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
+import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
 import com.nvidia.rtxremix.minecraft.texture.AtlasSprites;
 import com.nvidia.rtxremix.minecraft.texture.ParticleAtlasManager;
@@ -2840,7 +2841,7 @@ public class RemixEntitySubmitter {
     }
 
     private Transform buildWorldTransform(Vec3 pos) {
-        reusableWorldTransform.setTranslation((float) pos.x, (float) pos.y, (float) pos.z);
+        reusableWorldTransform.setTranslation(SceneSpace.x(pos.x), SceneSpace.y(pos.y), SceneSpace.z(pos.z));
         return reusableWorldTransform;
     }
 

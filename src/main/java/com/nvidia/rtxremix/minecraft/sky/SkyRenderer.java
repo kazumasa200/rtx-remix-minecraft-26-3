@@ -26,6 +26,7 @@ import com.nvidia.rtxremix.TexturePatchInfo;
 import com.nvidia.rtxremix.TexturePurpose;
 import com.nvidia.rtxremix.Transform;
 import com.nvidia.rtxremix.minecraft.RemixRenderer;
+import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import com.nvidia.rtxremix.minecraft.cloud.CloudRenderer;
 import com.nvidia.rtxremix.minecraft.asset.RemixAssetBase;
 import com.nvidia.rtxremix.minecraft.asset.RemixLight;
@@ -103,7 +104,11 @@ public class SkyRenderer {
 
     /** Sky ambient rect light: Y position just above the 1.18+ overworld build limit (y=320). */
     private static final float SKY_AMBIENT_RECT_Y = 325.0f;
-    /** Sky ambient rect light: half-size in blocks, so it covers 8000 blocks from origin. */
+    /**
+     * Sky ambient rect light: half-size in blocks, so it covers 8000 blocks from the scene
+     * origin ({@link SceneSpace}), which the camera never leaves by more than 6144; centred on
+     * world zero, it stopped covering the camera 8000 blocks out.
+     */
     private static final float SKY_AMBIENT_RECT_HALF_SIZE = 8000.0f;
     /**
      * Constant sky for the End, in the atmospheric dome's radiance units: vanilla end_sky.png's
@@ -961,15 +966,15 @@ public class SkyRenderer {
         transform.matrix[0] = rx * halfSize;
         transform.matrix[1] = ux * halfSize;
         transform.matrix[2] = dx;
-        transform.matrix[3] = (float) cameraPos.x + dx * CELESTIAL_DISTANCE;
+        transform.matrix[3] = SceneSpace.x(cameraPos.x) + dx * CELESTIAL_DISTANCE;
         transform.matrix[4] = ry * halfSize;
         transform.matrix[5] = uy * halfSize;
         transform.matrix[6] = dy;
-        transform.matrix[7] = (float) cameraPos.y + dy * CELESTIAL_DISTANCE;
+        transform.matrix[7] = SceneSpace.y(cameraPos.y) + dy * CELESTIAL_DISTANCE;
         transform.matrix[8] = rz * halfSize;
         transform.matrix[9] = uz * halfSize;
         transform.matrix[10] = dz;
-        transform.matrix[11] = (float) cameraPos.z + dz * CELESTIAL_DISTANCE;
+        transform.matrix[11] = SceneSpace.z(cameraPos.z) + dz * CELESTIAL_DISTANCE;
     }
 
     private static void updateStarTransform(
@@ -981,9 +986,9 @@ public class SkyRenderer {
                 .rotateY(-(float) Math.PI / 2.0f)
                 .rotateX(skyAngle * (float) (Math.PI * 2.0));
         Transform rotated = Transform.fromTRS(
-                (float) cameraPos.x,
-                (float) cameraPos.y,
-                (float) cameraPos.z,
+                SceneSpace.x(cameraPos.x),
+                SceneSpace.y(cameraPos.y),
+                SceneSpace.z(cameraPos.z),
                 rotation,
                 STAR_DISTANCE_SCALE);
         System.arraycopy(rotated.matrix, 0, transform.matrix, 0, transform.matrix.length);

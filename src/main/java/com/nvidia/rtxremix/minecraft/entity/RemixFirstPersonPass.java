@@ -8,6 +8,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nvidia.rtxremix.InstanceCategoryBit;
 import com.nvidia.rtxremix.Transform;
+import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import com.nvidia.rtxremix.minecraft.lens.FlareSources;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import org.joml.Matrix4f;
@@ -259,12 +260,14 @@ public final class RemixFirstPersonPass implements AutoCloseable {
         }
     }
 
+    /** A point of a scene-space transform, back in world space for the light and the lens. */
     static Vec3 transformPoint(Transform transform, float x, float y, float z) {
         float[] m = transform.matrix;
+        SceneSpace.Origin origin = SceneSpace.current();
         return new Vec3(
-                m[0] * x + m[1] * y + m[2] * z + m[3],
+                origin.worldX(m[0] * x + m[1] * y + m[2] * z + m[3]),
                 m[4] * x + m[5] * y + m[6] * z + m[7],
-                m[8] * x + m[9] * y + m[10] * z + m[11]);
+                origin.worldZ(m[8] * x + m[9] * y + m[10] * z + m[11]));
     }
 
     private float[] snapshotCorrectedBones(EntityRenderContext context,
@@ -317,7 +320,8 @@ public final class RemixFirstPersonPass implements AutoCloseable {
 
     /**
      * Builds an object-to-world transform whose local axes match Minecraft's
-     * camera space: +X right, +Y up, and -Z forward.
+     * camera space: +X right, +Y up, and -Z forward. Its translation is in scene
+     * space ({@link SceneSpace}), as everything handed to Remix is.
      */
     private static void setCameraToWorld(Camera camera, Transform transform) {
         Vec3 pos = camera.position();
@@ -339,15 +343,15 @@ public final class RemixFirstPersonPass implements AutoCloseable {
         transform.set(0, 0, rightX);
         transform.set(0, 1, upX);
         transform.set(0, 2, -forwardX);
-        transform.set(0, 3, (float) pos.x);
+        transform.set(0, 3, SceneSpace.x(pos.x));
         transform.set(1, 0, rightY);
         transform.set(1, 1, upY);
         transform.set(1, 2, -forwardY);
-        transform.set(1, 3, (float) pos.y);
+        transform.set(1, 3, SceneSpace.y(pos.y));
         transform.set(2, 0, rightZ);
         transform.set(2, 1, upZ);
         transform.set(2, 2, -forwardZ);
-        transform.set(2, 3, (float) pos.z);
+        transform.set(2, 3, SceneSpace.z(pos.z));
     }
 
     @Override

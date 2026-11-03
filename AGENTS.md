@@ -155,6 +155,26 @@ lights over raw `long` handles from the JNI wrapper. `JoinBurstHold` keeps
 vanilla's terrain-download screen up for a bounded wait for stable frames after
 a world join, hiding first-sight mesh, pipeline, and BLAS costs without holding
 the screen indefinitely.
+Remix traces rays in float32, and at x = 40 000 a float step is 0.004 blocks:
+rays slipped past the ground under leaf litter, a grass side's overlay fought
+its face and the arm shook. So every position the mod hands to Remix is in
+scene space, world space less an origin on a 4096-block grid (`SceneSpace`, y
+never shifted). The origin is zero within 6144 blocks of spawn and otherwise
+moves to the camera, rounded to the grid, once the camera is 6144 from it on
+either axis; it moves at the head of `GameRenderer.extract`, before entities
+and the hands are captured, so a frame takes every position against one origin.
+A position re-sent each frame converts through `SceneSpace.x/y/z`; a retained
+instance is placed with `RemixInstance.setWorldTranslation` and writes its
+transform again on its first submit after a move, and the frame the origin
+moves `RemixInstanceStore.syncToOrigin` re-sends every one in the scene,
+staged and retiring terrain pages included, since the camera moves with the
+origin. Terrain block lights are built again as they are drawn
+(`TerrainLight.behindOrigin`), and the particle payload, prepared a frame
+earlier, is drawn shifted by the whole blocks the origin moved. The radiance
+caches, keyed on scene positions, start over. Culling, raycasts, the lens,
+flare sources and texture coordinates stay in world space. The Debug page's
+Offset Scene Origin moves the origin 4096 blocks even near spawn: anything
+handed over in world coordinates then vanishes, and toggling it runs a move.
 
 **Presentation.** `gl/RemixPresentationWindow` hosts Vulkan in a child of
 Minecraft's SDL/OpenGL window by default; `-Drtxremix.presentation=parent`
@@ -719,8 +739,12 @@ diluting the sampler's candidate pool.
   workers hand over CPU data through bounded, generation-tagged queues
   (`BlockDataQueue`, `ChunkManager`).
 - A retained instance is submitted where it is created or mutated, never once
-  per frame (`ChunkManager`, `RemixEntitySubmitter`, `LodTerrain`).
-- A prepared particle payload holds world-space vertices and a live bucket, so
+  per frame, and every one in the scene again the frame the scene origin moves
+  (`ChunkManager`, `RemixEntitySubmitter`, `LodTerrain`, `RemixInstanceStore`).
+- Every position handed to Remix is in scene space: converted through
+  `SceneSpace`, or a retained instance placed with `setWorldTranslation`, never
+  a world double cast to float (`SceneSpaceBoundaryTest`).
+- A prepared particle payload holds scene-space vertices and a live bucket, so
   every path that suspends or tears down rendering discards it rather than
   publishing it, including a world swap that keeps the connection alive
   (`RemixRenderer`).

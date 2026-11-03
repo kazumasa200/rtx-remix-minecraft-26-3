@@ -119,6 +119,7 @@ public abstract class GameRendererMixin {
     private void rtxremix$followRemixMenuVisibility(DeltaTracker deltaTracker, boolean advanceGameTime,
                                                     CallbackInfo ci) {
         RtxRemixMod.followRemixMenuVisibility();
+        RtxRemixMod.advanceSceneOrigin();
     }
 
     @Inject(method = "render", at = @At("RETURN"))

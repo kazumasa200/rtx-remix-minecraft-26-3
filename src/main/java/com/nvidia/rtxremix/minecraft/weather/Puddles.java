@@ -15,7 +15,6 @@ import com.nvidia.rtxremix.TextureFormat;
 import com.nvidia.rtxremix.TexturePatch;
 import com.nvidia.rtxremix.TexturePatchInfo;
 import com.nvidia.rtxremix.TexturePurpose;
-import com.nvidia.rtxremix.Transform;
 import com.nvidia.rtxremix.minecraft.asset.RemixAssetBase;
 import com.nvidia.rtxremix.minecraft.asset.RemixInstance;
 import com.nvidia.rtxremix.minecraft.asset.RemixInstanceStore;
@@ -219,7 +218,6 @@ public final class Puddles {
     private final float[] faceS = new float[3];
     private final float[] faceT = new float[3];
 
-    private final Transform transform = new Transform();
     private final BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
     /** The ring normals the materials were made with; a new one means the water was rebuilt. */
     private RemixTexture normals;
@@ -554,14 +552,13 @@ public final class Puddles {
             destroyAsset(tileInstance[t]);
             tileInstance[t] = null;
         } else {
-            transform.setTranslation(cornerX, 0.0f, cornerZ);
             if (tileInstance[t] == null) {
                 tileInstance[t] = RemixInstanceStore.get().create(new RemixInstance(tileMesh[t])
                         .setCategoryFlags(InstanceCategoryBit.DECAL_STATIC)
                         .setBlendExt(BLEND)
                         .setDoubleSided(true));
             }
-            tileInstance[t].setMesh(tileMesh[t]).setTransform(transform).drawFast(api);
+            tileInstance[t].setMesh(tileMesh[t]).setWorldTranslation(cornerX, 0.0, cornerZ).drawFast(api);
         }
         destroyAsset(previous);
     }

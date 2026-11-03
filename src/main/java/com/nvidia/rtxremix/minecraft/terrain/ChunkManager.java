@@ -22,6 +22,7 @@ import com.nvidia.rtxremix.minecraft.asset.RemixMeshStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixMaterialStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixMesh;
 import com.nvidia.rtxremix.minecraft.asset.RemixLightStore;
+import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import com.nvidia.rtxremix.minecraft.asset.RemixLight;
 import com.nvidia.rtxremix.minecraft.asset.RemixInstanceStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixInstance;
@@ -37,7 +38,6 @@ import com.nvidia.rtxremix.LightInfoLightShaping;
 import com.nvidia.rtxremix.LightInfoRectEXT;
 import com.nvidia.rtxremix.LightInfoSphereEXT;
 import com.nvidia.rtxremix.RemixAPI;
-import com.nvidia.rtxremix.Transform;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -919,7 +919,7 @@ public class ChunkManager {
 
             timer.begin(perfDraw);
             try (ProfileScope drawScope = ProfileScope.begin("Chunk.Draw")) {
-                drawScope.drawCalls(draw(api, timer, cam));
+                drawScope.drawCalls(draw(api, timer, cam, tex));
             } finally {
                 timer.end(perfDraw);
             }
@@ -1287,12 +1287,15 @@ public class ChunkManager {
     }
 
     private LightInfo buildBlockLightInfo(LightEntry entry, BlockLightRadiance radiance) {
+        float x = SceneSpace.x(entry.x());
+        float y = SceneSpace.y(entry.y());
+        float z = SceneSpace.z(entry.z());
         LightInfo.Builder builder = LightInfo.builder()
                 .radiance(radiance.r(), radiance.g(), radiance.b());
         return switch (entry.shape()) {
             case SPHERE -> {
                 LightInfoSphereEXT.Builder sphere = LightInfoSphereEXT.builder()
-                        .position(entry.x(), entry.y(), entry.z())
+                        .position(x, y, z)
                         .radius(entry.radius())
                         .volumetricRadianceScale(entry.volumetricRadianceScale());
                 // Spot lights: only sphere/rect/disk accept shaping in the Remix
@@ -1304,7 +1307,7 @@ public class ChunkManager {
             }
             case CYLINDER -> builder
                     .cylinderExt(LightInfoCylinderEXT.builder()
-                            .position(entry.x(), entry.y(), entry.z())
+                            .position(x, y, z)
                             .radius(entry.radius())
                             .axis(entry.axisX(), entry.axisY(), entry.axisZ())
                             .axisLength(entry.axisLength())
@@ -1313,7 +1316,7 @@ public class ChunkManager {
                     .build();
             case RECT -> builder
                     .rectExt(LightInfoRectEXT.builder()
-                            .position(entry.x(), entry.y(), entry.z())
+                            .position(x, y, z)
                             .xAxis(entry.xAxisX(), entry.xAxisY(), entry.xAxisZ())
                             .xSize(entry.xSize())
                             .yAxis(entry.yAxisX(), entry.yAxisY(), entry.yAxisZ())
@@ -1324,7 +1327,7 @@ public class ChunkManager {
                     .build();
             case DISK -> builder
                     .diskExt(LightInfoDiskEXT.builder()
-                            .position(entry.x(), entry.y(), entry.z())
+                            .position(x, y, z)
                             .xAxis(entry.xAxisX(), entry.xAxisY(), entry.xAxisZ())
                             .xRadius(entry.xSize())
                             .yAxis(entry.yAxisX(), entry.yAxisY(), entry.yAxisZ())
@@ -1692,7 +1695,7 @@ public class ChunkManager {
                 pages[pageIndex] = null;
 
                 instance = new RemixInstance(mesh)
-                        .setTransform(columnTransform(result.owner().cx, result.owner().cz))
+                        .setWorldTranslation(result.owner().cx * 16.0, 0.0, result.owner().cz * 16.0)
                         .setCategoryFlags(categoryFlags | InstanceCategoryBit.HIDDEN)
                         .setBlendExt(blendExtForCategory(category))
                         .setDoubleSided(true);
@@ -2036,7 +2039,7 @@ public class ChunkManager {
     }
 
     /** @return the number of native instance submits this pass made */
-    private int draw(RemixAPI api, PerformanceTimer t, Vec3 cam) {
+    private int draw(RemixAPI api, PerformanceTimer t, Vec3 cam, BlockTextureManager textures) {
         t.begin(perfBfs);
         try (ProfileScope bfsScope = ProfileScope.begin("BFS reachability")) {
             terrain.ensureReachabilityOnce();
@@ -2095,6 +2098,15 @@ public class ChunkManager {
                     for (int lightIndex = 0; lightIndex < lights.size(); lightIndex++) {
                         TerrainLight light = lights.get(lightIndex);
                         if (light.shouldDraw(cam.x, cam.y, cam.z, threshold, terrainFrame)) {
+                            // A light's position is fixed in scene space when it is built, and the
+                            // runtime cannot move one, so it is built again once the origin has moved;
+                            // only the lights drawn pay, the rest when they are next drawn.
+                            LightEntry source = light.source();
+                            if (source != null && light.behindOrigin()) {
+                                BlockLightRadiance radiance = blockLightRadiance(source, textures);
+                                RemixLightStore.get().update(light.light, buildBlockLightInfo(source, radiance));
+                                light.place(source, light.power());
+                            }
                             light.light.drawFast(api);
                             light.offerFlare(cam.x, cam.y, cam.z);
                             lightsDrawn++;
@@ -2265,11 +2277,6 @@ public class ChunkManager {
         };
     }
 
-    private static Transform columnTransform(int cx, int cz) {
-        Transform transform = Transform.identity();
-        transform.setTranslation(cx * 16f, 0f, cz * 16f);
-        return transform;
-    }
 
     private static int hashCapture(SectionBlockData cap) {
         int hash = cap.meshData().contentHash();

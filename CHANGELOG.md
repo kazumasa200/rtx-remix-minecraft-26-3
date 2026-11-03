@@ -19,6 +19,10 @@ also part of every mod file name.
 
 ### Fixed
 
+- Far from spawn (tens of thousands of blocks out), the ground under leaf litter
+  no longer shows through, grass block sides no longer mix their two textures,
+  seams no longer open between blocks, and the first-person arm no longer
+  shakes. The sky's ambient light also keeps lighting the world there (#22).
 - Distant Horizons: torches and other glowing blocks beyond the vanilla
   render distance glow softly instead of lighting whole rooftops white at
   night; lava keeps its full glow (#23).

@@ -14,6 +14,7 @@ import com.nvidia.rtxremix.minecraft.asset.RemixMaterial;
 import com.nvidia.rtxremix.minecraft.asset.RemixMesh;
 import com.nvidia.rtxremix.minecraft.asset.RemixMeshStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixMeshSurface;
+import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import com.nvidia.rtxremix.minecraft.texture.ParticleAtlasManager;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
@@ -60,7 +61,8 @@ public class RemixParticleRenderer {
     private static final int STRIDE = HardcodedVertex.STRIDE;
     private static final int VERTEX_BYTES_PER_PARTICLE = VERTS_PER_PARTICLE * STRIDE;
 
-    private static final float[] IDENTITY_TRANSFORM = {
+    /** Carries a mesh built against an earlier scene origin to the current one; see {@link #submit}. */
+    private final float[] originShift = {
             1f, 0f, 0f, 0f,
             0f, 1f, 0f, 0f,
             0f, 0f, 1f, 0f
@@ -92,6 +94,8 @@ public class RemixParticleRenderer {
     private int lastCapacityCount;
     private int lastMeshUpdateCount;
     private long frameCounter;
+    /** The scene origin the frame being prepared writes its vertices against. */
+    private SceneSpace.Origin preparingOrigin = SceneSpace.current();
 
     private int particlesThisFrame;
     private int newSlotsThisFrame;
@@ -115,9 +119,14 @@ public class RemixParticleRenderer {
         }
     }
 
-    /** Captures particles and prepares immutable mesh payloads without calling Remix. */
-    public PreparedFrame prepare(float tickDelta) {
+    /**
+     * Captures particles and prepares immutable mesh payloads without calling Remix. The worker
+     * takes the scene origin as an argument, since the render thread may move it before the
+     * payload is drawn.
+     */
+    public PreparedFrame prepare(float tickDelta, SceneSpace.Origin origin) {
         long frame = ++frameCounter;
+        preparingOrigin = origin;
         resetFrameStats();
 
         Minecraft client = Minecraft.getInstance();
@@ -208,7 +217,7 @@ public class RemixParticleRenderer {
                     ? packColor(ParticleTint.SOOT_GREY, ParticleTint.SOOT_GREY, ParticleTint.SOOT_GREY, billboard.getAlpha())
                     : packColor(billboard.getRed(), billboard.getGreen(), billboard.getBlue(), billboard.getAlpha());
             writeParticleQuad(bucket.vertexBuffer, slot, pa, billboard,
-                    tickDelta, billboardBasis, u0, v0, u1, v1, color, boundsMin, boundsMax);
+                    tickDelta, billboardBasis, u0, v0, u1, v1, color, boundsMin, boundsMax, origin);
             bucket.dirty = true;
             particlesThisFrame++;
         }
@@ -249,7 +258,7 @@ public class RemixParticleRenderer {
             return new PreparedFrame(preparedBuckets,
                     particlesThisFrame, plannedDraws, plannedActiveQuads,
                     newSlotsThisFrame, removedSlotsThisFrame,
-                    capacityGrowsThisFrame, capacity, meshUpdatesThisFrame);
+                    capacityGrowsThisFrame, capacity, meshUpdatesThisFrame, preparingOrigin);
         } catch (RuntimeException | Error e) {
             for (PreparedBucket preparedBucket : preparedBuckets) {
                 preparedBucket.close();
@@ -270,15 +279,20 @@ public class RemixParticleRenderer {
                 ensureBlendExts();
             }
 
+            SceneSpace.Origin origin = SceneSpace.current();
             for (PreparedBucket preparedBucket : preparedFrame.buckets) {
                 DynamicBucket bucket = preparedBucket.bucket;
                 if (api != null) {
                     bucket.applyPreparedMesh(preparedBucket.meshData);
+                    if (preparedBucket.meshData != null) bucket.meshOrigin = preparedFrame.origin;
                 }
 
                 if (api != null && bucket.liveCount > 0
                         && bucket.mesh != null && !bucket.mesh.isDeleted()) {
-                    api.drawInstance(bucket.mesh.getHandle(), IDENTITY_TRANSFORM,
+                    // Prepared a frame ago, the payload may predate an origin move: whole blocks, so exact.
+                    originShift[3] = bucket.meshOrigin.x() - origin.x();
+                    originShift[11] = bucket.meshOrigin.z() - origin.z();
+                    api.drawInstance(bucket.mesh.getHandle(), originShift,
                             bucket.categoryFlags, 1, drawPNext(bucket.blendKind));
                     draws++;
                     activeQuads += bucket.liveCount;
@@ -418,10 +432,10 @@ public class RemixParticleRenderer {
                                           ParticleAccessor pa, BillboardParticleAccessor ba,
                                           float tickDelta, ParticleBillboardBasis basis,
                                           float u0, float v0, float u1, float v1, int color,
-                                          int boundsMin, int boundsMax) {
-        double px = Mth.lerp(tickDelta, pa.getPrevPosX(), pa.getX());
+                                          int boundsMin, int boundsMax, SceneSpace.Origin origin) {
+        double px = Mth.lerp(tickDelta, pa.getPrevPosX(), pa.getX()) - origin.x();
         double py = Mth.lerp(tickDelta, pa.getPrevPosY(), pa.getY());
-        double pz = Mth.lerp(tickDelta, pa.getPrevPosZ(), pa.getZ());
+        double pz = Mth.lerp(tickDelta, pa.getPrevPosZ(), pa.getZ()) - origin.z();
 
         float angle = Mth.lerp(tickDelta, ba.getPrevAngle(), ba.getAngle());
         float scale = ba.getScale();
@@ -576,6 +590,7 @@ public class RemixParticleRenderer {
         private final int capacityGrowCount;
         private final int capacity;
         private final int meshUpdateCount;
+        private final SceneSpace.Origin origin;
         private boolean closed;
 
         private PreparedFrame(List<PreparedBucket> buckets,
@@ -586,7 +601,8 @@ public class RemixParticleRenderer {
                               int removedSlotCount,
                               int capacityGrowCount,
                               int capacity,
-                              int meshUpdateCount) {
+                              int meshUpdateCount,
+                              SceneSpace.Origin origin) {
             this.buckets = List.copyOf(buckets);
             this.particleCount = particleCount;
             this.plannedDrawCount = plannedDrawCount;
@@ -596,6 +612,7 @@ public class RemixParticleRenderer {
             this.capacityGrowCount = capacityGrowCount;
             this.capacity = capacity;
             this.meshUpdateCount = meshUpdateCount;
+            this.origin = origin;
         }
 
         public int particleCount() {
@@ -707,6 +724,8 @@ public class RemixParticleRenderer {
         int capacity;
         int liveCount;
         boolean dirty;
+        /** The scene origin {@link #mesh}'s vertices were written against. */
+        SceneSpace.Origin meshOrigin = SceneSpace.current();
 
         private DynamicBucket(RemixMaterial material, int categoryFlags, int blendKind,
                               RemixMesh mesh, ByteBuffer vertexBuffer,

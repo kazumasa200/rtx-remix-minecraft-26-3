@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft;
 
+import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import com.nvidia.rtxremix.minecraft.weather.RemixWeatherRenderer;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import com.nvidia.rtxremix.minecraft.texture.AtlasAnimationForwarder;
@@ -91,6 +92,7 @@ import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.storage.LevelResource;
+import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -255,6 +257,21 @@ public class RtxRemixMod implements ClientModInitializer {
      * own controls, the runtime's menu hotkey, or its First Use Guide. Called at the start of
      * every frame from {@link com.nvidia.rtxremix.minecraft.mixin.GameRendererMixin}.
      */
+    /**
+     * Moves the scene origin ({@link SceneSpace}) if the camera calls for it. At the head of the
+     * frame's extraction, before entities and the hands are captured, so every position a
+     * frame hands to Remix is taken against one origin; the renderer brings the retained scene
+     * along when it submits the frame.
+     */
+    public static void advanceSceneOrigin() {
+        Minecraft client = Minecraft.getInstance();
+        if (renderer == null || !renderer.isInitialized() || client.level == null || !isRtxEnabled()) {
+            return;
+        }
+        Vec3 camera = client.gameRenderer.mainCamera().position();
+        SceneSpace.advance(camera.x, camera.z);
+    }
+
     public static void followRemixMenuVisibility() {
         if (renderer == null || !renderer.isInitialized()) {
             return;

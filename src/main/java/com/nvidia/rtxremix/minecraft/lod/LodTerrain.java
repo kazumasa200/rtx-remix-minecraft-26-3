@@ -12,7 +12,6 @@ import com.nvidia.rtxremix.MaterialInfoTranslucentEXT;
 import com.nvidia.rtxremix.RemixAPI;
 import com.nvidia.rtxremix.TextureFormat;
 import com.nvidia.rtxremix.TexturePurpose;
-import com.nvidia.rtxremix.Transform;
 import com.nvidia.rtxremix.minecraft.ClientViewDistance;
 import com.nvidia.rtxremix.minecraft.asset.RemixInstance;
 import com.nvidia.rtxremix.minecraft.asset.RemixInstanceStore;
@@ -675,10 +674,8 @@ public final class LodTerrain {
         try {
             RemixMeshStore.get().create(mesh);
             boolean visible = section.swap == SWAP_LINGERING || (section.enabled && section.swap != SWAP_HELD);
-            Transform transform = Transform.identity();
-            transform.setTranslation(section.minX, section.minY, section.minZ);
             instance = new RemixInstance(mesh)
-                    .setTransform(transform)
+                    .setWorldTranslation(section.minX, section.minY, section.minZ)
                     .setCategoryFlags(visible ? 0 : InstanceCategoryBit.HIDDEN)
                     .setBlendExt(BLEND)
                     .setDoubleSided(true);

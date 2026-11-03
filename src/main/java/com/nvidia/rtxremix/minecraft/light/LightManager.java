@@ -16,6 +16,7 @@ import com.nvidia.rtxremix.RemixException;
 import com.nvidia.rtxremix.minecraft.RemixRenderer;
 import com.nvidia.rtxremix.minecraft.asset.RemixLight;
 import com.nvidia.rtxremix.minecraft.asset.RemixLightStore;
+import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlock;
 import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlockEntity;
 import com.nvidia.rtxremix.minecraft.block.CopperBeaconPose;
@@ -422,9 +423,9 @@ public class LightManager {
                     .radiance(red * intensity, green * intensity, blue * intensity)
                     .diskExt(LightInfoDiskEXT.builder()
                             .position(
-                                    pos.getX() + emitter.x(),
-                                    pos.getY() + emitter.y(),
-                                    pos.getZ() + emitter.z())
+                                    SceneSpace.x(pos.getX() + (double) emitter.x()),
+                                    SceneSpace.y(pos.getY() + (double) emitter.y()),
+                                    SceneSpace.z(pos.getZ() + (double) emitter.z()))
                             .xAxis(xAxis.x(), xAxis.y(), xAxis.z())
                             .xRadius(BeaconBeam.RADIUS)
                             .yAxis(yAxis.x(), yAxis.y(), yAxis.z())
@@ -605,9 +606,9 @@ public class LightManager {
                 DiskBasis basis = light.diskBasis;
                 var diskBuilder = LightInfoDiskEXT.builder()
                         .position(
-                                (float) light.position.x,
-                                (float) light.position.y,
-                                (float) light.position.z)
+                                SceneSpace.x(light.position.x),
+                                SceneSpace.y(light.position.y),
+                                SceneSpace.z(light.position.z))
                         .xAxis(
                                 (float) basis.xAxis.x,
                                 (float) basis.xAxis.y,
@@ -632,9 +633,9 @@ public class LightManager {
 
             var sphereBuilder = LightInfoSphereEXT.builder()
                     .position(
-                            (float) light.position.x,
-                            (float) light.position.y,
-                            (float) light.position.z)
+                            SceneSpace.x(light.position.x),
+                            SceneSpace.y(light.position.y),
+                            SceneSpace.z(light.position.z))
                     .radius(light.emitterRadius)
                     .volumetricRadianceScale(light.volumetricRadianceScale);
             if (light.shaping != null) {
@@ -788,9 +789,9 @@ public class LightManager {
                     .radiance(r * intensity, g * intensity, b * intensity)
                     .diskExt(LightInfoDiskEXT.builder()
                             .position(
-                                    (float) (origin.x + lens.x()),
-                                    (float) (origin.y + lens.y()),
-                                    (float) (origin.z + lens.z()))
+                                    SceneSpace.x(origin.x + lens.x()),
+                                    SceneSpace.y(origin.y + lens.y()),
+                                    SceneSpace.z(origin.z + lens.z()))
                             .xAxis(diskX.x(), diskX.y(), diskX.z())
                             .xRadius(xRadius)
                             .yAxis(diskY.x(), diskY.y(), diskY.z())
@@ -1224,11 +1225,16 @@ public class LightManager {
             return;
         }
         SkyTimeJump.mark();
+        resetRadianceCaches();
+    }
+
+    /** Clears what the runtime's radiance caches learned, which is keyed on scene positions. */
+    public void resetRadianceCaches() {
         try {
             renderer.getRemixApi().setConfigVariable(RADIANCE_CACHE_RESET, "True");
             renderer.getRemixApi().setConfigVariable(NEURAL_RADIANCE_CACHE_RESET, "True");
         } catch (RemixException e) {
-            LOGGER.warn("Failed to clear the radiance cache after a jump in the time of day: {}", e.getMessage());
+            LOGGER.warn("Failed to clear the radiance caches: {}", e.getMessage());
         }
     }
 

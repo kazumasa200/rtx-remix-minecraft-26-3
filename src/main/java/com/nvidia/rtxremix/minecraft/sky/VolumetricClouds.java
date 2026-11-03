@@ -24,6 +24,7 @@ import com.nvidia.rtxremix.minecraft.asset.RemixMeshStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixMeshSurface;
 import com.nvidia.rtxremix.minecraft.asset.RemixTexture;
 import com.nvidia.rtxremix.minecraft.asset.RemixTextureStore;
+import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import com.nvidia.rtxremix.minecraft.cloud.CloudRenderer;
 import com.nvidia.rtxremix.minecraft.light.LightManager;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
@@ -220,9 +221,9 @@ final class VolumetricClouds {
             builtSkyMeshGeneration = skyMeshGeneration;
             if (mesh != null) {
                 float[] m = transform.matrix;
-                m[0] = 1.0f; m[1] = 0.0f; m[2] = 0.0f;  m[3] = (float) cameraPos.x;
-                m[4] = 0.0f; m[5] = 1.0f; m[6] = 0.0f;  m[7] = (float) cameraPos.y;
-                m[8] = 0.0f; m[9] = 0.0f; m[10] = 1.0f; m[11] = (float) cameraPos.z;
+                m[0] = 1.0f; m[1] = 0.0f; m[2] = 0.0f;  m[3] = SceneSpace.x(cameraPos.x);
+                m[4] = 0.0f; m[5] = 1.0f; m[6] = 0.0f;  m[7] = SceneSpace.y(cameraPos.y);
+                m[8] = 0.0f; m[9] = 0.0f; m[10] = 1.0f; m[11] = SceneSpace.z(cameraPos.z);
                 api.drawInstance(mesh.getHandle(), m, InstanceCategoryBit.SKY, 1, blendPNext);
             }
         } catch (RuntimeException e) {

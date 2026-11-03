@@ -20,6 +20,7 @@ import com.nvidia.rtxremix.minecraft.asset.RemixMeshStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixMeshSurface;
 import com.nvidia.rtxremix.minecraft.asset.RemixTexture;
 import com.nvidia.rtxremix.minecraft.asset.RemixTextureStore;
+import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
 import java.nio.ByteBuffer;
 import java.util.List;
@@ -240,9 +241,9 @@ final class SkyLayers {
         float cos = (float) Math.cos(angle);
         float sin = (float) Math.sin(angle);
         float[] m = transform.matrix;
-        m[0] = cos;  m[1] = 0.0f; m[2] = sin;   m[3] = (float) cameraPos.x;
-        m[4] = 0.0f; m[5] = 1.0f; m[6] = 0.0f;  m[7] = (float) cameraPos.y;
-        m[8] = -sin; m[9] = 0.0f; m[10] = cos;  m[11] = (float) cameraPos.z;
+        m[0] = cos;  m[1] = 0.0f; m[2] = sin;   m[3] = SceneSpace.x(cameraPos.x);
+        m[4] = 0.0f; m[5] = 1.0f; m[6] = 0.0f;  m[7] = SceneSpace.y(cameraPos.y);
+        m[8] = -sin; m[9] = 0.0f; m[10] = cos;  m[11] = SceneSpace.z(cameraPos.z);
     }
 
     private static RemixTexture createTexture(byte[] pixels, int width, int height) {

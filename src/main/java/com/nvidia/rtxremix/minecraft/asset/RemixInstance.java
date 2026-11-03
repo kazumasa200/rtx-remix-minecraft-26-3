@@ -44,6 +44,13 @@ public class RemixInstance extends RemixAssetBase {
     /** Whether the retained native description needs a complete replacement. */
     private boolean sceneInfoDirty = true;
 
+    /** Set by {@link #setWorldTranslation}: the instance then keeps its own transform in step with the scene origin. */
+    private boolean anchored;
+    private double anchorX;
+    private double anchorY;
+    private double anchorZ;
+    private long anchorEpoch;
+
     public RemixInstance(RemixMesh mesh) {
         this.mesh = mesh;
     }
@@ -57,9 +64,45 @@ public class RemixInstance extends RemixAssetBase {
     }
 
     public RemixInstance setTransform(Transform transform) {
+        if (anchored) {
+            throw new IllegalStateException("An instance placed with setWorldTranslation keeps its own transform");
+        }
         this.transform = transform;
         this.sceneInfoDirty = true;
         return this;
+    }
+
+    /**
+     * Places the instance at a world position, unrotated and unscaled. It writes its own transform
+     * in scene space ({@link SceneSpace}) and writes it again on the first submit after the origin
+     * moves, so a retained instance never needs its owner to know about the origin.
+     */
+    public RemixInstance setWorldTranslation(double x, double y, double z) {
+        if (!anchored) {
+            transform = Transform.identity();
+            anchored = true;
+        }
+        anchorX = x;
+        anchorY = y;
+        anchorZ = z;
+        writeAnchor(SceneSpace.current());
+        return this;
+    }
+
+    /** Whether this instance must follow an origin it has not followed yet. */
+    boolean behindOrigin(long epoch) {
+        return anchored && anchorEpoch != epoch;
+    }
+
+    /** Whether the instance has a native scene handle. */
+    boolean inScene() {
+        return handle != 0 && handle != INACTIVE_HANDLE;
+    }
+
+    private void writeAnchor(SceneSpace.Origin origin) {
+        transform.setTranslation(origin.x(anchorX), origin.y(anchorY), origin.z(anchorZ));
+        anchorEpoch = origin.epoch();
+        sceneInfoDirty = true;
     }
 
     public RemixInstance setCategoryFlags(int flags) {
@@ -113,6 +156,8 @@ public class RemixInstance extends RemixAssetBase {
             throw new IllegalStateException("Trying to submit retained RemixInstance(hash=0x"
                     + Long.toHexString(hash) + ") with no live mesh");
         }
+        SceneSpace.Origin origin = SceneSpace.current();
+        if (anchored && anchorEpoch != origin.epoch()) writeAnchor(origin);
 
         if (handle == INACTIVE_HANDLE) {
             replaceNativeHandle(addSceneInstance(api));

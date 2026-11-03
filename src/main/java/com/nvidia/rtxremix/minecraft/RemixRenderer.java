@@ -20,6 +20,7 @@ import com.nvidia.rtxremix.minecraft.asset.RemixMaterialStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixMeshStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixTexture;
 import com.nvidia.rtxremix.minecraft.asset.RemixTextureStore;
+import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import com.nvidia.rtxremix.minecraft.benchmark.BenchmarkController;
 import com.nvidia.rtxremix.minecraft.gl.GlInterop;
 import com.nvidia.rtxremix.minecraft.gl.RemixPresentationWindow;
@@ -780,6 +781,19 @@ public class RemixRenderer {
         return true;
     }
 
+    /**
+     * Brings the retained scene to the scene origin if it moved this frame, before anything else
+     * is submitted: the camera moves with the origin, so an instance left behind would show
+     * thousands of blocks off. The radiance caches are keyed on scene positions, so they start
+     * over, as after a jump in the time of day.
+     */
+    private void followSceneOrigin() {
+        if (!RemixInstanceStore.get().syncToOrigin()) return;
+        if (lightManager != null) lightManager.resetRadianceCaches();
+        SceneSpace.Origin origin = SceneSpace.current();
+        LOGGER.info("Scene origin moved to ({}, {})", origin.x(), origin.z());
+    }
+
     public void renderAndSubmitFrame() {
         if (!initialized || remixApi == null) {
             return;
@@ -793,6 +807,7 @@ public class RemixRenderer {
         }
 
         perfTimer.beginFrame();
+        followSceneOrigin();
 
         CompletableFuture<ParticleRenderResult> particleFuture = null;
         boolean entityFrameClosed = false;
@@ -1081,14 +1096,16 @@ public class RemixRenderer {
             return null;
         }
 
+        SceneSpace.Origin origin = SceneSpace.current();
         CompletableFuture<ParticleRenderResult> future = CompletableFuture.supplyAsync(
-                () -> renderParticlesOnWorker(tickDelta, frameIndex),
+                () -> renderParticlesOnWorker(tickDelta, frameIndex, origin),
                 particleExecutor);
         particleRenderFuture = future;
         return future;
     }
 
-    private ParticleRenderResult renderParticlesOnWorker(float tickDelta, long frameIndex) {
+    private ParticleRenderResult renderParticlesOnWorker(float tickDelta, long frameIndex,
+                                                         SceneSpace.Origin origin) {
         RemixAPI.tracyThreadName("Particles");
         long previousFrameIndex = ProfileScope.setFrameIndexForCurrentThread(frameIndex);
         PreparedFrame preparedFrame = null;
@@ -1096,7 +1113,7 @@ public class RemixRenderer {
         // belongs. It is deliberately not returned to the render thread: it is off the critical
         // path, so charging it to a render-thread section overstates that section.
         try (ProfileScope particleScope = ProfileScope.begin("Particles")) {
-            preparedFrame = particleRenderer.prepare(tickDelta);
+            preparedFrame = particleRenderer.prepare(tickDelta, origin);
             particleScope
                     .captureCount(preparedFrame.particleCount())
                     .drawCalls(preparedFrame.plannedDrawCount())
@@ -1296,7 +1313,7 @@ public class RemixRenderer {
             lensEffects.updateCamera(camera, client.level, worldFov, aspect, farPlane, sunDirection);
     
             CameraInfoParameterizedEXT worldCameraParams = CameraInfoParameterizedEXT.builder()
-                .position((float) pos.x, (float) pos.y, (float) pos.z)
+                .position(SceneSpace.x(pos.x), SceneSpace.y(pos.y), SceneSpace.z(pos.z))
                 .forward(forwardX, forwardY, forwardZ)
                 .up(upX, upY, upZ)
                 .right(rightX, rightY, rightZ)

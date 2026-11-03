@@ -5,6 +5,7 @@
 package com.nvidia.rtxremix.minecraft.terrain;
 
 import com.nvidia.rtxremix.minecraft.asset.RemixLight;
+import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import com.nvidia.rtxremix.minecraft.lens.FlareSources;
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
 import com.nvidia.rtxremix.minecraft.light.LightPower;
@@ -35,6 +36,8 @@ public final class TerrainLight {
     private float x, y, z;
     private float power;
     private long lastDrawnFrame = Long.MIN_VALUE;
+    /** The scene origin the native light was built against; see {@link #behindOrigin}. */
+    private long sceneEpoch;
 
     public TerrainLight(RemixLight light) {
         this.light = light;
@@ -46,6 +49,12 @@ public final class TerrainLight {
         this.y = y;
         this.z = z;
         this.power = power;
+        this.sceneEpoch = SceneSpace.epoch();
+    }
+
+    /** Whether the scene origin moved since the native light was built, which leaves it misplaced. */
+    public boolean behindOrigin() {
+        return sceneEpoch != SceneSpace.epoch();
     }
 
     /** Records the rule output the native light was built from, where it is and how much it emits. */

@@ -188,6 +188,8 @@
   "rtxremix.setting.debug.puddleMask.tip": "雨の水たまりを、水の多さに応じて赤く塗ります。どこに水たまりがあり、フチがどう薄れていくかを確かめるための表示で、問題を調べるとき以外は使いません。",
   "rtxremix.setting.debug.domeClouds": "ドームの雲だけを表示",
   "rtxremix.setting.debug.domeClouds.tip": "Unbound の雲を、画面の画素ごとに描き直さず、RTX Remix が空のドームに描いたままにします。雲の影も描きません。雲のおかしな見え方が、画素ごとに描き直した雲から来ているかを確かめるための表示で、問題を調べるとき以外は使いません。",
+  "rtxremix.setting.debug.sceneOriginOffset": "シーンの原点をずらす",
+  "rtxremix.setting.debug.sceneOriginOffset.tip": "RTX Remix に渡す座標の原点を、スポーンの近くでも 4096 ブロック先へ動かします。前と同じに描かれるものは正しく変換されています。消えたり別の場所に出たりするものは、ワールドの座標のまま渡されています。切り替えると、遠くへ移動したときに起きる原点の移動も一度動きます。問題を調べるとき以外は使いません。",
 
   "rtxremix.setting.post.exposure": "露出",
   "rtxremix.setting.post.exposure.tip": "画面全体を明るく、または暗くします。手動で変えると、この項目はゲームプレイのプロファイルより優先されます。",

@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.cloud;
 
+import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import com.nvidia.rtxremix.minecraft.sky.SkyFrame;
 import net.minecraft.util.ARGB;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
@@ -670,7 +671,7 @@ public final class CloudRenderer {
                     matrix[0] = 1.0f;
                     matrix[1] = 0.0f;
                     matrix[2] = 0.0f;
-                    matrix[3] = (float) placement.x;
+                    matrix[3] = SceneSpace.x(placement.x);
                     matrix[4] = 0.0f;
                     matrix[5] = 1.0f;
                     matrix[6] = 0.0f;
@@ -678,7 +679,7 @@ public final class CloudRenderer {
                     matrix[8] = 0.0f;
                     matrix[9] = 0.0f;
                     matrix[10] = 1.0f;
-                    matrix[11] = (float) placement.z;
+                    matrix[11] = SceneSpace.z(placement.z);
                     api.drawInstance(
                             entry.mesh.getHandle(),
                             matrix,
@@ -741,7 +742,7 @@ public final class CloudRenderer {
         matrix[0] = scale;
         matrix[1] = 0.0f;
         matrix[2] = 0.0f;
-        matrix[3] = (float) worldX;
+        matrix[3] = SceneSpace.x(worldX);
         matrix[4] = 0.0f;
         matrix[5] = scale;
         matrix[6] = 0.0f;
@@ -749,7 +750,7 @@ public final class CloudRenderer {
         matrix[8] = 0.0f;
         matrix[9] = 0.0f;
         matrix[10] = scale;
-        matrix[11] = (float) worldZ;
+        matrix[11] = SceneSpace.z(worldZ);
     }
 
     public void cleanup() {

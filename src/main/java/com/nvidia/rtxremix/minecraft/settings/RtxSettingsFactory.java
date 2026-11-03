@@ -6,6 +6,7 @@ package com.nvidia.rtxremix.minecraft.settings;
 
 import com.nvidia.rtxremix.RemixAPI;
 import com.nvidia.rtxremix.RemixException;
+import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import com.nvidia.rtxremix.minecraft.light.BlockLightIntensityControls;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import com.nvidia.rtxremix.minecraft.terrain.ChunkManager;
@@ -314,6 +315,9 @@ public final class RtxSettingsFactory {
         list.add(RtxSetting.ofBool("debug.domeClouds", SettingGroup.DEBUG_VIEWS,
                 "rtxremix.setting.debug.domeClouds", "rtxremix.setting.debug.domeClouds.tip",
                 false, LensEffects::isDomeCloudsShown, LensEffects::setDomeCloudsShown));
+        list.add(RtxSetting.ofBool("debug.sceneOriginOffset", SettingGroup.DEBUG_VIEWS,
+                "rtxremix.setting.debug.sceneOriginOffset", "rtxremix.setting.debug.sceneOriginOffset.tip",
+                false, SceneSpace::debugOffset, SceneSpace::setDebugOffset));
 
         // --- Tonemapping ---
         list.add(floatSetting("post.exposure", SettingGroup.TONEMAPPING,
