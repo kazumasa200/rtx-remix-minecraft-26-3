@@ -299,7 +299,10 @@ A column leaves with its chunk, or once it lies more than two chunks beyond
 the render distance even while its chunk stays loaded (`ChunkManager.retained`):
 Bobby keeps chunks left behind for a minute, and flying on piled up twice the
 view area's instances, past what the runtime holds, so whole columns drew with
-the wrong mesh or none.
+the wrong mesh or none. The audit that finds them runs through light and
+retirement backpressure, which only holds back removals: a city's light backlog
+stopped it. The performance report counts every live Remix mesh, instance and
+material (`Remix.*`) against the GPU-resident scene's fixed capacities.
 Visibility is vanilla's `SectionOcclusionGraph`; the 1.21.1 allocation-free
 walk and coarse frustum index were not ported. Vanilla compiles a section only
 once it is in view, and the path tracer needs the ground behind and beside the

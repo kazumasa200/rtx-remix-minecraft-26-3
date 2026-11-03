@@ -19,6 +19,7 @@ import com.nvidia.rtxremix.minecraft.light.BlockLightRuleManager;
 import com.nvidia.rtxremix.minecraft.light.BlockLightKey;
 import com.nvidia.rtxremix.minecraft.light.BlockLightIntensityControls;
 import com.nvidia.rtxremix.minecraft.asset.RemixMeshStore;
+import com.nvidia.rtxremix.minecraft.asset.RemixMaterialStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixMesh;
 import com.nvidia.rtxremix.minecraft.asset.RemixLightStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixLight;
@@ -561,6 +562,7 @@ public class ChunkManager {
                 new TerrainDiagnostics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 
+    private int cntRemixMeshes, cntRemixInstances, cntRemixMaterials;
     private int cntCap = -1, cntLightsCulled, cntLightsDrawn, cntLightsBeyondReach, cntReachable, cntWorkerMem, cntPooledDirectMB,
             cntBucketGrows, cntBucketGrowKB, cntDroppedQuads, cntPendingBuilds, cntPendingMeshMB, cntCaptureQueue,
             cntCaptureQueueMB, cntCaptureBackpressure, cntCaptureEvicted, cntLightRebuildsSkipped, cntPacedChunks,
@@ -775,6 +777,11 @@ public class ChunkManager {
                 cntFloodIncrementalUs = timer.registerCounter("Chunk.FloodIncrementalUs");
                 cntWorkerMem = timer.registerCounter("Chunk.WorkerMemKB");
                 cntPooledDirectMB = timer.registerCounter("Chunk.PooledDirectMB");
+                // Every live Remix object of the session, terrain or not: the GPU-resident scene
+                // has fixed capacities, and past them it truncates meshes or aliases surfaces.
+                cntRemixMeshes = timer.registerCounter("Remix.Meshes");
+                cntRemixInstances = timer.registerCounter("Remix.Instances");
+                cntRemixMaterials = timer.registerCounter("Remix.Materials");
                 cntBucketGrows = timer.registerCounter("Chunk.BucketGrows");
                 cntBucketGrowKB = timer.registerCounter("Chunk.BucketGrowKB");
                 cntDroppedQuads = timer.registerCounter("Chunk.DroppedQuads");
@@ -837,6 +844,9 @@ public class ChunkManager {
                 // Retained section meshes live in the pool; this is the off-heap footprint
                 // the collector no longer accounts for.
                 timer.count(cntPooledDirectMB, DirectBufferPool.allocatedBytes() / (1024 * 1024));
+                timer.count(cntRemixMeshes, RemixMeshStore.get().size());
+                timer.count(cntRemixInstances, RemixInstanceStore.get().size());
+                timer.count(cntRemixMaterials, RemixMaterialStore.get().size());
                 timer.count(cntBucketGrows, DirectQuadWriter.drainGrowthEvents());
                 timer.count(cntBucketGrowKB, DirectQuadWriter.drainGrowthCopiedBytes() / 1024);
                 timer.count(cntDroppedQuads, DirectQuadWriter.drainDroppedQuads());
@@ -2036,7 +2046,10 @@ public class ChunkManager {
     /** Spreads the safety audit across frames so its cost does not scale with view distance in one frame. */
     private void advanceZombieAudit(long deadline, int pcx, int pcz) {
         if (currentWorld == null) return;
-        if (retirementQueue.retirementBackpressured() || lightWorkBackpressured()) return;
+        // Only the removals here wait out backpressure. Columns beyond the render distance are
+        // merely queued for the unload path, and in a city's light backlog the whole audit
+        // waited, so columns piled up past the runtime's capacity all the same.
+        boolean removalsBlocked = retirementQueue.retirementBackpressured() || lightWorkBackpressured();
 
         if (zombieAuditColumns == null) {
             // Moving on also starts a pass, so columns left behind go while still few.
@@ -2068,7 +2081,7 @@ public class ChunkManager {
                 if (pendingColumnUnloads.add(key)) cancelLightTasksForColumn(cx, cz);
                 continue;
             }
-            if (chunk == null && terrain.findColumn(cx, cz) != null) {
+            if (chunk == null && !removalsBlocked && terrain.findColumn(cx, cz) != null) {
                 // The column left without an unload event, so nothing has
                 // cancelled its light tasks yet.
                 cancelLightTasksForColumn(cx, cz);
