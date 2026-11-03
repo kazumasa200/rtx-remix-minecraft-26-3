@@ -39,7 +39,7 @@ long a worker may wait.
 | `rtxremix.chunk.unseenCompilesPerFrame` | Dirty sections outside the frustum handed to vanilla's compile per frame, nearest first, while its queue holds fewer than 16; 0 turns this off and leaves the ground behind the camera uncaptured until it comes into view | `UnseenSectionCompiles` |
 | `rtxremix.blockDataQueue.maxPendingItems` | Section captures queued for the render thread | `BlockDataQueue` |
 | `rtxremix.blockDataQueue.maxPendingBytes` | Bytes of queued captures | `BlockDataQueue` |
-| `rtxremix.blockDataQueue.maxDrainItems` | Captures drained per render-thread pass | `BlockDataQueue` |
+| `rtxremix.blockDataQueue.maxDrainItems` | Captures drained per batch; the render thread takes batches while `chunk.captureDrainBudgetNs` lasts | `BlockDataQueue` |
 | `rtxremix.blockDataQueue.maxDrainBytes` | Bytes drained per pass | `BlockDataQueue` |
 | `rtxremix.blockDataQueue.publishWaitBudgetNs` | Initial worker wait budget before attempting FIFO eviction. In-flight reservations can require additional waits; it is not a total-wait limit | `BlockDataQueue` |
 | `rtxremix.chunk.localBatchPacing` | Pace the integrated server's chunk delivery while capture is on, spreading chunk-load bursts across frames. Set to false to restore vanilla's single batch per tick | `LocalChunkBatchPacing` |
@@ -85,6 +85,8 @@ per-frame budgets.
 | `rtxremix.lod.buildThreads` | Low-priority threads building LOD terrain meshes against the current clip, 3 by default | `LodTerrain` |
 | `rtxremix.chunk.maxPendingBuilds` | Merges outstanding at once | `ChunkManager` |
 | `rtxremix.chunk.maxPendingMeshBytes` | Bytes of merged but not yet installed geometry | `ChunkManager` |
+| `rtxremix.chunk.captureDrainBudgetNs` | Render-thread time per frame spent taking section captures, in `blockDataQueue.maxDrainItems` batches, 2 ms by default | `ChunkManager` |
+| `rtxremix.chunk.maxCapturesPerFrame` | Section captures taken per frame at most, 256 by default | `ChunkManager` |
 | `rtxremix.chunk.installBudgetNs` | Render-thread time per frame spent installing columns | `ChunkManager` |
 | `rtxremix.chunk.maxInstalledColumnsPerFrame` | Columns published per frame | `ChunkManager` |
 | `rtxremix.chunk.columnStreamSettleFrames` | Frames a column waits for its neighbours before publishing | `ChunkManager` |

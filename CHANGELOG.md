@@ -35,6 +35,9 @@ also part of every mod file name.
 
 ### Fixed
 
+- With Bobby, flying on no longer breaks the terrain into chunk-sized squares
+  of wrong textures, black blocks and land drawn in the wrong place: chunks it
+  keeps beyond the render distance are no longer kept in the path-traced scene.
 - Distant land, such as Distant Horizons' LOD buildings, no longer shows through
   a nearby torch's glow as pale outlines at night, and the torch's flame no
   longer vanishes against it.

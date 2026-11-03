@@ -440,6 +440,10 @@ public class ChunkManager {
             Long.getLong("rtxremix.chunk.installBudgetNs", 2_000_000L));
     private static final int MAX_INSTALLED_COLUMNS_PER_FRAME = Math.max(1,
             Integer.getInteger("rtxremix.chunk.maxInstalledColumnsPerFrame", MAX_PENDING));
+    private static final long CAPTURE_DRAIN_BUDGET_NS = Math.max(250_000L,
+            Long.getLong("rtxremix.chunk.captureDrainBudgetNs", 2_000_000L));
+    private static final int MAX_CAPTURES_PER_FRAME = Math.max(1,
+            Integer.getInteger("rtxremix.chunk.maxCapturesPerFrame", 256));
     private static final int COLUMN_STREAM_SETTLE_FRAMES = Math.max(0,
             Integer.getInteger("rtxremix.chunk.columnStreamSettleFrames", 4));
     private static final int COLUMN_STREAM_MAX_WAIT_FRAMES = Math.max(
@@ -581,7 +585,16 @@ public class ChunkManager {
     private static final int ZOMBIE_AUDIT_INTERVAL = 600; // frames (~10 s at 60 fps)
     private static final int ZOMBIE_AUDIT_COLUMNS_PER_FRAME = 64;
     private static final int ZOMBIE_AUDIT_REMOVALS_PER_FRAME = 2;
+    /**
+     * Chunks beyond the render distance a column is kept for. A mod that keeps chunks past it
+     * (Bobby holds the ones left behind for a minute) left their columns in the scene: flying on,
+     * twice the view area's instances piled up and the runtime drew whole columns with the wrong
+     * mesh or none. Vanilla draws nothing out there either.
+     */
+    private static final int RETENTION_MARGIN_CHUNKS = 2;
     private int framesSinceAudit = 0;
+    private int auditCenterX;
+    private int auditCenterZ;
     private long terrainFrame;
     /** The user's light cull distance in chunks; 0 means Auto, the render distance. */
     private int lightCullChunks = DEFAULT_LIGHT_CULL_CHUNKS;
@@ -814,7 +827,7 @@ public class ChunkManager {
                 syncLightCullDistance();
 
                 long maintenanceDeadline = System.nanoTime() + MAINTENANCE_TIME_BUDGET_NS;
-                drainColumnUnloads(maintenanceDeadline);
+                drainColumnUnloads(maintenanceDeadline, pcx, pcz);
                 drainSectionRemovals(maintenanceDeadline);
                 drainLightWork(System.nanoTime() + LIGHT_TIME_BUDGET_NS);
                 int capturesProcessed = drainBlockData();
@@ -848,7 +861,7 @@ public class ChunkManager {
                 timer.count(cntChunkUnloadUs, LocalChunkBatchPacing.unloadMicrosPerChunk());
                 timer.count(cntSurfaceScansSeeded, SkyLightSurfaceScanPolicy.drainSeeded());
 
-                advanceZombieAudit(maintenanceDeadline);
+                advanceZombieAudit(maintenanceDeadline, pcx, pcz);
                 submitDirtyBuilds(tex, pcx, pcz);
 
                 try (ProfileScope installScope = ProfileScope.begin("installReadyMeshes")) {
@@ -886,7 +899,12 @@ public class ChunkManager {
     }
     // --- event draining ---
 
-    private void drainColumnUnloads(long deadline) {
+    private static boolean retained(int cx, int cz, int pcx, int pcz) {
+        int radius = ClientViewDistance.chunks() + RETENTION_MARGIN_CHUNKS;
+        return Math.abs(cx - pcx) <= radius && Math.abs(cz - pcz) <= radius;
+    }
+
+    private void drainColumnUnloads(long deadline, int pcx, int pcz) {
         Long key;
         while ((key = chunkUnloadEvents.poll()) != null) {
             // Cancel light tasks at ingestion, not when the entry reaches the
@@ -916,7 +934,7 @@ public class ChunkManager {
             LevelChunk liveChunk = currentWorld == null
                     ? null
                     : currentWorld.getChunkSource().getChunk(cx, cz, false);
-            if (liveChunk != null) {
+            if (liveChunk != null && retained(cx, cz, pcx, pcz)) {
                 iterator.remove();
                 continue;
             }
@@ -1000,7 +1018,23 @@ public class ChunkManager {
         return wc != null && wc.getSection(wc.getSectionIndexFromSectionY(sy)).hasOnlyAir();
     }
 
+    /**
+     * Takes captures in the queue's bounded batches for as long as the frame's budget lasts.
+     * One batch a frame held the queue at its cap while Bobby loaded a ring of cached chunks at
+     * once: vanilla's workers waited on it, and terrain came in far behind vanilla's own.
+     */
     private int drainBlockData() {
+        long deadline = System.nanoTime() + CAPTURE_DRAIN_BUDGET_NS;
+        int processed = 0;
+        do {
+            processed += drainBlockDataBatch();
+        } while (processed < MAX_CAPTURES_PER_FRAME
+                && BlockDataQueue.pendingCount() > 0
+                && System.nanoTime() < deadline);
+        return processed;
+    }
+
+    private int drainBlockDataBatch() {
         BlockDataQueue.consumerAlive();
         if (pendingCaptureIndex >= pending.size()) {
             pending.clear();
@@ -2000,13 +2034,18 @@ public class ChunkManager {
     }
 
     /** Spreads the safety audit across frames so its cost does not scale with view distance in one frame. */
-    private void advanceZombieAudit(long deadline) {
+    private void advanceZombieAudit(long deadline, int pcx, int pcz) {
         if (currentWorld == null) return;
         if (retirementQueue.retirementBackpressured() || lightWorkBackpressured()) return;
 
         if (zombieAuditColumns == null) {
-            if (++framesSinceAudit < ZOMBIE_AUDIT_INTERVAL) return;
+            // Moving on also starts a pass, so columns left behind go while still few.
+            boolean moved = Math.max(Math.abs(pcx - auditCenterX), Math.abs(pcz - auditCenterZ))
+                    >= RETENTION_MARGIN_CHUNKS;
+            if (++framesSinceAudit < ZOMBIE_AUDIT_INTERVAL && !moved) return;
             framesSinceAudit = 0;
+            auditCenterX = pcx;
+            auditCenterZ = pcz;
             zombieAuditColumns = terrain.columnKeysSnapshot();
             zombieAuditCursor = 0;
             zombieAuditRemoved = 0;
@@ -2023,6 +2062,12 @@ public class ChunkManager {
             int cx = (int) (key >> 32);
             int cz = (int) key;
             LevelChunk chunk = currentWorld.getChunkSource().getChunk(cx, cz, false);
+            if (chunk != null && !retained(cx, cz, pcx, pcz)) {
+                // Leaves as an unload would, under the unload path's own budget.
+                BlockDataQueue.markChunkUnloaded(cx, cz);
+                if (pendingColumnUnloads.add(key)) cancelLightTasksForColumn(cx, cz);
+                continue;
+            }
             if (chunk == null && terrain.findColumn(cx, cz) != null) {
                 // The column left without an unload event, so nothing has
                 // cancelled its light tasks yet.
