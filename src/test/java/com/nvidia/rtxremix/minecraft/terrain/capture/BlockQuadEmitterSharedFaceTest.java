@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain.capture;
 
+import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.Direction;
 import net.minecraft.server.Bootstrap;
@@ -71,5 +72,25 @@ class BlockQuadEmitterSharedFaceTest {
         assertFalse(BlockQuadEmitter.meetsNeighbourFace(GLASS, GLASS, Direction.SOUTH));
         // A slab occludes, so its own side never moves.
         assertFalse(BlockQuadEmitter.meetsNeighbourFace(BOTTOM_SLAB, LEAVES, Direction.WEST));
+    }
+
+    @Test
+    void seeThroughBlocksKeepTheirFaceAgainstASolidBlock() {
+        BlockState stone = Blocks.STONE.defaultBlockState();
+        assertTrue(BlockQuadEmitter.touchesSolidBlock(Blocks.STAINED_GLASS.blue().defaultBlockState(), stone));
+        assertTrue(BlockQuadEmitter.touchesSolidBlock(Blocks.ICE.defaultBlockState(), stone));
+        assertTrue(BlockQuadEmitter.touchesSolidBlock(GLASS, stone));
+        // Glass against glass is culled as before, and a solid block never keeps a hidden face.
+        assertFalse(BlockQuadEmitter.touchesSolidBlock(GLASS, GLASS));
+        assertFalse(BlockQuadEmitter.touchesSolidBlock(stone, stone));
+    }
+
+    @Test
+    void contactFaceInsetOutlastsTheRuntimesRayOffset() {
+        // calculateRayOffset in dxvk-remix: four float steps of the largest coordinate. Scene
+        // coordinates reach the rebase distance plus a 32-chunk view; past the inset, a ray
+        // restarted at the stone's face would land inside the glass or beyond its kept face.
+        float largestOffset = (SceneSpace.REBASE_DISTANCE + 32 * 16) * 0x1p-23f * 4;
+        assertTrue(BlockQuadEmitter.CONTACT_FACE_INSET > 2 * largestOffset);
     }
 }

@@ -27,7 +27,7 @@ public final class SceneSpace {
      * as a player six thousand blocks from spawn has always had. Within it of world zero the
      * origin is zero, so near spawn nothing changes and nothing ever moves.
      */
-    static final int REBASE_DISTANCE = SNAP + SNAP / 2;
+    public static final int REBASE_DISTANCE = SNAP + SNAP / 2;
     /**
      * The Debug page's offset: a position that skipped the conversion lands this far away, out
      * of view, while every converted one stays within what a real move gives.

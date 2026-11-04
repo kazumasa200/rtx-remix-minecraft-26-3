@@ -19,6 +19,9 @@ also part of every mod file name.
 
 ### Fixed
 
+- Glass, stained glass, glass panes, ice, slime and honey resting on a solid
+  block now tint the surface under them and no longer look half clear, the
+  same as when they stand a block above it.
 - Far from spawn (tens of thousands of blocks out), the ground under leaf litter
   no longer shows through, grass block sides no longer mix their two textures,
   seams no longer open between blocks, and the first-person arm no longer
