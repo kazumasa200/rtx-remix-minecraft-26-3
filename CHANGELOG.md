@@ -11,6 +11,8 @@ also part of every mod file name.
 
 ## Unreleased
 
+## 0.4.0-pre.3 - 2026-11-04
+
 ### Added
 
 - Puddles in Dry Weather (Materials) keeps rain puddles on the ground when it
