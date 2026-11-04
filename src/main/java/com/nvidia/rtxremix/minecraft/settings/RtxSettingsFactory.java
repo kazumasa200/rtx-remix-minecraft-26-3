@@ -307,6 +307,9 @@ public final class RtxSettingsFactory {
                 0.0, 1.0, Puddles.DEFAULT_REFLECTION,
                 () -> (double) Puddles.getReflection(), v -> Puddles.setReflection(v.floatValue()))
                 .deferSliderApply());
+        list.add(RtxSetting.ofBool("materials.puddlesWhenDry", SettingGroup.MATERIALS,
+                "rtxremix.setting.materials.puddlesWhenDry", "rtxremix.setting.materials.puddlesWhenDry.tip",
+                false, Puddles::isKeptWhenDry, Puddles::setKeptWhenDry));
 
         // --- Debug views: switches for looking into what the renderer does, never needed to play ---
         list.add(RtxSetting.ofBool("debug.puddleMask", SettingGroup.DEBUG_VIEWS,

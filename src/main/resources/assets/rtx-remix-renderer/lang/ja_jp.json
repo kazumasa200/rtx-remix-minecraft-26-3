@@ -184,6 +184,8 @@
   "rtxremix.setting.materials.puddleAmount.tip": "雨の水たまりが開けた地面をどれだけ覆うかです。周りの地面は濡れて少し暗くなり、深いところに水がたまります。スライダーを止めると反映されます。",
   "rtxremix.setting.materials.puddleReflection": "水たまりの反射",
   "rtxremix.setting.materials.puddleReflection.tip": "雨の水たまりがどれだけ映り込むかです。オフは澄んだ水と同じ反射で、明るい地面ではほとんど見えません。上げるほど強く映り、水の部分が少し暗くなります。最大で鏡になります。スライダーを止めると反映されます。",
+  "rtxremix.setting.materials.puddlesWhenDry": "晴れでも水たまりを残す",
+  "rtxremix.setting.materials.puddlesWhenDry.tip": "雨が降っていないときも地面を濡れたままにし、水たまりを残します。雨の降るバイオームだけです。雨がなければ雨粒の波紋はなく、水面は静かです。オフでは、雨が止んでから 2 分ほどで乾きます。",
   "rtxremix.setting.debug.puddleMask": "水たまりのマスクを表示",
   "rtxremix.setting.debug.puddleMask.tip": "雨の水たまりを、水の多さに応じて赤く塗ります。どこに水たまりがあり、フチがどう薄れていくかを確かめるための表示で、問題を調べるとき以外は使いません。",
   "rtxremix.setting.debug.domeClouds": "ドームの雲だけを表示",

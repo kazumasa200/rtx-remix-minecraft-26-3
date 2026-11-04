@@ -184,6 +184,8 @@
   "rtxremix.setting.materials.puddleAmount.tip": "How much of open ground rain puddles cover. The ground around them grows wet and a little darker; the water stands in the deeper parts. Applies when you stop moving the slider.",
   "rtxremix.setting.materials.puddleReflection": "Puddle Reflection",
   "rtxremix.setting.materials.puddleReflection.tip": "How strongly rain puddles reflect. Off reflects as clear water does, which barely shows on bright ground; higher values reflect more and darken the water a little, up to a mirror. Applies when you stop moving the slider.",
+  "rtxremix.setting.materials.puddlesWhenDry": "Puddles in Dry Weather",
+  "rtxremix.setting.materials.puddlesWhenDry.tip": "Keeps the ground wet and the puddles standing when it is not raining, in biomes where it rains. Without rain their water is still, with no raindrop rings. Off, they dry up about two minutes after the rain stops.",
   "rtxremix.setting.debug.puddleMask": "Show Puddle Mask",
   "rtxremix.setting.debug.puddleMask.tip": "Paints rain puddles red, by how much water stands there, to show where they lie and how their edges fade. For finding problems only.",
   "rtxremix.setting.debug.domeClouds": "Show Dome Clouds Only",

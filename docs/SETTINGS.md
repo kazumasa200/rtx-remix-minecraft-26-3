@@ -149,6 +149,10 @@ the ground beneath, up to a mirror at 1.
 
 Both rebuild every puddle, so they apply once the slider stops.
 
+**Puddles in Dry Weather** keeps the ground soaked and the puddles standing
+when it is not raining, in biomes where it rains; without rain their water is
+still. Off, they dry up about two minutes after the rain stops.
+
 ## Debug
 
 Views for finding rendering problems, never needed to play. Each is a switch

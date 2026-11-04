@@ -152,6 +152,7 @@ public final class Puddles {
     private static float reflection = DEFAULT_REFLECTION;
     private static float amount = DEFAULT_AMOUNT;
     private static boolean maskShown;
+    private static boolean keptWhenDry;
 
     private static int changedMinX;
     private static int changedMinZ;
@@ -265,6 +266,10 @@ public final class Puddles {
     public static boolean isMaskShown() { return maskShown; }
     public static void setMaskShown(boolean shown) { maskShown = shown; }
 
+    /** Whether the ground stays soaked without rain, so puddles stand in dry weather too (#24). */
+    public static boolean isKeptWhenDry() { return keptWhenDry; }
+    public static void setKeptWhenDry(boolean kept) { keptWhenDry = kept; }
+
     /**
      * Notes that blocks in the given columns changed, so decals over them are relaid. Called
      * from the client's block updates on the render thread.
@@ -290,7 +295,7 @@ public final class Puddles {
         long now = System.nanoTime();
         float seconds = lastNanos == 0 ? 0.0f : Math.min(0.25f, (now - lastNanos) / 1.0e9f);
         lastNanos = now;
-        float rain = Math.clamp(level.getRainLevel(partialTick), 0.0f, 1.0f);
+        float rain = keptWhenDry ? 1.0f : Math.clamp(level.getRainLevel(partialTick), 0.0f, 1.0f);
         wetness = rain > wetness
                 ? Math.min(rain, wetness + seconds / WET_SECONDS)
                 : Math.max(rain, wetness - seconds / DRY_SECONDS);

@@ -117,6 +117,7 @@ class SettingsRowWidthTest {
             entry("rtxremix.setting.materials.smoothReliefMaps", "OFF"),
             entry("rtxremix.setting.materials.puddleAmount", "0.00"),
             entry("rtxremix.setting.materials.puddleReflection", "0.00"),
+            entry("rtxremix.setting.materials.puddlesWhenDry", "OFF"),
             entry("rtxremix.setting.debug.puddleMask", "OFF"),
             entry("rtxremix.setting.debug.domeClouds", "OFF"),
             entry("rtxremix.setting.debug.sceneOriginOffset", "OFF"),

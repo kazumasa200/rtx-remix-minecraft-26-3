@@ -504,7 +504,8 @@ rain stops). A clear-water sheet before it
 reflected by the runtime's Schlick Fresnel alone, strong at a grazing view
 whatever the index, so it began on a sharp edge however its materials were
 stepped. Tiles are retraced in turn within a millisecond a frame as the wetness
-changes, so an edge creeps rather than jumps.
+changes, so an edge creeps rather than jumps. The Puddles in Dry Weather setting
+holds the wetness at soaked without rain (#24).
 `RemixWeatherRenderer` redraws vanilla's rain and snow over the Remix image,
 occluded through the interop depth texture; rain refracts a copy of the main
 target as the lens left it, since it draws opaquely. Vanilla's own weather and

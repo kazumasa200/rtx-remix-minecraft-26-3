@@ -11,6 +11,11 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Added
+
+- Puddles in Dry Weather (Materials) keeps rain puddles on the ground when it
+  is not raining, with still water (#24).
+
 ### Changed
 
 - Above ground, unlit caves deep in distant terrain are left out of the
