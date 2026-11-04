@@ -669,3 +669,21 @@ tasks.register('releaseArchive', Zip) {
     preserveFileTimestamps = false
     reproducibleFileOrder = true
 }
+
+// Independently installable public reproduction fixture; never part of the renderer package.
+sourceSets {
+    particleFixture {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+    }
+}
+tasks.named('compileParticleFixtureJava') { dependsOn tasks.named('classes') }
+def particleFixtureJar = tasks.register('particleFixtureJar', Jar) {
+    group = 'verification'
+    description = 'Builds the synthetic extracted-particle graphical reproduction mod'
+    from sourceSets.particleFixture.output
+    archiveBaseName.set('rtx-remix-particle-fixture')
+    archiveVersion.set('1.0.0')
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+tasks.named('check') { dependsOn particleFixtureJar }

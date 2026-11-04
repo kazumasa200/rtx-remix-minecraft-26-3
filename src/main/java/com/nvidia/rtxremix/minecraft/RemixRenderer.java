@@ -40,6 +40,9 @@ import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import com.nvidia.rtxremix.minecraft.texture.ParticleAtlasManager;
 import com.nvidia.rtxremix.minecraft.particle.RemixParticleRenderer.PreparedFrame;
 import com.nvidia.rtxremix.minecraft.particle.RemixParticleRenderer;
+import com.nvidia.rtxremix.minecraft.particle.ParticleGeometryAdapters;
+import com.nvidia.rtxremix.minecraft.particle.ParticleGeometryRenderer;
+import com.nvidia.rtxremix.minecraft.particle.ParticleGeometryFailures;
 import com.nvidia.rtxremix.minecraft.weather.Puddles;
 import com.nvidia.rtxremix.minecraft.weather.RainSurfaces;
 import com.nvidia.rtxremix.minecraft.weather.RemixWeatherRenderer;
@@ -185,6 +188,8 @@ public class RemixRenderer {
         return thread;
     });
     private volatile CompletableFuture<ParticleRenderResult> particleRenderFuture;
+    private ParticleGeometryRenderer particleGeometryRenderer;
+    private ParticleGeometryFailures particleGeometryFailures;
     // Double-buffer: holds frame N's prepared particles for submission during frame N+1.
     private PreparedFrame pendingParticleFrame;
     private long particleNanosThisFrame;
@@ -568,6 +573,9 @@ public class RemixRenderer {
         if (RtxRemixMod.isBlockEntitiesEnabled()) {
             preloadEntityAtlasesForCapture();
         }
+        // Saved settings and world conf layers are active here. Preparing in initialize()
+        // would allocate materials before those settings and world options are installed.
+        if (RtxRemixMod.isParticlesEnabled() && particleAtlasManager != null) particleAtlasManager.prepareDeclaredAtlases();
     }
 
     private void applyPendingWorldResourceChanges() {
@@ -587,6 +595,7 @@ public class RemixRenderer {
         if (entitySubmitter != null) entitySubmitter.reloadMaterials();
         if (entityPass != null) entityPass.discardPoseSnapshots();
         if (particleRenderer != null) particleRenderer.cleanup();
+        clearParticleGeometry();
         if (particleAtlasManager != null) particleAtlasManager.cleanup();
         entityAtlasPreloadPending = true;
         if (weatherRenderer != null) weatherRenderer.cleanup();
@@ -819,6 +828,7 @@ public class RemixRenderer {
                 if (chunkManager != null) chunkManager.hideRetainedInstances();
                 if (lodTerrain != null) lodTerrain.update(remixApi, null, null, false, null);
                 discardPendingParticleFrame();
+                if (particleGeometryRenderer != null) particleGeometryRenderer.discardFrame();
                 // Closed by the finally, like the RTX-disabled branch below. endFrame is not
                 // idempotent: it re-adds elapsed from the same frame start and refolds min,
                 // max and the frame count.
@@ -839,6 +849,7 @@ public class RemixRenderer {
                 // A payload prepared before the toggle holds world-space vertices from the
                 // old camera position; publishing it on re-enable would draw stale geometry.
                 discardPendingParticleFrame();
+                if (particleGeometryRenderer != null) particleGeometryRenderer.discardFrame();
                 return;
             }
 
@@ -852,6 +863,14 @@ public class RemixRenderer {
                 discardPendingParticleFrame();
             }
             submitPendingParticleFrame();
+            if (particleGeometryRenderer != null) {
+                try { particleGeometryRenderer.submit(remixApi); }
+                catch (RuntimeException | LinkageError failure) {
+                    particleGeometryRenderer.discardFrame();
+                    if (particleGeometryFailures != null) particleGeometryFailures.submissionFailed(failure);
+                    else LOGGER.error("Could not submit extracted particle geometry", failure);
+                }
+            }
 
             Camera camera = client.gameRenderer.mainCamera();
             float tickDelta = client.getDeltaTracker().getGameTimeDeltaPartialTick(true);
@@ -1082,6 +1101,63 @@ public class RemixRenderer {
         perfTimer.count(cntBlockEntityMeshCreates, stats.meshCreates());
         perfTimer.injectNanos(perfBlockEntityCapture, stats.captureMicros() * 1000L);
         perfTimer.injectNanos(perfBlockEntitySubmit, stats.submitMicros() * 1000L);
+    }
+
+    /** Consumes custom states synchronously while their source storage is still valid. */
+    public void captureParticleGeometry(net.minecraft.client.renderer.state.level.ParticlesRenderState states, Vec3 camera) {
+        if (!initialized || !RtxRemixMod.isParticlesEnabled()) {
+            if (particleGeometryRenderer != null) particleGeometryRenderer.discardFrame();
+            return;
+        }
+        if (particleGeometryRenderer != null) particleGeometryRenderer.beginFrame(camera);
+        if (particleGeometryFailures != null) particleGeometryFailures.beginFrame();
+        boolean begun = particleGeometryRenderer != null;
+        for (int i = 0; i < states.particles.size(); i++) {
+            var state = states.particles.get(i);
+            // Keep vanilla out of both the failure map and reflective adapter lookup.
+            if (state.getClass() == net.minecraft.client.renderer.state.level.QuadParticleRenderState.class) continue;
+            if (particleGeometryFailures != null && particleGeometryFailures.disabled(state.getClass())) continue;
+            try {
+                var source = ParticleGeometryAdapters.forState(state);
+                if (source == null || !source.hasGeometry(state)) continue;
+                if (!begun) {
+                    // Common atlases keep their original lifecycle. Usually the vanilla
+                    // worker has already initialized them; retain frame-zero geometry too.
+                    particleAtlasManager.initialize();
+                    if (!particleAtlasManager.isInitialized()) continue;
+                    particleGeometryRenderer = new ParticleGeometryRenderer(particleAtlasManager);
+                    particleGeometryRenderer.beginFrame(camera);
+                    begun = true;
+                }
+                if (particleGeometryFailures == null) particleGeometryFailures = new ParticleGeometryFailures(LOGGER);
+                particleGeometryRenderer.beginSource();
+                source.capture(state, particleGeometryRenderer);
+                particleGeometryRenderer.finishSource();
+                particleGeometryFailures.captured(state.getClass());
+            } catch (ParticleAtlasManager.NotReady deferred) {
+                if (particleGeometryRenderer != null) particleGeometryRenderer.abortSource();
+            } catch (RuntimeException | LinkageError failure) {
+                if (particleGeometryRenderer != null) particleGeometryRenderer.abortSource();
+                if (particleGeometryFailures == null) particleGeometryFailures = new ParticleGeometryFailures(LOGGER);
+                particleGeometryFailures.fail(state.getClass(), "capture", failure);
+            }
+        }
+        if (begun) particleGeometryRenderer.finishFrame();
+    }
+
+    public int getExtractedParticleQuadCount() {
+        return particleGeometryRenderer == null ? 0 : particleGeometryRenderer.quadCount();
+    }
+
+    public int getExtractedParticleDrawCount() {
+        return particleGeometryRenderer == null ? 0 : particleGeometryRenderer.drawCount();
+    }
+
+    private void clearParticleGeometry() {
+        if (particleGeometryRenderer != null) {
+            particleGeometryRenderer.close();
+            particleGeometryRenderer = null;
+        }
     }
 
     private CompletableFuture<ParticleRenderResult> startParticleRenderTask(float tickDelta, long frameIndex) {
@@ -1592,6 +1668,7 @@ public class RemixRenderer {
         if (blockOutlinePass != null) {
             blockOutlinePass.clear();
         }
+        clearParticleGeometry();
         if (particleRenderer != null) {
             particleRenderer.cleanup();
         }
@@ -1658,6 +1735,7 @@ public class RemixRenderer {
         if (entitySubmitter != null) {
             cleanup.run(() -> { entitySubmitter.close(); entitySubmitter = null; });
         }
+        clearParticleGeometry();
         if (particleRenderer != null) {
             cleanup.run(() -> { particleRenderer.cleanup(); particleRenderer = null; });
         }

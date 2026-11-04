@@ -1439,6 +1439,23 @@ public class BlockTextureManager {
 
     public boolean isInitialized() { return initialized && !sprites.isEmpty(); }
     public RemixTexture getBlockAtlasTexture() { ensureInit(); return atlasAlbedo; }
+    public ParticleMaterialTextures particleGeometryTextures() {
+        ensureInit();
+        if (atlasAlbedo == null) throw new IllegalStateException("Block atlas is not initialized");
+        return new ParticleMaterialTextures(atlasAlbedo, atlasNormalTex, atlasHeightTex,
+                atlasRoughnessTex, atlasMetallicTex, atlasEmissive,
+                BASE_TERRAIN_EMISSION_INTENSITY * appliedTerrainEmissionMultiplier,
+                particleEmissionBounds(sprites));
+    }
+
+    /** Built-in emission shares the atlas without a per-sprite texture object. */
+    static long[] particleEmissionBounds(List<SpriteEntry> entries) {
+        return entries.stream().filter(sprite -> sprite.hasEmission).mapToLong(sprite ->
+                        ParticleMaterialTextures.boundsKey(
+                                com.nvidia.rtxremix.HardcodedVertex.packHalf2x16(sprite.u0, sprite.v0),
+                                com.nvidia.rtxremix.HardcodedVertex.packHalf2x16(sprite.u1, sprite.v1)))
+                        .sorted().toArray();
+    }
     public RemixTexture getEmissiveAtlasTexture() { ensureInit(); return atlasEmissive; }
     public RemixTexture getRoughnessAtlasTexture() { ensureInit(); return atlasRoughnessTex; }
     public RemixTexture getMetallicAtlasTexture() { ensureInit(); return atlasMetallicTex; }

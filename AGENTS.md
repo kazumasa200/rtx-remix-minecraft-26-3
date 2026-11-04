@@ -73,6 +73,22 @@ packaged contents must agree with `NativeExtractor`. See
 [Getting Started](docs/GETTING_STARTED.md) and [`build.gradle`](build.gradle)
 for the staging inventory.
 
+`gradlew particleFixtureJar` builds the independently installable public
+`build/libs/rtx-remix-particle-fixture-1.0.0.jar` (never embedded in the mod).
+Install it with Fabric API and the renderer, enter a world, look horizontally
+and run `/remixquads`. Three cropped, rotated, tinted quads using vanilla flame
+and smoke textures appear four blocks ahead through the extracted-state path;
+upstream's live-slot-only capture omits them. Run the command again to hide them.
+For automated checks, `-Drtxremix.particleFixture=true` enables it after joining;
+add `-Drtxremix.particleFixture.fail=true` to inject a broken producer between
+two healthy groups. Six healthy quads must remain, with one error log and no
+partial broken geometry or repeated errors. Check bright/dark scenes, reload,
+world changes and RTX toggles in game; JVM tests alone do not verify the image.
+The fixture's [before](docs/images/extracted-quads-before.png) and
+[after](docs/images/extracted-quads-after.png) captures use the same camera and
+vanilla textures. This GPU needs #2's CHILD presentation support, so both
+graphical variants include that separately reviewed presentation path.
+
 Distant Horizons is an optional compile-only dependency (Modrinth Maven, never
 shipped). Its mixins live in a separate `rtx-remix-renderer.distanthorizons.mixins.json`
 that loads only when Distant Horizons is installed (`lod/dh/`).
@@ -652,8 +668,28 @@ toward the sun and the clouds' shadow put the web out.
 **Particles.** Slot preparation and CPU mesh snapshots run on a dedicated worker
 and are double buffered: the render thread publishes the previous frame's
 payload at the top of the frame and joins the worker after submit, so particles
-trail the scene by exactly one frame. Only `SINGLE_QUADS` particles are
-captured; item-atlas particles are alpha-tested. Vanilla particle colours are
+trail the scene by exactly one frame. `SINGLE_QUADS` retains that path. Other
+completed CPU-quad states use `particle/ExtractedParticleGeometry` or the
+public `layers`/`buildLayer` shape adapter, synchronously before vanilla submit
+is suppressed. Generic lookup never opens private storage and skips vanilla's
+exact quad state. Shared native batches retain orientation, XYZ, UVs, straight
+ARGB and full sprite bounds, group by layer/material, and page at 8192 quads.
+A reusable consumer and reload-scoped UV grid handle cropped public streams;
+equal layer descriptors share a batch. A malformed/throwing producer rolls back
+its own vertices, logs once per state class and is quarantined while other
+sources continue. Additional declared atlases prepare at initialization/reload
+without scanning unrelated textures; vanilla's standard atlases retain their
+existing worker/first-source initialization order. A layer first constructed during extraction still
+needs synchronous loading to retain its first frame: register its atlas through
+`ParticleAtlasDependencies` during resource initialization to avoid that fallback.
+Only explicit intrinsic attributes or authored atlas masks provide emission;
+environmental packed light is not intrinsic emission. Both particle paths share
+the existing particle intensity; block sprites use terrain's applied multiplier.
+A vertex stream lacks a reliable particle identity, so an explicit producer must
+supply any `ParticleTint` soot policy. Inferring it from grey RGB or a texture
+name would also blacken white campfire smoke. GPU/custom-shader geometry needs
+its own integration. Reload/world teardown frees native meshes and atlas state.
+Item-atlas particles are alpha-tested. Vanilla particle colours are
 lightmap tints, not albedos, and the runtime lights a blended particle from the
 radiance cache with no self-shadowing, so `ParticleTint` draws soot near-black
 to keep smoke dark over a lit floor.
