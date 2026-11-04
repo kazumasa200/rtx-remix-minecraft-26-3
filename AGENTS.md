@@ -757,6 +757,9 @@ diluting the sampler's candidate pool.
   because the volumetric grid reuses the previous frame's radiance and a
   camera-locked emitter would smear into distant geometry (`LightManager`).
 - Ordinary classes must not live in the mixin package (`MixinPackageBoundaryTest`).
+- The `asset`, `profiling` and `util` packages name nothing from Minecraft, Mojang
+  or Fabric, so a module shared by several game versions and loaders could hold
+  them unchanged (`CorePackageBoundaryTest`).
 - A mixin that skips vanilla render work skips a whole draw or submit, never
   part of a `RenderPass`'s setup: pipelines carry their own state, so nothing
   needs replaying, but a half-skipped pass leaves uniforms and samplers half set
