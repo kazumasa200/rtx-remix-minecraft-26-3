@@ -13,4 +13,7 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 public interface SpriteContentsAccessor {
     @Accessor("originalImage")
     NativeImage getImage();
+
+    @Accessor("animatedTexture")
+    SpriteContents.AnimatedTexture getAnimatedTexture();
 }
