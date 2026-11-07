@@ -90,12 +90,12 @@ brightness, edge detail and how far rain thickens them toward an overcast sky.
 grouping related block lights into a row; the far left is Off. The Copper
 Beacon is separate: right-click a placed beacon for its own controls. Every
 vanilla block that gives off light has a row, except the ones that come in
-large fields: lava, magma, portals, glow lichen and sea pickles glow through
-their surfaces instead, so **Block Glow Intensity** under Materials controls
-them. Emitting surfaces are not sampled directly, so a room lit only by them
-can be darker than one with separate lights. At 1 a light block lights about
-as far as a torch of the same light level: a glowing block such as a sea
-lantern, and a lantern's glass, shine from just outside their faces.
+large fields: lava, magma, portals, glow lichen, sea pickles, and powered
+redstone dust glow through their surfaces instead, so **Block Glow Intensity**
+under Materials controls them. Emitting surfaces are not sampled directly, so a
+room lit only by them can be darker than one with separate lights. At 1 a light
+block lights about as far as a torch of the same light level: a glowing block
+such as a sea lantern, and a lantern's glass, shine from just outside their faces.
 
 The table commits changed rows together when you leave, then updates the
 loaded block lights in place over the next few frames; terrain is not rebuilt.
