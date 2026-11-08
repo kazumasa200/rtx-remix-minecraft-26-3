@@ -626,6 +626,14 @@ what lies behind, so around a lamp the haze and the clouds only brighten the
 image and, after sunset, the clouds' shadows leave it: faded, clouded or
 shaded with the distant land behind, the flame went out and the land showed
 through the glow as pale outlines.
+Sky seen through stained glass, ice or water within 32 blocks stays as the
+runtime draws it, its own clouds there tinted with it, and the sky's measures
+leave it out (`GlassVolume`, a window of the see-through blocks around the
+camera measured a layer a frame, which the lens follows block by block along
+the view). With the sky behind glass tinted the marched clouds floated white
+over it, and the glass's tint taken for the sky's spread around it. Told by the
+image's hue instead, whole clouds in open sky passed for seen through glass and
+turned cyan, and under a large roof the sky's measures took the tint.
 Keeping the image wherever the two marches
 agreed drew the panorama's speckle and outlines, which the denoiser smooths out
 of the image, onto the bases of clouds overhead. The panorama copy is mipmapped

@@ -128,6 +128,8 @@ public final class LensEffects {
     private static final int UNIT_SOURCES = UNIT_COUNT + 4;
     /** The glow pass's maps, an array texture, for the composite. */
     private static final int UNIT_GLOW = UNIT_COUNT + 5;
+    /** The see-through blocks around the camera, from the sky samples to the composite. */
+    private static final int UNIT_GLASS = UNIT_COUNT + 6;
     /**
      * Blocks over which the caustics' waves repeat, each way. Every wave fits the period a whole
      * number of times, so the web traced over one period holds for every water anywhere: a map
@@ -927,6 +929,76 @@ public final class LensEffects {
             }
             """;
 
+    // Whether the view meets stained glass, ice or water near the camera (GlassVolume). The
+    // runtime keeps their tint in the sky behind them and draws its own clouds there tinted; the
+    // marched clouds drawn over that sky floated white, and the sky's measures took the tint for
+    // the sky's.
+    private static final String GLASS_READING = "const int GLASS = " + GlassVolume.SIZE + ";\n"
+            + "const int GLASS_SHIFT = " + GlassVolume.SHIFT + ";\n" + """
+            uniform samplerBuffer GlassVolume;
+            uniform ivec3 GlassCamera;
+            uniform vec3 GlassFraction;
+            // Whether the window holds any see-through block, and the heights they span, from the
+            // bottom of the lowest to the top of the highest, from the camera's block: a view that
+            // never reaches them, as most of the sky above a lake does, is not followed.
+            uniform float GlassPresent;
+            uniform vec2 GlassHeights;
+            const int GLASS_STEPS = 112;
+
+            // A block's texel: below 0 outside the window, 1 where see-through, 0 otherwise or
+            // not measured yet.
+            float glassBlock(ivec3 block) {
+                if (any(greaterThanEqual(abs(block - GlassCamera), ivec3(GLASS / 2 - 1)))) {
+                    return -1.0;
+                }
+                ivec3 texel = block & (GLASS - 1);
+                float held = texelFetch(GlassVolume, (texel.y * GLASS + texel.z) * GLASS + texel.x).r;
+                float key = float((((block.x >> GLASS_SHIFT) & 63) << 12 | ((block.y >> GLASS_SHIFT) & 63) << 6
+                    | ((block.z >> GLASS_SHIFT) & 63)) + 1);
+                return floor(held) == key && fract(held) > 0.25 ? 1.0 : 0.0;
+            }
+
+            // Whether the view crosses a see-through block within the window, block by block from
+            // the camera's.
+            bool seenThroughGlass(vec3 direction) {
+                if (GlassPresent <= 0.0) {
+                    return false;
+                }
+                float rise = direction.y;
+                float height = GlassFraction.y;
+                if ((height >= GlassHeights.y && rise >= 0.0) || (height <= GlassHeights.x && rise <= 0.0)) {
+                    return false;
+                }
+                float reach = rise > 0.0 ? (GlassHeights.y - height) / rise
+                    : rise < 0.0 ? (GlassHeights.x - height) / rise : 1.0e9;
+                ivec3 cell = GlassCamera;
+                ivec3 stride = ivec3(sign(direction));
+                vec3 span = 1.0 / max(abs(direction), vec3(1.0e-6));
+                vec3 next = mix(GlassFraction, 1.0 - GlassFraction, step(0.0, direction)) * span;
+                for (int i = 0; i < GLASS_STEPS; i++) {
+                    float block = glassBlock(cell);
+                    if (block > 0.5) {
+                        return true;
+                    }
+                    float leaves = min(next.x, min(next.y, next.z));
+                    if (block < 0.0 || leaves > reach) {
+                        return false;
+                    }
+                    if (next.x <= next.y && next.x <= next.z) {
+                        next.x += span.x;
+                        cell.x += stride.x;
+                    } else if (next.y <= next.z) {
+                        next.y += span.y;
+                        cell.y += stride.y;
+                    } else {
+                        next.z += span.z;
+                        cell.z += stride.z;
+                    }
+                }
+                return false;
+            }
+            """;
+
     // The screen sampled once on a coarse grid, one texel per sample, for the passes below that
     // gather statistics from it: the decoded image with, for a sample showing sky, the sine of
     // its elevation plus two in alpha (zero for land), and the dome's clouds and the atmosphere
@@ -939,7 +1011,7 @@ public final class LensEffects {
             layout(location = 2) out vec4 sampledSky;
             """ + "const vec2 SAMPLE_GRID = vec2(" + SAMPLE_COLUMNS + ".0, " + SAMPLE_ROWS + ".0);\n"
             + CloudField.defines() + SCENE_SAMPLING + DEPTH_SAMPLING + VIEW_RAY + COLOUR_SPACE + PANORAMA_SAMPLING
-            + ATMOSPHERE_SAMPLING + LAMP_GLOW + SKY_LIGHT_NEAR + """
+            + ATMOSPHERE_SAMPLING + LAMP_GLOW + SKY_LIGHT_NEAR + GLASS_READING + """
             uniform float Clouds;
 
             void main() {
@@ -950,7 +1022,8 @@ public final class LensEffects {
                 bool sky = isSky(distanceAt(uv)) && isSky(distanceAt(uv + vec2(texel.x, 0.0)))
                     && isSky(distanceAt(uv - vec2(texel.x, 0.0))) && isSky(distanceAt(uv + vec2(0.0, texel.y)))
                     && isSky(distanceAt(uv - vec2(0.0, texel.y)))
-                    && lampGlow(uv) < 0.25 && !skyLightNear(normalize(viewRay(uv)));
+                    && lampGlow(uv) < 0.25 && !skyLightNear(normalize(viewRay(uv)))
+                    && !seenThroughGlass(normalize(viewRay(uv)));
                 sampledScene = vec4(srgbToLinear(scene(uv)), sky ? 2.0 + normalize(viewRay(uv)).y : 0.0);
                 sampledClouds = sky && Clouds > 0.0 ? shownClouds(uv) : vec4(0.0);
                 sampledSky = vec4(sky && Clouds > 0.0 ? atmosphereAt(normalize(viewRay(uv))) : vec3(0.0), 1.0);
@@ -1248,7 +1321,7 @@ public final class LensEffects {
             layout(location = 2) out vec4 clearSky;
             layout(location = 3) out vec4 clearExcess;
             """ + CloudField.defines() + SCENE_SAMPLING + DEPTH_SAMPLING + VIEW_RAY + COLOUR_SPACE
-            + PANORAMA_SAMPLING + ATMOSPHERE_SAMPLING + CLOUD_EXPOSURE + LAMP_GLOW + SKY_LIGHT_NEAR + """
+            + PANORAMA_SAMPLING + ATMOSPHERE_SAMPLING + CLOUD_EXPOSURE + LAMP_GLOW + SKY_LIGHT_NEAR + GLASS_READING + """
 
             // How far the image's clear sky is taken to differ from the atmosphere, in stops: a
             // star or the moon takes in a texel no more than the lower bound, and what lies above
@@ -1271,6 +1344,9 @@ public final class LensEffects {
                 vec3 direction = normalize(viewRay(uv));
                 vec3 atmosphere = atmosphereAt(direction);
                 vec3 modelled = skyExposure(atmosphere) * atmosphere * skyResidual(direction.y);
+                // Sky seen through glass or water is measured as neither clouds nor sky: taken for
+                // it, the glass's tint spread over the sky around it.
+                sky = sky && !seenThroughGlass(direction);
                 float thick = sky ? smoothstep(0.02, 0.1, shown.a) : 0.0;
                 float clear = sky && shown.a < 0.02 ? 1.0 : 0.0;
                 vec3 stops = clamp(log2(max(image, vec3(1.0e-6)) / max(modelled, vec3(1.0e-6))),
@@ -1907,7 +1983,7 @@ public final class LensEffects {
                     + textureLod(Glow, vec3(uv + texel, layer), GLOW_LEVEL));
             }
 
-            """ + LAMP_GLOW_READING + """
+            """ + LAMP_GLOW_READING + GLASS_READING + """
 
             // The marched clouds over the sky in place of the dome's, drawn over the sky behind
             // the dome's: read straight out of the image where the dome's clouds are thin, and
@@ -1922,7 +1998,9 @@ public final class LensEffects {
             vec3 cloudsOverSky(vec2 uv, vec3 colour) {
                 float weights;
                 vec4 marched = gatherClouds(uv, Far, true, weights);
-                if (weights <= 0.0 || Rain >= 1.0) {
+                // Sky seen through glass or water stays as the runtime draws it, its own clouds
+                // there tinted with it.
+                if (weights <= 0.0 || Rain >= 1.0 || seenThroughGlass(normalize(viewRay(uv)))) {
                     return colour;
                 }
                 vec4 shown = shownClouds(uv);
@@ -2337,6 +2415,7 @@ public final class LensEffects {
     /** One texel a flare source: its light, alpha 0 where the image does not show it. */
     private int sourceLights;
     private final WaterColumns waterColumns = new WaterColumns();
+    private final GlassVolume glassVolume = new GlassVolume();
     private float waterIor = 1.2f;
     /** Which half of the caustic layers this frame traces. */
     private int causticParity;
@@ -2482,6 +2561,9 @@ public final class LensEffects {
         sunLightFollow = 1.0f - (float) Math.exp(-seconds / SUN_LIGHT_SECONDS);
         if (level != null && LensLook.getCaustics() > 0.0f) {
             waterColumns.update(level, position.x, position.z);
+        }
+        if (level != null && CloudField.ready()) {
+            glassVolume.update(level, position.x, position.y, position.z);
         }
     }
 
@@ -2706,7 +2788,9 @@ public final class LensEffects {
                     bindTexture(UNIT_PANORAMA, CloudField.panoramaTexture(), panoramaSampler);
                     bindTexture(UNIT_ATMOSPHERE, CloudField.skyTexture(), atmosphereSampler);
                 }
+                GL45C.glBindTextureUnit(UNIT_GLASS, glassVolume.texture());
                 samplesProgram.use();
+                setGlass(samplesProgram, overClouds);
                 setView(samplesProgram);
                 samplesProgram.set("Clouds", overClouds ? 1.0f : 0.0f);
                 samplesProgram.set("AtmosphereRadiance", CloudField.skyRadiance());
@@ -2803,6 +2887,7 @@ public final class LensEffects {
                 bindTexture(UNIT_ATMOSPHERE, CloudField.skyTexture(), atmosphereSampler);
                 bindTexture(UNIT_CALIBRATION, resolvedCalibration, sceneSampler);
                 glowProgram.use();
+                setGlass(glowProgram, true);
                 glowProgram.set("ViewportSize", glowWidth, glowHeight);
                 setView(glowProgram);
                 glowProgram.set("AtmosphereRadiance", CloudField.skyRadiance());
@@ -2877,6 +2962,7 @@ public final class LensEffects {
             compositeProgram.set("Caustics", caustics);
             if (caustics > 0.0f) {
                 setWater(compositeProgram);
+            setGlass(compositeProgram, overClouds);
                 compositeProgram.set("CausticOrigin", (float) Math.floorMod((int) Math.floor(cameraX), CAUSTIC_PERIOD),
                         (float) Math.floorMod((int) Math.floor(cameraZ), CAUSTIC_PERIOD));
                 compositeProgram.set("CameraFraction", (float) (cameraX - Math.floor(cameraX)),
@@ -2907,6 +2993,7 @@ public final class LensEffects {
             GL45C.glBindSampler(UNIT_CAUSTICS, 0);
             GL45C.glBindTextureUnit(UNIT_SOURCES, 0);
             GL45C.glBindTextureUnit(UNIT_GLOW, 0);
+            GL45C.glBindTextureUnit(UNIT_GLASS, 0);
             GL45C.glBindSampler(UNIT_GLOW, 0);
             GlStateManager._activeTexture(GL45C.GL_TEXTURE0 + UNIT_NOISE);
             GL45C.glBindTexture(GL45C.GL_TEXTURE_3D, 0);
@@ -3119,6 +3206,18 @@ public final class LensEffects {
         }
     }
 
+    /** The window of see-through blocks, for a program that leaves the sky seen through them alone. */
+    private void setGlass(Program program, boolean clouds) {
+        boolean present = clouds && glassVolume.texture() != 0 && glassVolume.any();
+        double blockY = Math.floor(cameraY);
+        program.set("GlassCamera", (int) Math.floor(cameraX), (int) blockY, (int) Math.floor(cameraZ));
+        program.set("GlassFraction", (float) (cameraX - Math.floor(cameraX)), (float) (cameraY - blockY),
+                (float) (cameraZ - Math.floor(cameraZ)));
+        program.set("GlassPresent", present ? 1.0f : 0.0f);
+        program.set("GlassHeights", present ? (float) (glassVolume.lowest() - blockY) : 0.0f,
+                present ? (float) (glassVolume.highest() + 1 - blockY) : 0.0f);
+    }
+
     /** The window of water columns and the sunlight the caustics bend, for a program that reads them. */
     private void setWater(Program program) {
         program.set("CameraBlock", (int) Math.floor(cameraX), (int) Math.floor(cameraY), (int) Math.floor(cameraZ));
@@ -3313,6 +3412,7 @@ public final class LensEffects {
             hazeValid = false;
         }
         waterColumns.delete();
+        glassVolume.delete();
         if (vertexArray != 0) GL45C.glDeleteVertexArrays(vertexArray);
         if (framebuffer != 0) GL45C.glDeleteFramebuffers(framebuffer);
         if (brightTexture != 0) GL45C.glDeleteTextures(brightTexture);
@@ -3602,6 +3702,7 @@ public final class LensEffects {
             GL45C.glProgramUniform1i(id, GL45C.glGetUniformLocation(id, "CalibrationRows"), UNIT_CALIBRATION_ROWS);
             GL45C.glProgramUniform1i(id, GL45C.glGetUniformLocation(id, "CloudCalibration"), UNIT_CALIBRATION);
             GL45C.glProgramUniform1i(id, GL45C.glGetUniformLocation(id, "WaterColumns"), UNIT_WATER_COLUMNS);
+            GL45C.glProgramUniform1i(id, GL45C.glGetUniformLocation(id, "GlassVolume"), UNIT_GLASS);
             GL45C.glProgramUniform1i(id, GL45C.glGetUniformLocation(id, "CausticMaps"), UNIT_CAUSTICS);
             GL45C.glProgramUniform1i(id, GL45C.glGetUniformLocation(id, "CausticSlopes"), UNIT_CAUSTICS);
             GL45C.glProgramUniform1i(id, GL45C.glGetUniformLocation(id, "CausticTrace"), UNIT_BRIGHT);
