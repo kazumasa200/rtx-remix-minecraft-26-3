@@ -96,12 +96,14 @@ A sidecar for an animated texture takes one of two shapes:
 
 ## Subsurface Scattering
 
-Two paths, chosen by how the block is drawn (`BlockTextureManager`):
-
-- **Solid blocks** get a diffusion profile, with the scattering colour taken
-  from `_sss` when there is one and from the base colour otherwise.
-- **Cutout blocks**, which is most foliage, get thickness-based scattering
-  driven by `_s` blue, with `_sss` supplying the single-scattering colour.
+Every block, solid or cutout, gets thickness-based (thin-opaque) scattering
+driven by `_s` blue, with `_sss` supplying the single-scattering colour
+(`BlockTextureManager`). Solid blocks used to get the runtime's diffusion
+profile, which replaces a surface's own diffuse light with light gathered
+over a disk around it: on a pack that marks quartz as subsurface, every
+shadow on it came out soft and the caustics under water vanished. The
+profile let a torch behind a quartz wall light it up; thin opaque lets
+almost nothing through a whole block.
 
 Author `_sss` for thin plants: leaves, grass, vines, glow lichen. That is what
 the baseline pack covers. A thick solid block rarely needs it.
