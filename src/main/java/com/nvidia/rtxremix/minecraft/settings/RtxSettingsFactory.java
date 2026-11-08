@@ -322,6 +322,9 @@ public final class RtxSettingsFactory {
         list.add(RtxSetting.ofBool("debug.glClouds", SettingGroup.DEBUG_VIEWS,
                 "rtxremix.setting.debug.glClouds", "rtxremix.setting.debug.glClouds.tip",
                 false, RuntimeFrame::isDrawnInGl, RuntimeFrame::setDrawnInGl));
+        list.add(RtxSetting.ofBool("debug.cloudShadowTest", SettingGroup.DEBUG_VIEWS,
+                "rtxremix.setting.debug.cloudShadowTest", "rtxremix.setting.debug.cloudShadowTest.tip",
+                false, RuntimeFrame::isShadowTelltale, RuntimeFrame::setShadowTelltale));
         list.add(RtxSetting.ofBool("debug.sceneOriginOffset", SettingGroup.DEBUG_VIEWS,
                 "rtxremix.setting.debug.sceneOriginOffset", "rtxremix.setting.debug.sceneOriginOffset.tip",
                 false, SceneSpace::debugOffset, SceneSpace::setDebugOffset));

@@ -190,6 +190,8 @@
   "rtxremix.setting.debug.puddleMask.tip": "雨の水たまりを、水の多さに応じて赤く塗ります。どこに水たまりがあり、フチがどう薄れていくかを確かめるための表示で、問題を調べるとき以外は使いません。",
   "rtxremix.setting.debug.glClouds": "雲を OpenGL で描く",
   "rtxremix.setting.debug.glClouds.tip": "Unbound の雲を、ランタイムパッチでパストレーサーの中に描かず、これまでどおり空のドームとレンズの画素ごとの描き直しで描きます。2つを見比べるための切り替えです。ランタイムパッチが働いていないときは効きません。",
+  "rtxremix.setting.debug.cloudShadowTest": "雲の影の確認",
+  "rtxremix.setting.debug.cloudShadowTest.tip": "どこもかしこも雲に覆われたように、太陽と月の光だけを通さなくします。松明やランプなどの光はそのまま残ります。パストレーサーの中の Unbound の雲の影が、太陽と月の光だけを暗くしていることを確かめるための表示で、問題を調べるとき以外は使いません。",
   "rtxremix.setting.debug.domeClouds": "ドームの雲だけを表示",
   "rtxremix.setting.debug.domeClouds.tip": "Unbound の雲を、画面の画素ごとに描き直さず、RTX Remix が空のドームに描いたままにします。雲の影も描きません。雲のおかしな見え方が、画素ごとに描き直した雲から来ているかを確かめるための表示で、問題を調べるとき以外は使いません。",
   "rtxremix.setting.debug.sceneOriginOffset": "シーンの原点をずらす",

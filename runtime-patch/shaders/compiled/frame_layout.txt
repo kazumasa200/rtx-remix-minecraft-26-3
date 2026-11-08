@@ -24,7 +24,7 @@ HazeDistance 136
 CirrusAngle 140
 CirrusStrength 144
 CirrusMinElevation 148
-Reserved0 152
+ShadowTelltale 152
 Reserved1 156
 Flash 160
 ShapeCount 176

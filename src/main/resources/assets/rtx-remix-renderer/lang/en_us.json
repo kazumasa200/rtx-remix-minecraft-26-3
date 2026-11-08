@@ -190,6 +190,8 @@
   "rtxremix.setting.debug.puddleMask.tip": "Paints rain puddles red, by how much water stands there, to show where they lie and how their edges fade. For finding problems only.",
   "rtxremix.setting.debug.glClouds": "Draw Clouds in OpenGL",
   "rtxremix.setting.debug.glClouds.tip": "Draws the Unbound clouds as before, on the sky dome and again per pixel by the lens, instead of in the path tracer through the runtime patch. Shows the two side by side. Has no effect when the runtime patch is not active.",
+  "rtxremix.setting.debug.cloudShadowTest": "Cloud Shadow Test",
+  "rtxremix.setting.debug.cloudShadowTest.tip": "Lets no light of the sun or moon through anywhere, as if a cloud covered everything, while torches, lamps and other lights keep theirs. Shows that the Unbound clouds' shadows in the path tracer dim only the light of the sun and moon. For finding problems only.",
   "rtxremix.setting.debug.domeClouds": "Show Dome Clouds Only",
   "rtxremix.setting.debug.domeClouds.tip": "Leaves the Unbound clouds as RTX Remix draws them on the sky dome, instead of drawing them again per pixel over the image, and draws no cloud shadows. Shows whether a flaw in the clouds comes from the per-pixel clouds. For finding problems only.",
   "rtxremix.setting.debug.sceneOriginOffset": "Offset Scene Origin",

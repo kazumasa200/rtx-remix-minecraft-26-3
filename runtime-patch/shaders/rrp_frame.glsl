@@ -39,7 +39,7 @@ layout(set = 4, binding = 0, std140) uniform RrpFrame {
     float CirrusAngle;
     float CirrusStrength;
     float CirrusMinElevation;
-    float Reserved0;
+    float ShadowTelltale;    // 1 for the Debug page's Cloud Shadow Test: the clouds' light's rays carry nothing
     float Reserved1;
     vec4 Flash;
     int ShapeCount;

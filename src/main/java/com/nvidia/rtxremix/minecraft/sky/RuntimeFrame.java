@@ -45,6 +45,7 @@ public final class RuntimeFrame {
     static final int CIRRUS_ANGLE = 140;
     static final int CIRRUS_STRENGTH = 144;
     static final int CIRRUS_MIN_ELEVATION = 148;
+    static final int SHADOW_TELLTALE = 152;
     static final int FLASH = 160;
     static final int SHAPE_COUNT = 176;
     static final int SHAPE_BOUNDS = 192;
@@ -75,6 +76,20 @@ public final class RuntimeFrame {
     }
 
     /**
+     * The Debug page's Cloud Shadow Test: every shadow ray of the clouds' light carries nothing, so what the sun
+     * or moon lights goes dark and a lamp's light, which the clouds never dim, stays.
+     */
+    private static volatile boolean shadowTelltale;
+
+    public static boolean isShadowTelltale() {
+        return shadowTelltale;
+    }
+
+    public static void setShadowTelltale(boolean on) {
+        shadowTelltale = on;
+    }
+
+    /**
      * This frame's clouds, drawn by the runtime: the field's inputs as the GL march takes them, and the offset
      * from scene space to the clouds' frame at the camera.
      */
@@ -95,7 +110,8 @@ public final class RuntimeFrame {
                 frame.density);
         putFloats(LAYER_COVERAGE, frame.coverage[0], frame.coverage[1], frame.coverage[2], frame.featureScale);
         putFloats(DETAIL, frame.detail, frame.brightness, frame.hazeDistance, frame.cirrusAngle);
-        putFloats(CIRRUS_STRENGTH, frame.cirrusStrength, SkyLayerTextures.CIRRUS_MIN_ELEVATION_DEGREES, 0.0f, 0.0f);
+        putFloats(CIRRUS_STRENGTH, frame.cirrusStrength, SkyLayerTextures.CIRRUS_MIN_ELEVATION_DEGREES,
+                shadowTelltale ? 1.0f : 0.0f, 0.0f);
         putFloats(FLASH, frame.flash[0], frame.flash[1], frame.flash[2], frame.flash[3]);
         CloudShapes shapes = frame.shapes;
         BLOCK.set(ValueLayout.JAVA_INT, SHAPE_COUNT, shapes.count);
