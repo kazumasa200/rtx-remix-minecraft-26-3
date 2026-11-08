@@ -19,6 +19,7 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import org.joml.Matrix4f;
 import org.joml.Vector3fc;
 import org.joml.Vector4f;
+import com.nvidia.rtxremix.minecraft.RuntimePatchLayer;
 import com.nvidia.rtxremix.minecraft.sky.CloudField;
 import com.nvidia.rtxremix.minecraft.sky.LightningFlash;
 import com.nvidia.rtxremix.minecraft.sky.SkyLook;
@@ -2565,12 +2566,20 @@ public final class LensEffects {
         updateFocus(camera, level, now, seconds);
         calibrationFollow = 1.0f - (float) Math.exp(-seconds / CALIBRATION_SECONDS);
         sunLightFollow = 1.0f - (float) Math.exp(-seconds / SUN_LIGHT_SECONDS);
-        if (level != null && LensLook.getCaustics() > 0.0f) {
+        if (level != null && lensCaustics() > 0.0f) {
             waterColumns.update(level, position.x, position.z);
         }
         if (level != null && CloudField.ready()) {
             glassVolume.update(level, position.x, position.y, position.z);
         }
+    }
+
+    /**
+     * The caustics setting, or none while the runtime's shadow rays draw the caustics in the sun's
+     * light themselves (the {@code shadow-absorption} patch).
+     */
+    private static float lensCaustics() {
+        return RuntimePatchLayer.isActive("shadow-absorption") ? 0.0f : LensLook.getCaustics();
     }
 
     /** The refractive index the water surface renders with, which the caustics bend light by too. */
@@ -2584,7 +2593,7 @@ public final class LensEffects {
      * water measured around the camera, where tracing their maps cost a millisecond for nothing.
      */
     private float causticStrength() {
-        float setting = LensLook.getCaustics();
+        float setting = lensCaustics();
         if (setting <= 0.0f || sunDirection[1] <= 0.0f || waterColumns.texture() == 0 || !waterColumns.anyWater()) {
             return 0.0f;
         }

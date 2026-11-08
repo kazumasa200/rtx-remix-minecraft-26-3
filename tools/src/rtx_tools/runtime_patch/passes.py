@@ -112,7 +112,7 @@ class ShadowAbsorption(Pass):
     CLOUD_DISTANCE = 32.0
 
     def apply(self, module: Module) -> int:
-        return shadow.apply(module, self.GLASS_SCALE, self.CLOUD_SCALE, self.CLOUD_DISTANCE)
+        return shadow.apply(module, self.GLASS_SCALE, self.CLOUD_SCALE, self.CLOUD_DISTANCE, caustics=True)
 
 
 PASSES: list[Pass] = [SkyFade(), ShadowAbsorption()]

@@ -75,7 +75,6 @@ def test_shadow_absorption_keeps_every_original_id_and_stops_the_per_hit_dimming
 
     assert results(original) <= results(module)
     assert module.words[3] > original.words[3]
-    # The site's per-hit store now stores the pass's own vec3(1), an id the original did not have.
-    new_ones = {i.words[2] for i in module.instructions if i.op == 44 and i.words[2] >= original.words[3]}
+    # The site's per-hit store now stores the pass's own value (the caustic factor), an id the original lacked.
     stores = [i for i in module.instructions if i.op == 62 and i.words[1] == per_hit]
-    assert sum(i.words[2] in new_ones for i in stores) == 1
+    assert sum(i.words[2] >= original.words[3] for i in stores) == 1

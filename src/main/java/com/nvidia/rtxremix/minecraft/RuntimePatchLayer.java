@@ -17,6 +17,10 @@ import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The mod's Vulkan layer for the runtime ({@code runtime-patch/layer}): armed before the runtime
@@ -27,12 +31,15 @@ import java.nio.file.Path;
  * per process. Never throws; a failure leaves the runtime as shipped and says why in the log.
  * {@code -Drtxremix.runtimePatches=false} runs the runtime unpatched.
  */
-final class RuntimePatchLayer {
+public final class RuntimePatchLayer {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RuntimePatchLayer.class);
     static final String LIBRARY = "rtxremix_patch_layer.dll";
+    private static final Pattern ACTIVE_GROUP = Pattern.compile("([a-z0-9-]+) ACTIVE");
 
     private static MethodHandle status;
+    /** The groups arming reported ACTIVE. Written once on the render thread before the runtime starts. */
+    private static volatile Set<String> active = Set.of();
 
     private RuntimePatchLayer() {
     }
@@ -64,12 +71,23 @@ final class RuntimePatchLayer {
                     status = null;
                 } else {
                     LOGGER.info("Runtime patch layer: {}", text);
+                    Set<String> groups = new HashSet<>();
+                    Matcher m = ACTIVE_GROUP.matcher(text);
+                    while (m.find()) {
+                        groups.add(m.group(1));
+                    }
+                    active = Set.copyOf(groups);
                 }
             }
         } catch (Throwable t) {
             LOGGER.warn("Runtime patch layer not armed: {}", t.toString());
             status = null;
         }
+    }
+
+    /** Whether the patch group (a pass id, such as {@code shadow-absorption}) applies to the runtime. */
+    public static boolean isActive(String group) {
+        return active.contains(group);
     }
 
     /** Logs what the layer saw; call after the runtime's startup created its instance. */

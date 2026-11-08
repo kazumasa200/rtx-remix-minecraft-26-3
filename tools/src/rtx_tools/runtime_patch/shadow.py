@@ -8,6 +8,7 @@ over the word-level IR so building the patch set needs no SPIRV-Tools.
 
 from __future__ import annotations
 
+from .caustics import Caustics
 from .spirv import (
     OP_BRANCH_CONDITIONAL,
     OP_CONSTANT,
@@ -110,7 +111,7 @@ def find_sites(module: Module) -> list[Site]:
     return sites
 
 
-def apply(module: Module, glass_scale: float, cloud_scale: float, cloud_distance: float) -> int:
+def apply(module: Module, glass_scale: float, cloud_scale: float, cloud_distance: float, caustics: bool = False) -> int:
     """Each shadow ray-query loop adds up the optical depth between entries and exits, signed by facing so
     the candidates' order does not matter, closes an entry still open at the ray's end, and multiplies the
     ray's light by exp(-depth) once the loop is done. Returns the number of sites patched."""
@@ -146,6 +147,7 @@ def apply(module: Module, glass_scale: float, cloud_scale: float, cloud_distance
         op(_CONSTANT_COMPOSITE, t_v3, v1, one, one, one),
         op(_CONSTANT_COMPOSITE, t_v3, v_eps, eps, eps, eps),
     ]
+    web = Caustics(module, glsl, t_float, t_bool, t_v3, g, const) if caustics else None
     first_function = next(n for n, i in enumerate(ins) if i.op == OP_FUNCTION)
     module.insert_after(first_function - 1, *g)
 
@@ -215,6 +217,9 @@ def apply(module: Module, glass_scale: float, cloud_scale: float, cloud_distance
             c0, c0_load = typed(OP_LOAD, t_v3, open_entries)
             c1, c1_op = typed(_VECTOR_TIMES_SCALAR, t_v3, s.sig, sign)
             c2, c2_op = typed(_FADD, t_v3, c0, c1)
+            per_hit, web_code = v1, []
+            if web is not None and web.available:
+                per_hit, web_code = web.emit(rq, t, s.dist, cloud_at)
             module.insert_after(
                 s.sig_at,
                 t_op,
@@ -232,8 +237,9 @@ def apply(module: Module, glass_scale: float, cloud_scale: float, cloud_distance
                 c1_op,
                 c2_op,
                 op(OP_STORE, open_entries, c2),
+                *web_code,
             )
-            module.replace(s.store_at, op(OP_STORE, ins[s.store_at].words[1], v1))
+            module.replace(s.store_at, op(OP_STORE, ins[s.store_at].words[1], per_hit))
     module.commit()
     return len(sites)
 

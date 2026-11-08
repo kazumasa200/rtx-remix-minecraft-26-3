@@ -153,9 +153,21 @@ optical depth between entries and exits, signed by facing so the order of the
 candidates does not matter, closes an entry still open at the ray's end, and
 multiplies the light by exp(-depth) once. Glass and water absorb as the eye sees
 through them; a surface whose measurement distance is 32 or more is a cloud and
-absorbs at 0.15 of that, the 1 - g of forward-scattering cloud. A pass that
-inserts code takes new ids above the module's bound and queues its instructions
-through `Module.insert_after` and `replace`.
+absorbs at 0.15 of that, the 1 - g of forward-scattering cloud. The same loop
+draws the caustics (`caustics.py`): a crossing of a surface whose measurement
+distance is from 1.5 to 32, which is the mod's water, multiplies the light by
+what the waves gather where the ray started, so the web lies in the sun's light
+itself, shadowed, reflected and bounced like the rest of it. The waves are a
+fixed sum of 32 sines over a 64-block period, which divides the scene origin's
+grid, moving with the runtime's clock (`timeSinceStartSeconds`). Damped
+fixed-point steps find the surface point whose refracted light lands at the ray's
+start, and the factor is 1 / |det J| of that mapping, clamped, divided by its mean
+at that depth and greyed out from five to nine blocks of path. Taken where the
+light leaves the surface instead, every bright patch drew as wide as the surface
+that gathered it. While the group is active the lens draws no caustics
+(`LensEffects.lensCaustics`). A pass that inserts code takes new ids above the
+module's bound and queues its instructions through `Module.insert_after` and
+`replace`.
 
 Baseline LabPBR textures live in `src/main/resources/assets/` and load as the
 mod's own resource pack, `rtx-remix-renderer`, below user packs: Fabric API for

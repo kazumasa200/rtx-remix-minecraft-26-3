@@ -27,6 +27,9 @@ also part of every mod file name.
   inside, so a shallow pool's floor is lit nearly as brightly as the ground
   beside it and a deep one darkens and turns blue, instead of every floor
   under water being lit alike. Adapted from PurrsianMilkman's runtime patch.
+- Caustics are part of the sunlight under water rather than drawn over the
+  image, so their web shows on every sunlit surface under water, falls into
+  shadow with the rest of the light and shows in reflections.
 - The Unbound clouds seen through stained glass, ice or water show as the
   runtime draws them, tinted with the sky behind, instead of white over it.
 - Under water, the caustics on a pool's walls no longer break into fine vertical
