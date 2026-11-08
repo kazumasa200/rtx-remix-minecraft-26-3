@@ -33,6 +33,8 @@ BRIGHTEST = 8.0
 TABLE_DEPTHS = 10
 GREY_FROM, GREY_TO = 5.0, 9.0
 STEPS, STEP = 4, 0.6
+# shortcut: a diagnostic, light through water turns black; set RTXREMIX_CAUSTIC_TELLTALE=1 to build it, never ship it.
+TELLTALE = __import__("os").environ.get("RTXREMIX_CAUSTIC_TELLTALE", "")
 
 _EXT_INST, _TYPE_INT, _TYPE_VECTOR, _TYPE_POINTER, _TYPE_STRUCT = 12, 21, 23, 32, 30
 _MEMBER_NAME, _CONSTANT_COMPOSITE, _ACCESS_CHAIN, _VARIABLE, _LOAD = 6, 44, 65, 59, 61
@@ -223,5 +225,11 @@ class Caustics:
             typed(_FORD_GREATER_THAN_EQUAL, b, dist, self.water_from),
             typed(_FORD_LESS_THAN, b, dist, cloud_distance),
         )
+        if TELLTALE == "1":
+            gathered = self.zero
+        elif TELLTALE == "stripes":  # 2 * fract(x of the crossing): one stripe a block
+            gathered = typed(_FMUL, f, ext(f, 10, typed(_COMPOSITE_EXTRACT, f, xz, 0)), self.brightest)
+        elif TELLTALE == "depth":  # the path length in water, a gradient over 4 blocks
+            gathered = typed(_FMUL, f, t, self.one)
         factor = typed(_SELECT, f, water, gathered, self.one)
         return typed(_COMPOSITE_CONSTRUCT, v3, factor, factor, factor), code

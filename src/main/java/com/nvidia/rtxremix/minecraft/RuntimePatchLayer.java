@@ -40,6 +40,7 @@ public final class RuntimePatchLayer {
     private static MethodHandle status;
     /** The groups arming reported ACTIVE. Written once on the render thread before the runtime starts. */
     private static volatile Set<String> active = Set.of();
+    private static volatile boolean shadowAbsorption;
 
     private RuntimePatchLayer() {
     }
@@ -77,6 +78,7 @@ public final class RuntimePatchLayer {
                         groups.add(m.group(1));
                     }
                     active = Set.copyOf(groups);
+                    shadowAbsorption = groups.contains("shadow-absorption");
                 }
             }
         } catch (Throwable t) {
@@ -88,6 +90,15 @@ public final class RuntimePatchLayer {
     /** Whether the patch group (a pass id, such as {@code shadow-absorption}) applies to the runtime. */
     public static boolean isActive(String group) {
         return active.contains(group);
+    }
+
+    /**
+     * Whether shadow rays absorb by the distance between a surface's entries and exits: water's top is
+     * then emitted once, since a reversed copy in its plane cancelled every crossing. Read per fluid
+     * quad on capture workers, so a field rather than a set lookup.
+     */
+    public static boolean shadowAbsorption() {
+        return shadowAbsorption;
     }
 
     /** Logs what the layer saw; call after the runtime's startup created its instance. */

@@ -151,7 +151,12 @@ surface's transmittance once per crossing, whatever the distance inside, so a
 lake floor ten blocks down was lit like a puddle's. The loop now adds up the
 optical depth between entries and exits, signed by facing so the order of the
 candidates does not matter, closes an entry still open at the ray's end, and
-multiplies the light by exp(-depth) once. Glass and water absorb as the eye sees
+multiplies the light by exp(-depth) once. The mod's meshes run clockwise seen
+from outside, the runtime's front face, and its ray queries report a candidate
+seen from inside as front facing, so a front-facing hit is an exit. Water's top
+is emitted once while the group is active (`RuntimePatchLayer.shadowAbsorption`,
+`BlockQuadEmitter`): its reversed copy in the same plane cancelled every
+crossing, so water absorbed nothing and its caustics were applied twice. Glass and water absorb as the eye sees
 through them; a surface whose measurement distance is 32 or more is a cloud and
 absorbs at 0.15 of that, the 1 - g of forward-scattering cloud. The same loop
 draws the caustics (`caustics.py`): a crossing of a surface whose measurement
@@ -165,7 +170,10 @@ start, and the factor is 1 / |det J| of that mapping, clamped, divided by its me
 at that depth and greyed out from five to nine blocks of path. Taken where the
 light leaves the surface instead, every bright patch drew as wide as the surface
 that gathered it. While the group is active the lens draws no caustics
-(`LensEffects.lensCaustics`). A pass that inserts code takes new ids above the
+(`LensEffects.lensCaustics`). The web shows on floors but not yet on walls under
+water, which the sun lights directly; the cause is open. A translucent material's
+diffuse layer is read from its transmittance texture slot, which the two share,
+not from the albedo texture, so the glass materials pass their albedo there. A pass that inserts code takes new ids above the
 module's bound and queues its instructions through `Module.insert_after` and
 `replace`.
 

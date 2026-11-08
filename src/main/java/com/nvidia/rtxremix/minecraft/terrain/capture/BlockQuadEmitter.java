@@ -5,6 +5,7 @@
 package com.nvidia.rtxremix.minecraft.terrain.capture;
 
 import com.nvidia.rtxremix.RemixAPI;
+import com.nvidia.rtxremix.minecraft.RuntimePatchLayer;
 import com.nvidia.rtxremix.minecraft.light.BlockLightRuleManager;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import com.nvidia.rtxremix.minecraft.texture.RedstoneEmission;
@@ -912,10 +913,15 @@ public final class BlockQuadEmitter {
                 setUv4(tempUvs, u0, v0, u1, v0, u1, v1, u0, v1);
                 writer.writeFluidQuad(tempPositions, tempUvs, 0, 1, 0, color,
                         null, 0, 0, 1, 1, layer, texManager);
-                setPos4(tempPositions, lx, ly + h01, lz + 1, lx + 1, ly + h11, lz + 1,
-                        lx + 1, ly + h10, lz, lx, ly + h00, lz);
-                writer.writeFluidQuad(tempPositions, tempUvs, 0, -1, 0, color,
-                        null, 0, 0, 1, 1, layer, texManager);
+                // The shadow-absorption patch counts entries and exits by facing, and a reversed copy
+                // in the same plane cancelled every crossing of the surface: no water absorbed light
+                // and its caustics were applied twice.
+                if (!RuntimePatchLayer.shadowAbsorption()) {
+                    setPos4(tempPositions, lx, ly + h01, lz + 1, lx + 1, ly + h11, lz + 1,
+                            lx + 1, ly + h10, lz, lx, ly + h00, lz);
+                    writer.writeFluidQuad(tempPositions, tempUvs, 0, -1, 0, color,
+                            null, 0, 0, 1, 1, layer, texManager);
+                }
             } else {
                 // Vanilla FluidRenderer: a still surface shows the still sprite in
                 // full; a moving one shows the centre quarter of the flowing sprite

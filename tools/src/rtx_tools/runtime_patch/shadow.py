@@ -209,7 +209,9 @@ def apply(module: Module, glass_scale: float, cloud_scale: float, cloud_distance
             cloud, cloud_op = typed(_FORD_GREATER_THAN_EQUAL, t_bool, s.dist, cloud_at)
             k_out, k_out_op = typed(_SELECT, t_float, cloud, k_cloud, k_glass)
             k_in, k_in_op = typed(_SELECT, t_float, cloud, k_cloud_in, k_glass_in)
-            sign, sign_op = typed(_SELECT, t_float, ff, k_in, k_out)
+            # The mod's meshes run clockwise seen from outside, and the runtime's ray queries report a
+            # candidate seen counter-clockwise as front facing: a front-facing hit leaves the volume.
+            sign, sign_op = typed(_SELECT, t_float, ff, k_out, k_in)
             st, st_op = typed(_FMUL, t_float, sign, t)
             a0, a0_load = typed(OP_LOAD, t_v3, depth)
             a1, a1_op = typed(_VECTOR_TIMES_SCALAR, t_v3, s.sig, st)

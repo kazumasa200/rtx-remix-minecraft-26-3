@@ -814,7 +814,7 @@ public class BlockTextureManager {
         }
         return mb.translucentExt(MaterialInfoTranslucentEXT.builder()
                 .refractiveIndex(COMMON_GLASS_IOR).transmittanceColor(0.97f, 0.97f, 0.97f)
-                .transmittanceMeasurementDistance(0.35f)
+                .transmittanceTexture(atlasAlbedo.getHandle()).transmittanceMeasurementDistance(0.35f)
                 .useDiffuseLayer(true).build()).build();
     }
 
@@ -1350,7 +1350,7 @@ public class BlockTextureManager {
         if (se.emissive != null) mb.emissiveTexture(se.emissive.getHandle()).emissiveIntensity(100.0f);
         return createMaterialViaStore(mb.translucentExt(MaterialInfoTranslucentEXT.builder()
                 .refractiveIndex(COMMON_GLASS_IOR).transmittanceColor(0.97f, 0.97f, 0.97f)
-                .transmittanceMeasurementDistance(0.35f)
+                .transmittanceTexture(se.albedo.getHandle()).transmittanceMeasurementDistance(0.35f)
                 .useDiffuseLayer(true).build()).build());
     }
 
