@@ -882,9 +882,11 @@ RTX Remix C API. It must never import `net.minecraft` or `net.fabricmc`;
 `RemixJavaBoundaryTest.shimSourcesDoNotImportMinecraftOrFabric` enforces this
 boundary across `rtxremix-java/src/`. Keep game-state capture and Fabric
 integration in the mod, not in the shim. Wrapper and affected mod callers
-change in the same pull request. This fork has not changed the wrapper since
-the upstream import; its features reuse the existing batched
-`updateTextureFromMemory`, config-variable and config-layer entry points.
+change in the same pull request. The fork's own features add nothing to the
+wrapper: they reuse the existing batched `updateTextureFromMemory`,
+config-variable and config-layer entry points. The wrapper changes only by
+taking upstream's fixes to it (Java 8 compatibility, the `remixCall` fault
+guard, crash dumps without the sign-in token).
 
 The wrapper's source of truth, in order, is:
 
