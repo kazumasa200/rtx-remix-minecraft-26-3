@@ -626,12 +626,6 @@ what lies behind, so around a lamp the haze and the clouds only brighten the
 image and, after sunset, the clouds' shadows leave it: faded, clouded or
 shaded with the distant land behind, the flame went out and the land showed
 through the glow as pale outlines.
-A sky pixel whose hue parts far from the sky expected there is taken for sky
-seen through stained glass or water (`SEEN_THROUGH`): the composite takes that
-tint off the image and lays it back over the clouds and the sky it replaces,
-and the glow pass measures none of it. Replaced untinted, the clouds over a red
-glass roof drew white; measured as sky, the glass's tint turned the clouds
-beside it cyan.
 Keeping the image wherever the two marches
 agreed drew the panorama's speckle and outlines, which the denoiser smooths out
 of the image, onto the bases of clouds overhead. The panorama copy is mipmapped
