@@ -15,6 +15,9 @@ import com.seibel.distanthorizons.api.methods.events.abstractEvents.DhApiBlockSt
 import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiCancelableEventParam;
 import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiEventParam;
 import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiRenderParam;
+import com.nvidia.rtxremix.minecraft.lod.LodTiles;
+import com.nvidia.rtxremix.minecraft.lod.dh.mixin.BlockTextureRegistryAccessor;
+import com.seibel.distanthorizons.core.dataObjects.render.textures.BlockTextureRegistry;
 import net.minecraft.world.level.block.state.BlockState;
 
 /**
@@ -84,6 +87,25 @@ public final class DistantHorizonsCompat {
         Integer chunks = renderDistance.getValue();
         return chunks != null ? chunks : 0;
     }
+
+    /** The LOD mod's block-face tiles. Its registry hands them out under its own lock. */
+    public static final LodTiles.Source TILES = new LodTiles.Source() {
+        @Override
+        public int tileCount() {
+            return BlockTextureRegistry.INSTANCE.getTileCount();
+        }
+
+        @Override
+        public int tiles(int first, byte[][] out) {
+            BlockTextureRegistry registry = BlockTextureRegistry.INSTANCE;
+            synchronized (registry) {
+                java.util.List<byte[]> tiles = ((BlockTextureRegistryAccessor) (Object) registry).rtxremix$tilePixels();
+                int n = Math.max(0, Math.min(out.length, tiles.size() - first));
+                for (int i = 0; i < n; i++) out[i] = tiles.get(first + i);
+                return n;
+            }
+        }
+    };
 
     private static final class CancelRender extends DhApiBeforeRenderEvent {
         @Override

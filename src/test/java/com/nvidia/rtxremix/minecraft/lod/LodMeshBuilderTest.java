@@ -54,6 +54,38 @@ class LodMeshBuilderTest {
     }
 
     @Test
+    void aTexturedQuadRepeatsItsTileOnceABlockUnderItsScaledColour() {
+        ByteBuffer dh = quads(2);
+        top(dh, 0, 2, 70, 0, 1, STONE, 0x40, 0x40, 0x40);
+        dh.putShort(14, (short) 2);
+        top(dh, 4, 5, 70, 0, 1, STONE, 0x40, 0x40, 0x40);
+        dh.putShort(LodMeshBuilder.DH_QUAD_BYTES + 14, (short) 7);
+        dh.flip();
+        LodGeometry geometry = LodGeometry.copyOf(List.of(dh), List.of());
+        LodMeshBuilder.Bucket tiled = new LodMeshBuilder.Bucket(new float[] {1f, 1f, 1.5f});
+        try {
+            LodMeshBuilder.convert(geometry, LodMeshBuilder.Clip.NONE, 0, 0, tiled, water);
+
+            assertEquals(2, tiled.quads);
+            assertEquals(0xFF606060, tiled.vertices.getInt(32), "the colour carries the tile's scale");
+            assertEquals(LodTiles.boundsMin(2), tiled.vertices.getInt(36));
+            assertEquals(LodTiles.boundsMax(2), tiled.vertices.getInt(40));
+            float uSpan = 0;
+            for (int v = 1; v < 4; v++) {
+                uSpan = Math.max(uSpan, Math.abs(tiled.vertices.getFloat(v * 64 + 24) - tiled.vertices.getFloat(24)));
+            }
+            assertEquals(2 * LodTiles.TILE_U, uSpan, 1e-6f, "two blocks wide, the tile twice");
+
+            int second = 4 * 64;
+            assertEquals(0xFF404040, tiled.vertices.getInt(second + 32), "a tile not yet uploaded is untextured");
+            assertEquals(LodTiles.boundsMin(0), tiled.vertices.getInt(second + 36));
+        } finally {
+            tiled.release();
+            geometry.release();
+        }
+    }
+
+    @Test
     void aMergedQuadLosesOnlyTheChunksMinecraftDraws() {
         ByteBuffer dh = quads(1);
         // World x 0..64 on chunk row z = 0: chunks 0 to 3.

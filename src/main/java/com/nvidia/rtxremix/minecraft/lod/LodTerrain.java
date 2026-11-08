@@ -159,6 +159,9 @@ public final class LodTerrain {
     private int clipCenterX = Integer.MIN_VALUE;
     private int clipCenterZ = Integer.MIN_VALUE;
     private RemixMaterial groundMaterial;
+    /** The LOD mod's block-face tiles, when it is installed (#25). */
+    private final LodTiles tiles = DISTANT_HORIZONS ? new LodTiles(DistantHorizonsCompat.TILES) : null;
+    private RemixMaterial tileMaterial;
     private RemixTexture palette;
     private RemixMaterial glassMaterial;
     private RemixMaterial glowMaterial;
@@ -227,6 +230,7 @@ public final class LodTerrain {
         cameraZ = camera.z;
         resolveSwaps(api, eventsPending);
         updateClip(camera, terrain);
+        if (tiles != null) tiles.refresh(api);
         startBuilds(textures);
         retirement.drainFrame();
         timer.count(cntAwaited, awaited.size());
@@ -266,6 +270,9 @@ public final class LodTerrain {
         builder.shutdownNow();
         if (groundMaterial != null && !groundMaterial.isDeleted()) groundMaterial.destroy();
         groundMaterial = null;
+        if (tileMaterial != null && !tileMaterial.isDeleted()) tileMaterial.destroy();
+        tileMaterial = null;
+        if (tiles != null) tiles.destroy();
         destroyPaletteMaterials();
         if (palette != null && !palette.isDeleted()) palette.destroy();
         palette = null;
@@ -584,7 +591,10 @@ public final class LodTerrain {
 
     private void startBuilds(BlockTextureManager textures) {
         if (buildQueue.isEmpty() || buildsInFlight >= MAX_BUILDS_IN_FLIGHT) return;
-        RemixMaterial ground = groundMaterial();
+        RemixMaterial tiled = tileMaterial();
+        RemixMaterial ground = tiled != null ? tiled : groundMaterial();
+        // Read once: a build sees the tiles uploaded before it began, and its quads name no other.
+        float[] tileScales = tiled != null ? tiles.scales() : null;
         RemixMaterial water = textures != null ? textures.getWaterSurfaceMaterial() : null;
         if (ground == null) return;
         RemixMaterial glass = glassMaterial();
@@ -613,7 +623,7 @@ public final class LodTerrain {
                 Throwable failure = null;
                 try {
                     mesh = LodMeshBuilder.build(geometry, buildClip, section.minX, section.minZ,
-                            ground, water, glass, glow, lamp);
+                            ground, tileScales, water, glass, glow, lamp);
                 } catch (Throwable t) {
                     failure = t;
                 } finally {
@@ -747,6 +757,32 @@ public final class LodTerrain {
             groundMaterial = null;
         }
         return groundMaterial;
+    }
+
+    /**
+     * Ground that samples the LOD mod's tiles under each quad's colour, as the LOD mod draws
+     * it with its LOD textures on. Untextured quads read tile 0, which is white.
+     */
+    private RemixMaterial tileMaterial() {
+        if (tileMaterial != null && !tileMaterial.isDeleted()) return tileMaterial;
+        RemixTexture texture = tiles != null ? tiles.texture() : null;
+        if (texture == null || texture.isDeleted()) return null;
+        try {
+            MaterialInfo info = MaterialInfo.builder()
+                    .albedoTexture(texture.getHandle())
+                    .filterMode(0)
+                    .opaqueExt(MaterialInfoOpaqueEXT.builder()
+                            .albedoConstant(1f, 1f, 1f)
+                            .roughnessConstant(0.9f)
+                            .metallicConstant(0f)
+                            .build())
+                    .build();
+            tileMaterial = RemixMaterialStore.get().create(new RemixMaterial(info, List.of(texture), null));
+        } catch (RuntimeException e) {
+            LOGGER.error("Failed to create the LOD tile material", e);
+            tileMaterial = null;
+        }
+        return tileMaterial;
     }
 
     private RemixTexture palette() {

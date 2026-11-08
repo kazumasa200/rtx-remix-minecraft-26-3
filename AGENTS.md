@@ -416,7 +416,13 @@ vanilla fade is skipped then too (`ClientApiFadeMixin`): fading the main
 target's terrain toward its empty textures drew black wherever the main target's
 depth held land.
 LOD quads carry the LOD mod's one averaged colour per block, which lights the
-ground as vertex colour over a white texel. The runtime takes emission and a
+ground as vertex colour. With the LOD mod's LOD textures on, a quad near enough
+also names a 16-texel tile of the face's colour against that average, which the
+LOD mod draws as colour times twice the tile. `LodTiles` copies the tiles into one
+texture, each divided by its largest factor, and the quad carries its colour
+times that factor, since the runtime multiplies a vertex colour by a texture that
+holds at most 1; the coordinates repeat the tile once a block in the LOD mod's
+orientation, wrapped within its bounds. Tile 0, the untextured one, is white. The runtime takes emission and a
 translucent surface's transmittance only from textures, so lava and glowing
 blocks (the LOD mod's `LAVA` and `ILLUMINATED` materials) and its translucent
 buffer (glass, ice) carry their colour as coordinates into a palette texture of

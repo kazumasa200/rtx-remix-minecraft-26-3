@@ -11,6 +11,11 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Added
+
+- Distant Horizons LODs show block textures when its LOD Textures option is on,
+  as they do without RTX, instead of one flat colour per block (#25).
+
 ## 0.4.0-pre.4 - 2026-11-08
 
 ### Changed
