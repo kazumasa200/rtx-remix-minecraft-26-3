@@ -95,3 +95,40 @@ def test_shadow_absorption_keeps_every_original_id_and_stops_the_per_hit_dimming
     # The site's per-hit store now stores the pass's own value (the caustic factor), an id the original lacked.
     stores = [i for i in module.instructions if i.op == 62 and i.words[1] == per_hit]
     assert sum(i.words[2] >= original.words[3] for i in stores) == 1
+
+
+def _bumped(words, below):
+    out = list(words)
+    for ins in Module(words).instructions:
+        if ins.op == 71 and len(ins.words) >= 4 and ins.words[2] in (33, 34) and ins.words[1] < below:
+            out[ins.at + 3] += 1000
+    return out
+
+
+@pytest.mark.parametrize("which", ["sky-fade", "shadow-absorption"])
+def test_a_delta_rebuilds_the_module_and_keeps_the_runtimes_binding_literals(composite, which):
+    from rtx_tools.runtime_patch.spirv import apply_delta
+
+    data = composite if which == "sky-fade" else _module_at(SHADOW_OFFSET)
+    original = Module.from_bytes(data)
+    module = Module.from_bytes(data)
+    assert (SkyFade() if which == "sky-fade" else ShadowAbsorption()).apply(module) == 1
+    delta = module.delta(original)
+    assert apply_delta(original.words, delta) == module.words
+    # dxvk rewrites binding literals in the module it hands over; the delta copies them as they arrive.
+    bound = original.words[3]
+    assert apply_delta(_bumped(original.words, bound), delta) == _bumped(module.words, bound)
+    # A delta is a small fraction of the module it rebuilds.
+    assert len(delta) < len(module.words) // 4
+
+
+def test_a_delta_refuses_to_rewrite_an_original_binding_decoration(composite):
+    original = Module.from_bytes(composite)
+    module = Module.from_bytes(composite)
+    at = next(n for n, i in enumerate(module.instructions) if i.op == 71 and i.words[2] == 33)
+    words = list(module.instructions[at].words)
+    words[3] += 1
+    module.replace(at, words)
+    module.commit()
+    with pytest.raises(ValueError, match="binding decoration"):
+        module.delta(original)

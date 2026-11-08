@@ -129,17 +129,24 @@ written. `tools\rtx.bat patches build` (`tools/src/rtx_tools/runtime_patch`, run
 `buildRuntimePatchesWin64`) finds each pass's sites by pattern in the very
 `d3d9.dll` that ships, checks each pass's expected module and site counts,
 validates every output with `spirv-val` (or, without SPIRV-Tools, against
-`runtime-patch/patches.lock`) and writes `patches/manifest.tsv` plus one module
-per entry; `remix-sdk/` carries them beside `rtxremix_patch_layer.dll`, the mod's
-Vulkan layer (`runtime-patch/layer`). `RuntimePatchLayer` arms it through the FFM
-before the runtime starts: the layer checks every manifest entry against the
-shipped runtime's bytes (a group applies only when all its modules matched),
-puts itself on `VK_ADD_LAYER_PATH` and `VK_INSTANCE_LAYERS`, and the loader then
-loads it into the runtime's instance, where it replaces a module whose key is in
-the set. Keys hash the module with every Binding and DescriptorSet literal zeroed,
-because dxvk rewrites those before `vkCreateShaderModule`; the replacement takes
-the incoming literals by decoration target, so a pass must never renumber an
-existing id. `-Drtxremix.runtimePatches=false` runs the runtime as shipped. The
+`runtime-patch/patches.lock`) and writes `patches/manifest.tsv` (format 2) plus
+one delta (`.rrpd`, `Module.delta`) per module and combination of the groups that
+edit it: every combination is built, and a pass must find the same sites in each.
+Whole modules were 106 MB for two passes; the deltas are 4.3 MB. `remix-sdk/`
+carries them beside `rtxremix_patch_layer.dll`, the mod's Vulkan layer
+(`runtime-patch/layer`). `RuntimePatchLayer` arms it through the FFM before the
+runtime starts: the layer checks every manifest entry against the shipped
+runtime's bytes (a group applies only when all its modules matched), puts itself
+on `VK_ADD_LAYER_PATH` and `VK_INSTANCE_LAYERS`, and the loader then loads it into
+the runtime's instance, where it applies a module's delta for exactly the groups
+that applied. Keys hash the module with every Binding and DescriptorSet literal
+zeroed, because dxvk rewrites those before `vkCreateShaderModule`; a delta copies
+the arriving module's words wherever the replacement keeps the original's, so the
+literals arrive as dxvk wrote them, and a pass must never renumber an existing id
+or write an original binding decoration anew (`Module.delta` refuses). The build
+applies every delta through the layer's own `rrp_apply`, plain and with every
+binding literal raised as dxvk would, and it must give back the module the passes
+made. `-Drtxremix.runtimePatches=false` runs the runtime as shipped. The
 first pass, `sky-fade`: the composite faded every pixel that was not a primary
 miss into the sky, and a primary ray that crossed glass or water into the sky is
 not a miss but stores the miss view Z, so the sky seen through them lost its

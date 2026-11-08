@@ -38,6 +38,12 @@ class Pass:
     version: int
     expect: Expect
 
+    @property
+    def group(self) -> str:
+        """The patch group the pass belongs to: the layer applies a group whole or not at all, and the mod
+        asks for it by this name (RuntimePatchLayer.isActive). A pass is its own group unless it says."""
+        return self.id
+
     def apply(self, module: Module) -> int:
         """Edits the module's sites in place; returns how many it changed (0 when the pattern is absent)."""
         raise NotImplementedError
