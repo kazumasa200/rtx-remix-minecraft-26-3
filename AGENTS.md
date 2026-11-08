@@ -239,8 +239,9 @@ own frame index. Still shots for the screenshot tool use their own codec
 `docs/CAMERA_PATHS.md` is the canonical guide.
 
 **Gameplay-driven conf layers.** `ConfLayerDriver` fades a fixed table of mod
-layers (water, view distance and its LOD extension, volumetric settling, rain,
-thunder, a lightning flash, and four times of day) by gameplay state. The
+layers (water, view distance, its LOD extension and the fade mode that goes
+with it, volumetric settling, rain, thunder, a lightning flash, and four times
+of day) by gameplay state. The
 lightning layer slows the auto exposure while a bolt flashes and for a moment
 after, or the exposure undid the flash within a fifth of a second. Option layers come from a mod
 root shipping archetypes, acquired at init, and a world root inside a save
@@ -249,7 +250,11 @@ above its mod counterpart, so a map overrides per option rather than replacing
 an archetype, and it needs the integrated server, so it is single-player only.
 Profiles resolve above `rtx.conf` and below user settings and quality presets.
 `ViewDistanceFade` sets the view-distance fade from Minecraft's render distance,
-or from the LOD radius while LOD terrain draws.
+or from the LOD radius while LOD terrain draws. While it draws, the fade also
+switches from the smooth mode to the noise mode (`view_distance_lod_mode.conf`):
+the smooth mode blended a ray that crossed glass or water and then met the sky
+into the untinted sky, and at Minecraft's own render distance the noise mode
+would cut away the last blocks the smooth mode fades.
 
 **Clouds.** Four styles (`CloudStyle`). Classic (the default) voxelizes
 vanilla's cloud texture with vanilla's world-time period and phase. Procedural
@@ -621,6 +626,12 @@ what lies behind, so around a lamp the haze and the clouds only brighten the
 image and, after sunset, the clouds' shadows leave it: faded, clouded or
 shaded with the distant land behind, the flame went out and the land showed
 through the glow as pale outlines.
+A sky pixel whose hue parts far from the sky expected there is taken for sky
+seen through stained glass or water (`SEEN_THROUGH`): the composite takes that
+tint off the image and lays it back over the clouds and the sky it replaces,
+and the glow pass measures none of it. Replaced untinted, the clouds over a red
+glass roof drew white; measured as sky, the glass's tint turned the clouds
+beside it cyan.
 Keeping the image wherever the two marches
 agreed drew the panorama's speckle and outlines, which the denoiser smooths out
 of the image, onto the bases of clouds overhead. The panorama copy is mipmapped

@@ -11,6 +11,13 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Fixed
+
+- With Distant Horizons' LOD terrain, the sky seen through stained glass or
+  water keeps its tint instead of showing through untinted.
+- The Unbound clouds seen through stained glass or water take its tint, and
+  the clouds beside the glass no longer turn cyan.
+
 ### Added
 
 - Distant Horizons LODs show block textures when its LOD Textures option is on,

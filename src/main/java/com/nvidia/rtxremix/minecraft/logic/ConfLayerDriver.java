@@ -148,8 +148,8 @@ public final class ConfLayerDriver {
 
     /**
      * The fixed layer catalog: water, automatic view distance and its LOD
-     * extension, volumetric settling, weather and a lightning flash, and four
-     * fixed time-of-day profiles (11 rows, one per
+     * extension and the fade mode that goes with it, volumetric settling,
+     * weather and a lightning flash, and four fixed time-of-day profiles (12 rows, one per
      * shipped conf; ConfLayerDriverTest cross-checks them against the shipped
      * confs). Biome and zone layers are NOT listed here: they are discovered
      * from their conf file names at acquire and reload time, so a new authored
@@ -182,6 +182,10 @@ public final class ConfLayerDriver {
                 "confs/view_distance.conf", 3000f, 0.01f, false, LayerSource.MOD));
         table.add(new LayerSpec(LogicChannels.VIEW_DISTANCE_LOD,
                 "confs/view_distance_lod.conf", 3001f, 0.01f, false, LayerSource.MOD));
+        // Switches the fade mode, which cannot blend, as soon as LOD terrain draws past
+        // Minecraft's own: hence the threshold just above zero.
+        table.add(new LayerSpec(LogicChannels.VIEW_DISTANCE_LOD_MODE,
+                "confs/view_distance_lod_mode.conf", 3002f, 0.0001f, false, LayerSource.MOD));
         table.add(new LayerSpec(LogicChannels.VOLUMETRICS_SETTLING,
                 "confs/volumetrics/settling.conf", 3100f, 0.01f, false, LayerSource.MOD));
         table.add(new LayerSpec(LogicChannels.WEATHER_LIGHTNING, "confs/weather/lightning.conf", 5600f, 0.01f, false,
@@ -731,6 +735,7 @@ public final class ConfLayerDriver {
         setTarget(LogicChannels.UNDERWATER, underwater ? 1.0f : 0.0f);
         setTarget(LogicChannels.VIEW_DISTANCE, Math.clamp(viewDistanceStrength, 0.0f, 1.0f));
         setTarget(LogicChannels.VIEW_DISTANCE_LOD, Math.clamp(lodViewDistanceStrength, 0.0f, 1.0f));
+        setTarget(LogicChannels.VIEW_DISTANCE_LOD_MODE, Math.clamp(lodViewDistanceStrength, 0.0f, 1.0f));
         // Time layers follow the shared Overworld clock only; other dimensions
         // contribute no time-of-day strength.
         TimeLayerStrengths time = Level.OVERWORLD.equals(world.dimension())
@@ -995,7 +1000,8 @@ public final class ConfLayerDriver {
                     } else if (channel.equals(LogicChannels.UNDERWATER)) {
                         water = true;
                     } else if (channel.equals(LogicChannels.VIEW_DISTANCE)
-                            || channel.equals(LogicChannels.VIEW_DISTANCE_LOD)) {
+                            || channel.equals(LogicChannels.VIEW_DISTANCE_LOD)
+                            || channel.equals(LogicChannels.VIEW_DISTANCE_LOD_MODE)) {
                         viewDistance++;
                     } else if (channel.equals(LogicChannels.VOLUMETRICS_SETTLING)) {
                         volumetricSettling++;

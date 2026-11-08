@@ -908,6 +908,22 @@ public final class LensEffects {
     // runtime's bloom spreads them over the clouds around. Measured, they went into the clouds'
     // calibration and the clear sky's rows and map, which keep what they last saw, and clouds
     // anywhere turned green or pale. Neither is measured.
+    // How far the hue of what a sky pixel shows parts from the sky expected there, and the hue,
+    // as the tint of stained glass or water the sky is seen through. The runtime keeps that tint
+    // in the image; the lens's clouds and its measures of the clear sky must not take it for sky.
+    private static final String SEEN_THROUGH = """
+            // Past this parting the pixel is taken for sky seen through something, fully past the second.
+            const float SEEN_THROUGH_START = 0.3;
+            const float SEEN_THROUGH_FULL = 0.5;
+
+            vec4 throughHue(vec3 seen, vec3 expected) {
+                vec3 ratio = seen / max(expected, vec3(1.0e-4));
+                vec3 hue = ratio / max(max(ratio.r, max(ratio.g, ratio.b)), 1.0e-4);
+                float parted = 1.0 - min(hue.r, min(hue.g, hue.b));
+                return vec4(hue, smoothstep(SEEN_THROUGH_START, SEEN_THROUGH_FULL, parted));
+            }
+            """;
+
     private static final String SKY_LIGHT_NEAR = """
             // Toward the moon, with whether it is up, and how strongly the aurora shows.
             uniform vec4 Moon;
@@ -1248,7 +1264,7 @@ public final class LensEffects {
             layout(location = 2) out vec4 clearSky;
             layout(location = 3) out vec4 clearExcess;
             """ + CloudField.defines() + SCENE_SAMPLING + DEPTH_SAMPLING + VIEW_RAY + COLOUR_SPACE
-            + PANORAMA_SAMPLING + ATMOSPHERE_SAMPLING + CLOUD_EXPOSURE + LAMP_GLOW + SKY_LIGHT_NEAR + """
+            + PANORAMA_SAMPLING + ATMOSPHERE_SAMPLING + CLOUD_EXPOSURE + LAMP_GLOW + SKY_LIGHT_NEAR + SEEN_THROUGH + """
 
             // How far the image's clear sky is taken to differ from the atmosphere, in stops: a
             // star or the moon takes in a texel no more than the lower bound, and what lies above
@@ -1271,8 +1287,12 @@ public final class LensEffects {
                 vec3 direction = normalize(viewRay(uv));
                 vec3 atmosphere = atmosphereAt(direction);
                 vec3 modelled = skyExposure(atmosphere) * atmosphere * skyResidual(direction.y);
-                float thick = sky ? smoothstep(0.02, 0.1, shown.a) : 0.0;
-                float clear = sky && shown.a < 0.02 ? 1.0 : 0.0;
+                // Sky seen through stained glass is not sky to measure: taken for it, the glass's
+                // tint spread over the sky around it, and the clouds beside the glass turned cyan.
+                float seen = skyLightNear(direction) ? 0.0
+                    : throughHue(image, cloudLight(shown) + (1.0 - shown.a) * modelled).a;
+                float thick = sky ? smoothstep(0.02, 0.1, shown.a) * (1.0 - seen) : 0.0;
+                float clear = sky && shown.a < 0.02 ? 1.0 - seen : 0.0;
                 vec3 stops = clamp(log2(max(image, vec3(1.0e-6)) / max(modelled, vec3(1.0e-6))),
                     MIN_CLEAR_STOPS, MAX_CLEAR_STOPS);
                 overClouds = vec4((image - cloudLight(shown)) * thick, thick);
@@ -1891,9 +1911,7 @@ public final class LensEffects {
             // How much brighter than the atmosphere brought to the clear sky around the sky read
             // through thin dome clouds may be.
             const float THIN_SKY_MARGIN = 1.1;
-            // Toward the moon, with whether it is up; its halo is laid behind thick dome clouds
-            // out to this angle.
-            uniform vec4 Moon;
+            // Toward the moon its halo is laid behind thick dome clouds out to this angle.
             const float MOON_HALO_FADE_COS = 0.9;
             // How far the marched clouds replace the dome's, 0 to 1: after a jump in the time of
             // day the image's own clouds show until the calibration has measured the new light.
@@ -1907,7 +1925,29 @@ public final class LensEffects {
                     + textureLod(Glow, vec3(uv + texel, layer), GLOW_LEVEL));
             }
 
-            """ + LAMP_GLOW_READING + """
+            """ + LAMP_GLOW_READING + SKY_LIGHT_NEAR + SEEN_THROUGH + """
+
+            // The tint of stained glass or water the sky is seen through, from the hue of the
+            // image against the dome's clouds and the atmosphere expected there, or white. The
+            // runtime keeps that tint in the image, and the marched clouds and the sky behind them
+            // replaced it: white clouds over a red glass roof, rimmed in cyan where the dome's
+            // white clouds were taken out of the reddened image. Only the hue is taken, only past
+            // where the sky's own colour parts from what is expected, and never toward the moon,
+            // the aurora or a lamp, whose light the expected sky lacks.
+            //
+            // The sky expected is the atmosphere at the exposure its bands give it, not brought to
+            // the clear sky around by the glow pass's map: that map is coarse and measures the
+            // sky seen through glass too, so the glass's red spread around it, and measured
+            // against it the clouds beside the glass turned cyan. Returns how surely the pixel is
+            // seen through something, with the tint in rgb.
+            vec4 seenThrough(vec3 seen, vec3 expected, vec3 direction, float lamp) {
+                if (skyLightNear(direction)) {
+                    return vec4(1.0, 1.0, 1.0, 0.0);
+                }
+                vec4 hue = throughHue(seen, expected);
+                float through = hue.a * (1.0 - lamp);
+                return vec4(mix(vec3(1.0), hue.rgb, through), through);
+            }
 
             // The marched clouds over the sky in place of the dome's, drawn over the sky behind
             // the dome's: read straight out of the image where the dome's clouds are thin, and
@@ -1927,19 +1967,20 @@ public final class LensEffects {
                 }
                 vec4 shown = shownClouds(uv);
                 vec3 image = srgbToLinear(colour);
+                vec3 direction = normalize(viewRay(uv));
+                vec3 sky = atmosphereAt(direction);
+                vec3 modelled = srgbToLinear(deepenSky(uv, linearToSrgb(skyExposure(sky) * sky * skyResidual(direction.y))));
                 // Dividing by what the dome's clouds let pass magnifies any error in their light,
                 // which coloured the rims of sunset clouds magenta and yellow. A sky kept per band
                 // of elevation instead held whatever it last saw, the day's white at the horizon
                 // into the night, and spread the moon's glow and the lamps' bloom along its band,
                 // which the thin edges of clouds showed as pale rims. Clear sky, the sun's disc in
                 // it, is left as it is.
-                vec3 direction = normalize(viewRay(uv));
-                vec3 sky = atmosphereAt(direction);
-                vec3 modelled = srgbToLinear(deepenSky(uv, linearToSrgb(skyExposure(sky) * sky * skyResidual(direction.y))));
                 // The atmosphere brought to the image's clear sky around, as far as there is any.
                 vec4 stops = glowMap(uv, 2.0);
                 float clear = min(stops.a * 4.0, 1.0);
                 vec3 local = stops.a > 1.0e-3 ? exp2(stops.rgb / stops.a * clear) : vec3(1.0);
+                vec3 banded = modelled;
                 modelled *= local;
                 // Bloom is the lens's, over everything, and the dome's clouds took it with them:
                 // the glow of a lamp stopped at the skyline. It is taken out of the image before
@@ -1962,6 +2003,13 @@ public final class LensEffects {
                 // green and purple toward the aurora and drew the moon's light through their edges
                 // in blocks.
                 float lamp = lampGlow(uv);
+                // Glass or water the sky is seen through: its tint comes off the image here and
+                // goes back over everything replaced below.
+                vec4 through = seenThrough(image, cloudLight(shown) + (1.0 - shown.a) * banded, direction, lamp);
+                vec3 tint = through.rgb;
+                image /= tint;
+                // The clear sky's map holds the glass's tint there, not the sky's.
+                modelled = mix(modelled, banded, through.a);
                 vec3 skyLight = excess.rgb * fill * (1.0 - lamp);
                 vec3 bloom = (overClouds * glow.a + excess.rgb * lamp) * fill;
                 float thick = smoothstep(0.02, 0.1, shown.a);
@@ -1980,7 +2028,7 @@ public final class LensEffects {
                 // holes, which the marched clouds do not share, and lit their edges in blocks.
                 float halo = Moon.w * smoothstep(MOON_HALO_FADE_COS, 1.0, dot(direction, Moon.xyz));
                 behind = mix(behind, modelled + skyLight * halo, thick);
-                vec3 replaced = cloudLight(marched) + (1.0 - marched.a) * behind + bloom;
+                vec3 replaced = (cloudLight(marched) + (1.0 - marched.a) * behind + bloom) * tint;
                 // Where neither has a cloud the image stays as it is, even where the coarse bloom
                 // reads brighter than the sky it lies on.
                 float change = smoothstep(0.0, 0.02, max(marched.a, shown.a));
@@ -2883,7 +2931,7 @@ public final class LensEffects {
                         (float) (cameraY - Math.floor(cameraY)), (float) (cameraZ - Math.floor(cameraZ)));
             }
             compositeProgram.setSources(sources, lampCount);
-            setMoon(compositeProgram);
+            setSkyLight(compositeProgram);
             compositeProgram.set("CloudsShown", Math.clamp(
                     (System.nanoTime() - skySettledNanos) / (float) SKY_FADE_NANOS, 0.0f, 1.0f));
             GL45C.glDrawArrays(GL45C.GL_TRIANGLES, 0, 3);
