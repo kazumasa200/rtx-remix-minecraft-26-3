@@ -27,7 +27,11 @@ import com.nvidia.rtxremix.minecraft.asset.RemixTextureStore;
 import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import com.nvidia.rtxremix.minecraft.cloud.CloudRenderer;
 import com.nvidia.rtxremix.minecraft.light.LightManager;
+import com.nvidia.rtxremix.minecraft.RuntimePatchLayer;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
+import java.lang.foreign.Arena;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.nio.ByteBuffer;
 import java.util.List;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -139,6 +143,13 @@ final class VolumetricClouds {
     private float targetDiscVisibility = 1.0f;
     private long lastNanos;
     private final CloudWeather weather = new CloudWeather();
+    /** Set 4 bindings of the runtime's clouds (runtime-patch/layer/channel.h). */
+    private static final int RUNTIME_NOISE_BINDING = 1;
+    private static final int RUNTIME_CIRRUS_BINDING = 2;
+    /** The layer keeps the noise for the device's life, so it is handed over once a process. */
+    private static boolean noiseUploaded;
+    private boolean drawnInRuntime;
+    private int runtimeCirrusVersion = -1;
 
     VolumetricClouds() {
         patch.width = VolumetricCloudGenerator.WIDTH;
@@ -180,6 +191,11 @@ final class VolumetricClouds {
             frame.cirrusStrength = skyLayers.cirrusPixels() != null
                     ? SkyLook.getCirrusBrightness() * Math.clamp(weatherVisibility, 0.0f, 1.0f)
                     : 0.0f;
+            if (RuntimePatchLayer.isActive(RuntimePatchLayer.UNBOUND_CLOUDS) && !RuntimeFrame.isDrawnInGl()) {
+                renderInRuntime(world, cameraPos, tickDelta, clouds, base, light, ambientTop, rain, skyLayers);
+                return;
+            }
+            drawnInRuntime = false;
             long now = System.nanoTime();
             // The panorama is marched from where the camera stands, so as the camera moves the
             // clouds' parallax changes every frame. Marched only fifteen times a second, the sky
@@ -245,6 +261,22 @@ final class VolumetricClouds {
 
     private boolean dispatch(ClientLevel world, Vec3 cameraPos, float tickDelta, CloudRenderer clouds, float base,
                              LightManager.SkyLightState light, float[] ambientTop, float rain) {
+        fillFrame(world, cameraPos, tickDelta, clouds, base, light, ambientTop, rain);
+        if (!generator.dispatch(frame)) {
+            return false;
+        }
+        CloudField.setFrame(frame);
+        dispatches++;
+        restart = false;
+        lastCameraX = cameraPos.x;
+        lastCameraY = cameraPos.y;
+        lastCameraZ = cameraPos.z;
+        return true;
+    }
+
+    /** The field's inputs for this frame, as the GL march and the runtime's both take them. */
+    private void fillFrame(ClientLevel world, Vec3 cameraPos, float tickDelta, CloudRenderer clouds, float base,
+                           LightManager.SkyLightState light, float[] ambientTop, float rain) {
         float scale = clouds.getCloudSize();
         double drift = (world.getGameTime() + (double) tickDelta) * WIND_BLOCKS_PER_TICK * clouds.getSpeed();
         double period = WRAP_PERIOD * scale;
@@ -298,16 +330,35 @@ final class VolumetricClouds {
         frame.shapes.update(wrap(cameraPos.x + drift * WIND_X, period), wrap(cameraPos.z + drift * WIND_Z, period),
                 period, base, frame.thickness, scale, weather.calm,
                 (world.getGameTime() + (double) tickDelta) / 24000.0);
-        if (!generator.dispatch(frame)) {
-            return false;
+    }
+
+    /**
+     * The runtime's own shaders march the clouds this frame (the runtime patch group unbound-clouds): no dome,
+     * no GL march, no lens clouds; the field's inputs and textures go to the layer instead.
+     */
+    private void renderInRuntime(ClientLevel world, Vec3 cameraPos, float tickDelta, CloudRenderer clouds, float base,
+                                 LightManager.SkyLightState light, float[] ambientTop, float rain, SkyLayers skyLayers) {
+        if (!drawnInRuntime) {
+            destroyAssets();
+            drawnInRuntime = true;
         }
-        CloudField.setFrame(frame);
-        dispatches++;
-        restart = false;
-        lastCameraX = cameraPos.x;
-        lastCameraY = cameraPos.y;
-        lastCameraZ = cameraPos.z;
-        return true;
+        if (!noiseUploaded) {
+            noiseUploaded = RuntimePatchLayer.upload(RUNTIME_NOISE_BINDING, MemorySegment.ofBuffer(generator.noisePixels()));
+        }
+        byte[] cirrus = skyLayers.cirrusPixels();
+        if (cirrus != null && skyLayers.cirrusVersion() != runtimeCirrusVersion) {
+            MemorySegment red = Arena.ofAuto().allocate((long) SkyLayers.CIRRUS_SIZE * SkyLayers.CIRRUS_SIZE);
+            for (int i = 0; i < SkyLayers.CIRRUS_SIZE * SkyLayers.CIRRUS_SIZE; i++) {
+                red.set(ValueLayout.JAVA_BYTE, i, cirrus[i * 4]);
+            }
+            if (RuntimePatchLayer.upload(RUNTIME_CIRRUS_BINDING, red)) {
+                runtimeCirrusVersion = skyLayers.cirrusVersion();
+            }
+        }
+        fillFrame(world, cameraPos, tickDelta, clouds, base, light, ambientTop, rain);
+        frame.historyWeight = 1.0f;
+        RuntimeFrame.clouds(frame, frame.cameraX - SceneSpace.x(cameraPos.x), frame.cameraZ - SceneSpace.z(cameraPos.z),
+                clouds.getUnboundShadow());
     }
 
     private void publish(RemixAPI api, ByteBuffer pixels) {

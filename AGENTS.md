@@ -340,7 +340,25 @@ coordinates and synchronized world time, so clients reconstruct the same clouds
 with no network state; one worker builds the mesh palette lazily, the render
 thread uploads one mesh per frame, and each visible cloud submits one palette
 mesh with one transform. Reimagined uses the texture-chunk path over a generated
-mask (`ReimaginedCloudMask`) in one or two thick layers. Unbound is not drawn by
+mask (`ReimaginedCloudMask`) in one or two thick layers. On this branch, where
+the runtime patch group `unbound-clouds` applies, the runtime's own composite
+marches the Unbound field per pixel over every primary miss
+(`runtime_patch/clouds.py`): `runtime-patch/shaders/rrp_clouds.comp` includes
+`cloud_field.glsl` against the frame at set 4 (`rrp_frame.glsl`), glslang
+compiles it into `runtime-patch/shaders/compiled/` with a digest of its sources
+(the build recompiles it with the SDK and checks the digest without), and
+`runtime_patch/merge.py` copies the export and what it reaches into the module,
+renumbered above its bound, types and constants shared where identical (which
+words are ids comes from the grammar table `operands.json`). The march starts at
+the runtime's own camera (`cb.camera.viewToWorld`) moved into the clouds' frame by
+the frame's `SceneToCloud`, and goes over the sky matte premultiplied before the
+sky's brightness and the volume fog's attenuation, in the matte's units as the
+dome's panorama was. `VolumetricClouds.renderInRuntime` then hands over the
+field's inputs (`RuntimeFrame`, whose offsets `RuntimeFrameTest` pins to
+`compiled/frame_layout.txt`), the GL noise once and the cirrus, and draws no
+dome, no GL march and no lens clouds (`CloudField` stays withdrawn). The Debug
+page's Draw Clouds in OpenGL brings the GL path back for side-by-side looks.
+Elsewhere, Unbound is not drawn by
 `CloudRenderer`: `sky/VolumetricClouds` ray-marches three cloud layers (small
 and large cumulus, altostratus) and the cirrus on the GPU
 (`volumetric_clouds.comp`) into a panorama shown on a dome in the sky category.

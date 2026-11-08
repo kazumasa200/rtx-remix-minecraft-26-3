@@ -206,6 +206,7 @@ def build(
         shutil.rmtree(patches)
     patches.mkdir(parents=True)
     lines = ["#format 2"]
+    lines += [f"#channel {g}" for g in sorted({p.group for p in passes if p.channel})]
     for v in sorted(variants, key=lambda v: v.name):
         if v.name not in deltas or any(g in failed_groups for g in v.groups):
             continue

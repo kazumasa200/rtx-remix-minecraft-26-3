@@ -36,11 +36,14 @@ public final class RuntimePatchLayer {
     private static final Logger LOGGER = LoggerFactory.getLogger(RuntimePatchLayer.class);
     static final String LIBRARY = "rtxremix_patch_layer.dll";
     private static final Pattern ACTIVE_GROUP = Pattern.compile("([a-z0-9-]+) ACTIVE");
+    /** The group whose shaders march the Unbound clouds in the runtime (runtime_patch/clouds.py). */
+    public static final String UNBOUND_CLOUDS = "unbound-clouds";
 
     private static MethodHandle status;
     private static MethodHandle channelStatus;
     private static MethodHandle publishFrame;
     private static MethodHandle upload;
+    private static MethodHandle groups;
     /** The groups arming reported ACTIVE. Written once on the render thread before the runtime starts. */
     private static volatile Set<String> active = Set.of();
     private static volatile boolean shadowAbsorption;
@@ -73,6 +76,8 @@ public final class RuntimePatchLayer {
             upload = linker.downcallHandle(layer.find("rrp_upload").orElseThrow(),
                     FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.ADDRESS,
                             ValueLayout.JAVA_LONG));
+            groups = linker.downcallHandle(layer.find("rrp_groups").orElseThrow(),
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
             try (Arena arena = Arena.ofConfined()) {
                 MemorySegment report = arena.allocate(512);
                 int result = (int) arm.invokeExact(report, 512);
@@ -82,19 +87,23 @@ public final class RuntimePatchLayer {
                     status = null;
                 } else {
                     LOGGER.info("Runtime patch layer: {}", text);
-                    Set<String> groups = new HashSet<>();
-                    Matcher m = ACTIVE_GROUP.matcher(text);
-                    while (m.find()) {
-                        groups.add(m.group(1));
-                    }
-                    active = Set.copyOf(groups);
-                    shadowAbsorption = groups.contains("shadow-absorption");
+                    setActive(text);
                 }
             }
         } catch (Throwable t) {
             LOGGER.warn("Runtime patch layer not armed: {}", t.toString());
             status = null;
         }
+    }
+
+    private static void setActive(String report) {
+        Set<String> found = new HashSet<>();
+        Matcher m = ACTIVE_GROUP.matcher(report);
+        while (m.find()) {
+            found.add(m.group(1));
+        }
+        active = Set.copyOf(found);
+        shadowAbsorption = found.contains("shadow-absorption");
     }
 
     /** Whether the patch group (a pass id, such as {@code shadow-absorption}) applies to the runtime. */
@@ -128,6 +137,14 @@ public final class RuntimePatchLayer {
                 LOGGER.warn("Runtime patch layer armed but the Vulkan loader did not load it ({}): {}", when, line);
             } else {
                 LOGGER.info("Runtime patch layer ({}): {}", when, line);
+            }
+            // The device may have dropped a group it has no frame channel for.
+            MemorySegment published = arena.allocate(512);
+            groups.invokeExact(published, 512);
+            String groupReport = published.getString(0, StandardCharsets.UTF_8);
+            if (!groupReport.isEmpty()) {
+                setActive(groupReport);
+                LOGGER.info("Runtime patch groups ({}): {}", when, groupReport);
             }
             MemorySegment channel = arena.allocate(ValueLayout.JAVA_INT, 8);
             MemorySegment report = arena.allocate(256);

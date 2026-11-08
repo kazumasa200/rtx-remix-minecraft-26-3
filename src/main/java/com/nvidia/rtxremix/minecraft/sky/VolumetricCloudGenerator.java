@@ -253,6 +253,24 @@ final class VolumetricCloudGenerator {
     }
 
     /**
+     * The 3D noise as bytes, RGBA8, {@code NOISE_SIZE} cubed with x fastest: what the runtime's clouds read
+     * (RuntimePatchLayer.upload), so they march the very noise the GL clouds do. A blocking read; once.
+     */
+    ByteBuffer noisePixels() {
+        GL42.glMemoryBarrier(GL42.GL_TEXTURE_UPDATE_BARRIER_BIT);
+        ByteBuffer pixels = BufferUtils.createByteBuffer(NOISE_SIZE * NOISE_SIZE * NOISE_SIZE * 4);
+        int previous = GL11.glGetInteger(GL12.GL_TEXTURE_BINDING_3D);
+        try (PixelStoreState ignored = PixelStoreState.tightPack()) {
+            GL11.glBindTexture(GL12.GL_TEXTURE_3D, noiseTexture);
+            GL11.glGetTexImage(GL12.GL_TEXTURE_3D, 0, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, pixels);
+        } finally {
+            GL11.glBindTexture(GL12.GL_TEXTURE_3D, previous);
+        }
+        checkGlError("read the volumetric clouds' noise");
+        return pixels;
+    }
+
+    /**
      * The panorama of the last readback consumed, which is what the dome shows once it is
      * uploaded: premultiplied radiance and opacity, its rows as {@link #rowCoordinate} lays them
      * out; 0 before the first.

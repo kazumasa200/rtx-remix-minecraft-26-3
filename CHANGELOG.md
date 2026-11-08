@@ -20,6 +20,12 @@ also part of every mod file name.
 - Solid blocks that a pack gives subsurface scattering, such as quartz, take
   sharp shadows and the water's caustics, as other blocks do. They used to
   blur every shadow on them, and a torch behind a wall of them made it glow.
+- The Unbound clouds in the sky are marched by the path tracer itself, per
+  pixel, from the same cloud field as before, instead of being drawn on a sky
+  dome and again over the finished image. They go through the image's
+  exposure, tone mapping and fog like the rest of the sky, so they show their
+  shaded sides at full detail rather than as the dome's softened copy. The
+  Debug page's Draw Clouds in OpenGL shows the old clouds for comparison.
 
 ### Fixed
 

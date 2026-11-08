@@ -138,6 +138,9 @@ struct PatchSet {
 };
 
 std::atomic<const PatchSet*> g_set{nullptr};
+std::set<std::string> g_channelGroups;  // groups whose code reads set 4 (#channel lines in the manifest)
+std::string g_groupsReport;             // the published set's groups, as rrp_groups returns them
+const PatchSet* publishSet(const std::set<std::string>& vetoed, std::string& report);
 
 // ---- deltas -----------------------------------------------------------------------------------
 
@@ -285,10 +288,21 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateDevice(VkPhysicalDevice gpu, const VkDevice
     } else {
         report = "; channel down (no instance)";
     }
+    // Without a channel the groups that read set 4 cannot run: their pipelines would name a set no layout
+    // has. Modules are made after the device, so none of theirs has been patched yet.
+    std::string groups;
+    const PatchSet* without = nullptr;
+    bool veto = !rrp::channelUp(chain.channel) && !g_channelGroups.empty() && g_set.load() != nullptr;
+    if (veto) {
+        groups = std::string("armed ") + LAYER_NAME;
+        without = publishSet(g_channelGroups, groups);
+        delete g_set.exchange(without, std::memory_order_acq_rel);
+    }
     {
         std::lock_guard<std::mutex> lock(g_chainLock);
         g_deviceChains[dispatchKey(*out)] = chain;
         g_channelReport = report;
+        if (veto) g_groupsReport = groups;
     }
     g_devices++;
     return VK_SUCCESS;
@@ -434,12 +448,62 @@ bool parseKey(const std::string& hex, Key& out) {
 
 std::wstring widen(const std::string& s) { return std::wstring(s.begin(), s.end()); }
 
+// The manifest's lines as verified at arm time, kept so the set can be published again without the groups
+// that need the frame channel when the device's channel could not be made.
+struct Entry {
+    Key key;
+    uint64_t offset;
+    size_t bytes;
+    std::set<std::string> groups;
+    std::string file;
+    std::vector<uint32_t> delta;
+    bool ok = false;
+};
+std::vector<Entry> g_entries;
+std::map<std::string, bool> g_verified;    // group -> every line naming it verified
+
+// A set of the verified lines without the vetoed groups: each module takes the line whose groups are
+// exactly the active ones among the groups that edit it. Appends one report line per group.
+const PatchSet* publishSet(const std::set<std::string>& vetoed, std::string& report) {
+    std::map<Key, std::set<std::string>, bool (*)(const Key&, const Key&)> moduleGroups(
+        [](const Key& a, const Key& b) { return memcmp(a.bytes, b.bytes, 32) < 0; });
+    for (auto& e : g_entries) moduleGroups[e.key].insert(e.groups.begin(), e.groups.end());
+    auto active = [&](const std::string& g) { return g_verified[g] && !vetoed.count(g); };
+    auto* set = new PatchSet();
+    std::map<std::string, int> counts;
+    for (auto& e : g_entries) {
+        std::set<std::string> wanted;
+        for (auto& g : moduleGroups[e.key]) {
+            if (active(g)) wanted.insert(g);
+        }
+        if (!e.ok || wanted.empty() || e.groups != wanted) continue;
+        set->byKey.emplace(e.key, Replacement{widen(e.file), e.delta});
+        set->sizes.insert(e.bytes);
+        for (auto& g : e.groups) counts[g]++;
+    }
+    int published = 0;
+    for (auto& [group, ok] : g_verified) {
+        if (vetoed.count(group) && ok) {
+            report += "; " + group + " OFF (no frame channel)";
+        } else {
+            report += "; " + group + (ok ? " ACTIVE (" + std::to_string(counts[group]) + " modules)" : " MISMATCH");
+            published += ok ? 1 : 0;
+        }
+    }
+    if (published == 0) {
+        delete set;
+        return nullptr;
+    }
+    return set;
+}
+
 // manifest.tsv, written by the build tool:
 //   #format 2
+//   #channel <group>    (a group whose code reads the frame channel, set 4)
 //   <key hex64> \t <file offset in d3d9.dll> \t <original bytes> \t <groups, comma-separated> \t <delta file>
-// A module two groups edit has a line per combination of them. A group is active when every line naming
-// it matched the runtime file and its delta loaded; a module then takes the line whose groups are exactly
-// its active ones. Returns the published set (or nullptr) and appends one report line per group.
+// A module two groups edit has a line per combination of them. A group is verified when every line naming
+// it matched the runtime file and its delta loaded. Returns the published set (or nullptr) and appends one
+// report line per group.
 const PatchSet* loadAndVerify(const std::wstring& dir, std::string& report) {
     std::vector<uint8_t> manifestBytes;
     std::wstring manifestPath = dir + L"\\patches\\manifest.tsv";
@@ -449,23 +513,15 @@ const PatchSet* loadAndVerify(const std::wstring& dir, std::string& report) {
         report += "; no patch set";
         return nullptr;
     }
-    struct Entry {
-        Key key;
-        uint64_t offset;
-        size_t bytes;
-        std::set<std::string> groups;
-        std::string file;
-        std::vector<uint32_t> delta;
-        bool ok = false;
-    };
-    std::vector<Entry> entries;
-    std::map<std::string, bool> groups;  // group -> every line naming it verified
+    std::vector<Entry>& entries = g_entries;
+    std::map<std::string, bool>& groups = g_verified;
     std::istringstream lines(std::string(manifestBytes.begin(), manifestBytes.end()));
     std::string line;
     bool formatSeen = false;
     while (std::getline(lines, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line == "#format 2") formatSeen = true;
+        if (line.rfind("#channel ", 0) == 0) g_channelGroups.insert(line.substr(9));
         if (line.empty() || line[0] == '#') continue;
         std::istringstream fields(line);
         std::string key, offset, bytes, groupList, file;
@@ -516,32 +572,7 @@ const PatchSet* loadAndVerify(const std::wstring& dir, std::string& report) {
             for (auto& g : e.groups) groups[g] = false;
         }
     }
-    // Each module takes the line whose groups are exactly the active ones among the groups that edit it.
-    std::map<Key, std::set<std::string>, bool (*)(const Key&, const Key&)> moduleGroups(
-        [](const Key& a, const Key& b) { return memcmp(a.bytes, b.bytes, 32) < 0; });
-    for (auto& e : entries) moduleGroups[e.key].insert(e.groups.begin(), e.groups.end());
-    auto* set = new PatchSet();
-    std::map<std::string, int> counts;
-    for (auto& e : entries) {
-        std::set<std::string> wanted;
-        for (auto& g : moduleGroups[e.key]) {
-            if (groups[g]) wanted.insert(g);
-        }
-        if (!e.ok || wanted.empty() || e.groups != wanted) continue;
-        set->byKey.emplace(e.key, Replacement{widen(e.file), std::move(e.delta)});
-        set->sizes.insert(e.bytes);
-        for (auto& g : e.groups) counts[g]++;
-    }
-    int active = 0;
-    for (auto& [group, ok] : groups) {
-        report += "; " + group + (ok ? " ACTIVE (" + std::to_string(counts[group]) + " modules)" : " MISMATCH");
-        active += ok ? 1 : 0;
-    }
-    if (active == 0) {
-        delete set;
-        return nullptr;
-    }
-    return set;
+    return publishSet({}, report);
 }
 
 // Appends value to the semicolon-separated variable unless it is already listed.
@@ -586,6 +617,10 @@ RRP_EXPORT int32_t rrp_arm(char* report, int32_t capacity) {
     std::string text = std::string("armed ") + LAYER_NAME;
     const PatchSet* set = loadAndVerify(dir, text);
     g_set.store(set, std::memory_order_release);
+    {
+        std::lock_guard<std::mutex> lock(g_chainLock);
+        g_groupsReport = text;
+    }
     appendEnv(L"VK_ADD_LAYER_PATH", dir);
     appendEnv(L"VK_INSTANCE_LAYERS", LAYER_NAME_W);
     snprintf(report, capacity, "%s", text.c_str());
@@ -612,6 +647,13 @@ RRP_EXPORT int64_t rrp_apply(const uint32_t* in, size_t words, const uint32_t* d
     if (code.size() > capacity) return -2;
     memcpy(out, code.data(), code.size() * 4);
     return (int64_t)code.size();
+}
+
+// The groups that apply, in the arm report's form ("group ACTIVE (n modules); group MISMATCH; ..."), after
+// the device dropped the groups it has no frame channel for. Call after the runtime's startup.
+RRP_EXPORT void rrp_groups(char* report, int32_t capacity) {
+    std::lock_guard<std::mutex> lock(g_chainLock);
+    snprintf(report, capacity, "%s", g_groupsReport.c_str());
 }
 
 // The frame block for the runtime's next frame (render thread; at most 4096 bytes, see channel.h).

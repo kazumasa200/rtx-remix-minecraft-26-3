@@ -132,3 +132,47 @@ def test_a_delta_refuses_to_rewrite_an_original_binding_decoration(composite):
     module.commit()
     with pytest.raises(ValueError, match="binding decoration"):
         module.delta(original)
+
+
+def test_the_grammar_table_is_the_sdks():
+    import json
+
+    from rtx_tools.runtime_patch import grammar
+
+    sdk = Path(r"C:\VulkanSDK\1.4.341.1\Include\spirv-headers\spirv.core.grammar.json")
+    if not sdk.is_file():
+        pytest.skip("no Vulkan SDK grammar")
+    assert grammar.generate(sdk) == json.loads(grammar.TABLE.read_text(encoding="utf-8"))
+
+
+def test_the_grammar_decodes_every_instruction_of_the_composite(composite):
+    from rtx_tools.runtime_patch import grammar
+
+    for ins in Module.from_bytes(composite).instructions:
+        grammar.id_positions(ins.words)
+
+
+def test_the_clouds_library_merges_without_touching_the_composites_ids(composite):
+    from rtx_tools.runtime_patch import library, merge
+
+    original = Module.from_bytes(composite)
+    module = Module.from_bytes(composite)
+    fn = merge.merge(module, library.clouds_library(), "rrp_cloudsPrimary")
+    assert fn >= original.words[3]
+    kept = [o for o in module.origin if o is not None]
+    entry_points = [n for n, i in enumerate(original.instructions) if i.op == 15]
+    # Every original instruction stays, in order; only the entry points grow their interfaces.
+    assert kept == [n for n in range(len(original.instructions)) if n not in entry_points]
+    for n in entry_points:
+        grown = next(i for i in module.instructions if i.op == 15)
+        assert grown.words[: len(original.instructions[n].words)][1:] == original.instructions[n].words[1:]
+    # Merging the same export again reuses it.
+    assert merge.merge(module, library.clouds_library(), "rrp_cloudsPrimary") == fn
+
+
+def test_clouds_primary_patches_the_composites_primary_miss_once(composite):
+    from rtx_tools.runtime_patch.passes import CloudsPrimary
+
+    module = Module.from_bytes(composite)
+    assert CloudsPrimary().apply(module) == 1
+    module.delta(Module.from_bytes(composite))

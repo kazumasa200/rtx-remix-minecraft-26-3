@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from . import shadow
+from . import clouds, shadow
 from .spirv import (
     OP_BRANCH_CONDITIONAL,
     OP_CONSTANT,
@@ -37,6 +37,9 @@ class Pass:
     id: str
     version: int
     expect: Expect
+    # Whether the pass's code reads descriptor set 4, the layer's frame channel: its group is then dropped
+    # where the channel could not be made, since the runtime's pipelines would have no set 4.
+    channel: bool = False
 
     @property
     def group(self) -> str:
@@ -118,4 +121,22 @@ class ShadowAbsorption(Pass):
         return shadow.apply(module, self.GLASS_SCALE, caustics=True)
 
 
-PASSES: list[Pass] = [SkyFade(), ShadowAbsorption()]
+class CloudsPrimary(Pass):
+    """The Unbound clouds over the composite's primary misses, marched per pixel by the clouds library
+    (`clouds.apply_primary`). Reads the frame the mod publishes at descriptor set 4, so its group applies only
+    where the layer's channel is up."""
+
+    id = "clouds-primary"
+    version = 1
+    expect = Expect(modules=range(1, 2), sites_per_module=range(1, 2))
+    channel = True
+
+    @property
+    def group(self) -> str:
+        return "unbound-clouds"
+
+    def apply(self, module: Module) -> int:
+        return clouds.apply_primary(module)
+
+
+PASSES: list[Pass] = [SkyFade(), ShadowAbsorption(), CloudsPrimary()]

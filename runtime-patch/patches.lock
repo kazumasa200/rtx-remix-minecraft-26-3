@@ -671,6 +671,21 @@
   "sha256": "361e3510345c2a46972b40affc25b6409dd1e55eb300e452a1c933eb16aa836b",
   "validated": true
  },
+ "aea39ccb300826116e5fb67a0671f69381224fab2425ce1dc47bc6b616ed13d9:sky-fade+unbound-clouds": {
+  "groups": [
+   "sky-fade",
+   "unbound-clouds"
+  ],
+  "sha256": "364ab43d83e1ce865e959288d9d472c3e9060248966163af18d5cb50b2473a04",
+  "validated": true
+ },
+ "aea39ccb300826116e5fb67a0671f69381224fab2425ce1dc47bc6b616ed13d9:unbound-clouds": {
+  "groups": [
+   "unbound-clouds"
+  ],
+  "sha256": "dd8efdbee081787b396a3d3afb1a796488c4c353662a6fa64b38284cf9e6e33a",
+  "validated": true
+ },
  "b0cc8632a18534fff2c4bcb606653582bdb5b2bca51ead6325db3c071066f3b5:shadow-absorption": {
   "groups": [
    "shadow-absorption"

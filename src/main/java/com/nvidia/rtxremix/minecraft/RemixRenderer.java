@@ -31,6 +31,7 @@ import com.nvidia.rtxremix.minecraft.logic.ViewDistanceFade;
 import com.nvidia.rtxremix.minecraft.profiling.PerformanceTimer;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.minecraft.settings.PostProcessingSettings;
+import com.nvidia.rtxremix.minecraft.sky.RuntimeFrame;
 import com.nvidia.rtxremix.minecraft.sky.SkyRenderer;
 import com.nvidia.rtxremix.minecraft.terrain.ChunkManager;
 import com.nvidia.rtxremix.minecraft.lod.LodTerrain;
@@ -1476,6 +1477,8 @@ public class RemixRenderer {
             presentInfo.clientDoneSemaphore_ValueToWait =
                     interop.getClientDoneSemaphoreValue();
             presentInfo.disableCpuWaitForExternalSemaphores = 0;
+            // What the patched shaders read this frame (set 4); the runtime records the frame at present.
+            RuntimeFrame.send();
             try (ProfileScope ignored = ProfileScope.begin("Remix.Present")) {
                 remixApi.present(presentInfo);
             }

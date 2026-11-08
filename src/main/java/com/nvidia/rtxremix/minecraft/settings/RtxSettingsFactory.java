@@ -16,6 +16,7 @@ import com.nvidia.rtxremix.minecraft.RemixRenderer;
 import com.nvidia.rtxremix.minecraft.cloud.CloudRenderer;
 import com.nvidia.rtxremix.minecraft.cloud.CloudStyle;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
+import com.nvidia.rtxremix.minecraft.sky.RuntimeFrame;
 import com.nvidia.rtxremix.minecraft.sky.SkyLook;
 import com.nvidia.rtxremix.minecraft.lens.LensEffects;
 import com.nvidia.rtxremix.minecraft.lens.LensLook;
@@ -318,6 +319,9 @@ public final class RtxSettingsFactory {
         list.add(RtxSetting.ofBool("debug.domeClouds", SettingGroup.DEBUG_VIEWS,
                 "rtxremix.setting.debug.domeClouds", "rtxremix.setting.debug.domeClouds.tip",
                 false, LensEffects::isDomeCloudsShown, LensEffects::setDomeCloudsShown));
+        list.add(RtxSetting.ofBool("debug.glClouds", SettingGroup.DEBUG_VIEWS,
+                "rtxremix.setting.debug.glClouds", "rtxremix.setting.debug.glClouds.tip",
+                false, RuntimeFrame::isDrawnInGl, RuntimeFrame::setDrawnInGl));
         list.add(RtxSetting.ofBool("debug.sceneOriginOffset", SettingGroup.DEBUG_VIEWS,
                 "rtxremix.setting.debug.sceneOriginOffset", "rtxremix.setting.debug.sceneOriginOffset.tip",
                 false, SceneSpace::debugOffset, SceneSpace::setDebugOffset));

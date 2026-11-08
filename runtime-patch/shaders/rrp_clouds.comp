@@ -1,0 +1,55 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+// The Unbound clouds as a library for the runtime's own shaders: cloud_field.glsl, the field the GL dome and
+// lens march, compiled for Vulkan against the frame at set 4 (rrp_frame.glsl). main only calls the exports so
+// glslang keeps them; the patch build merges an export, and what it reaches, into each module that calls it
+// (runtime_patch/merge.py), and never main.
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "rrp_frame.glsl"
+
+#define PI 3.14159265358979323846
+#define CIRRUS_MIN_ELEVATION_DEGREES CirrusMinElevation
+#define CLOUD_FIELD_EXTERNAL_SHAPES
+// The lens's step counts: the runtime's upscaler folds the jittered march of every pixel over frames, as
+// the lens's history did.
+#define CLOUD_MIN_STEPS 20
+#define CLOUD_MAX_STEPS 40
+#define CLOUD_ALTO_STEPS 6
+// Compute and ray-tracing stages have no implicit derivatives, and the GL samplers have no mips, so level 0
+// is what GL sampled too.
+#define texture(s, c) textureLod(s, c, 0.0)
+
+// Where a march starts, in the clouds' frame; each export sets them from its caller's camera.
+vec2 CameraXZ;
+float CameraHeight;
+
+#include "cloud_field.glsl"
+
+// Interleaved gradient noise, turned by the golden ratio each frame: an even spread over a pixel's
+// neighbours that the upscaler averages.
+float rrpJitter(uvec2 pixel) {
+    float n = fract(52.9829189 * fract(0.06711056 * float(pixel.x) + 0.00583715 * float(pixel.y)));
+    return fract(n + 0.61803398875 * float(FrameIndex & 1023u));
+}
+
+// The clouds seen from the camera at scene position camera along direction, premultiplied radiance and
+// opacity in the sky matte's units, the cirrus behind them, as the GL panorama holds them: what the
+// composite lays over the sky a primary ray that missed shows. Nothing while the mod draws them itself.
+vec4 rrp_cloudsPrimary(vec3 direction, vec3 camera, uvec2 pixel) {
+    if (Enabled == 0u) {
+        return vec4(0.0);
+    }
+    CameraXZ = camera.xz + SceneToCloud;
+    CameraHeight = camera.y;
+    float entry;
+    vec4 clouds = marchCloudsTo(normalize(direction), rrpJitter(pixel), MAX_DISTANCE, entry);
+    return clouds + (1.0 - clouds.a) * cirrusLayer(normalize(direction));
+}
+
+layout(local_size_x = 1) in;
+void main() {
+    vec4 keep = rrp_cloudsPrimary(vec3(0.0, 1.0, 0.0), vec3(0.0), uvec2(0u));
+}

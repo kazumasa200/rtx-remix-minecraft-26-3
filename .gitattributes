@@ -11,3 +11,8 @@
 
 # Written by the runtime patch build with LF, whatever the checkout.
 runtime-patch/patches.lock text eol=lf
+runtime-patch/shaders/compiled/*.txt text eol=lf
+runtime-patch/shaders/compiled/*.sha256 text eol=lf
+tools/src/rtx_tools/runtime_patch/operands.json text eol=lf
+# Compiled SPIR-V.
+*.spv binary
