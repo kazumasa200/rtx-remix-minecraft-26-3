@@ -162,7 +162,8 @@ public final class LodTerrain {
     private RemixTexture palette;
     private RemixMaterial glassMaterial;
     private RemixMaterial glowMaterial;
-    private RemixMaterial lampMaterial;
+    /** Indexed by the LOD's detail level: 0 draws a block as one block, each level doubles it. */
+    private final RemixMaterial[] lampMaterials = new RemixMaterial[32];
 
     public LodTerrain(PerformanceTimer timer) {
         this.timer = timer;
@@ -273,10 +274,13 @@ public final class LodTerrain {
     private void destroyPaletteMaterials() {
         if (glassMaterial != null && !glassMaterial.isDeleted()) glassMaterial.destroy();
         if (glowMaterial != null && !glowMaterial.isDeleted()) glowMaterial.destroy();
-        if (lampMaterial != null && !lampMaterial.isDeleted()) lampMaterial.destroy();
+        for (int level = 0; level < lampMaterials.length; level++) {
+            RemixMaterial lamp = lampMaterials[level];
+            if (lamp != null && !lamp.isDeleted()) lamp.destroy();
+            lampMaterials[level] = null;
+        }
         glassMaterial = null;
         glowMaterial = null;
-        lampMaterial = null;
     }
 
     private void setCapturing(boolean on) {
@@ -585,7 +589,6 @@ public final class LodTerrain {
         if (ground == null) return;
         RemixMaterial glass = glassMaterial();
         RemixMaterial glow = textures != null ? glowMaterial(textures.terrainEmissionIntensity()) : null;
-        RemixMaterial lamp = textures != null ? lampMaterial(textures.terrainEmissionIntensity()) : null;
 
         while (buildsInFlight < MAX_BUILDS_IN_FLIGHT && !buildQueue.isEmpty()) {
             LodSection section = buildQueue.poll();
@@ -602,6 +605,8 @@ public final class LodTerrain {
             int serial = section.serial;
             int buildEpoch = epoch;
             long signature = buildClip.signature(section.minX, section.minZ, section.width);
+            RemixMaterial lamp = textures != null
+                    ? lampMaterial(textures.terrainEmissionIntensity(), section) : null;
             buildsInFlight++;
             builder.execute(() -> {
                 RemixMesh mesh = null;
@@ -793,15 +798,21 @@ public final class LodTerrain {
     }
 
     /**
-     * Other blocks that give off light glow at {@link #LAMP_EMISSION} of the terrain's emission.
-     * The LOD mod draws an area of many blocks as one of them, so a rooftop torch became a box
-     * several blocks across, which at the full emission lit the roofs around and bloomed to
-     * white (#23); the block's own texture glows only where its flame is.
+     * Other blocks that give off light glow at {@link #LAMP_EMISSION} of the terrain's emission
+     * where the LOD draws a block as one block; the block's own texture glows only where its
+     * flame is. Farther out the LOD mod draws an area of many blocks as one of them, so a rooftop
+     * torch became a box several blocks across, which lit the roofs around and bloomed to white
+     * (#23). The glow is spread over that box, so a lamp gives off one block's light at any
+     * detail and the far ones fade, whatever block or mod they come from.
      */
-    private RemixMaterial lampMaterial(float intensity) {
-        if (lampMaterial != null && !lampMaterial.isDeleted()) return lampMaterial;
-        lampMaterial = paletteGlow(intensity * LAMP_EMISSION, "lamp");
-        return lampMaterial;
+    private RemixMaterial lampMaterial(float intensity, LodSection section) {
+        int cell = section.blocksPerCell();
+        int level = Math.min(lampMaterials.length - 1, Integer.numberOfTrailingZeros(cell));
+        RemixMaterial lamp = lampMaterials[level];
+        if (lamp != null && !lamp.isDeleted()) return lamp;
+        lamp = paletteGlow(intensity * LAMP_EMISSION / ((float) cell * cell), "lamp");
+        lampMaterials[level] = lamp;
+        return lamp;
     }
 
     private RemixMaterial paletteGlow(float intensity, String name) {

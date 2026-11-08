@@ -65,6 +65,14 @@ public final class LodSection {
         this.width = width;
     }
 
+    /**
+     * How many blocks across one of the LOD mod's cells is: 1 at its finest detail, doubling
+     * with each coarser level, since every section is 64 cells across.
+     */
+    int blocksPerCell() {
+        return Math.max(1, width / 64);
+    }
+
     /** Copies the mod's freshly built vertex buffers; any thread. */
     public void publishGeometry(List<ByteBuffer> opaque, List<ByteBuffer> transparent) {
         if (!capturing || closed) return;

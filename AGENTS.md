@@ -426,7 +426,11 @@ and the translucent buffer is thin-walled glass tinted by the block's hue. Drawn
 ground, glass stood as pale solid blocks and lava did not glow. The LOD mod
 draws an area of many blocks as one of them, so a rooftop torch became a box
 several blocks across, which at the full emission lit the roofs around and
-bloomed to white.
+bloomed to white. That fifth holds where a cell is one block; a coarser
+section's lamps glow over the area of their box less (`LodSection.blocksPerCell`),
+so a lamp gives off one block's light at any detail and distant ones fade. The
+vertex says only that a block glows, not which block or how large its flame
+is, so the rule is the same for every block and mod.
 The LOD mod names a material by block id before it asks about light, so
 glowstone and lit redstone lamps came out as stone; every block that gives off
 light, liquids aside, is marked illuminated through its block-state event

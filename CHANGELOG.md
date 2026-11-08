@@ -11,6 +11,14 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Changed
+
+- Torches, lamps and other lights in distant Distant Horizons terrain fade
+  with its detail: the nearest LODs keep their glow, and coarser ones, which
+  draw a light as a box several blocks wide, give off one block's light over
+  that box, so far rooftops no longer glow white. The rule needs no list of
+  blocks, so modded lights follow it too (#23).
+
 ## 0.4.0-pre.3 - 2026-11-04
 
 ### Added
