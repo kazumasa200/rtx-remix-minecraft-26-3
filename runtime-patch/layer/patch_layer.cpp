@@ -19,6 +19,8 @@
 #include <vulkan/vk_layer.h>
 #include <vulkan/vulkan.h>
 #include <windows.h>
+
+#include "channel.h"
 #include <bcrypt.h>
 
 #pragma comment(lib, "bcrypt.lib")
@@ -48,18 +50,33 @@ std::atomic<uint32_t> g_armed{0}, g_hooked{0}, g_devices{0}, g_seen{0}, g_replac
 struct InstanceChain {
     PFN_vkGetInstanceProcAddr next;
     PFN_vkDestroyInstance destroy;
+    VkInstance instance;
 };
 struct DeviceChain {
     PFN_vkGetDeviceProcAddr next;
     PFN_vkDestroyDevice destroy;
     PFN_vkCreateShaderModule createShaderModule;
+    PFN_vkCreatePipelineLayout createPipelineLayout;
+    PFN_vkCmdBindDescriptorSets cmdBindDescriptorSets;
+    PFN_vkQueueSubmit queueSubmit;
+    PFN_vkQueuePresentKHR queuePresent;
+    PFN_vkGetDeviceQueue getDeviceQueue;
+    PFN_vkGetDeviceQueue2 getDeviceQueue2;
+    rrp::Channel* channel;  // set 4 for this device; down when it could not be made
 };
 
 std::mutex g_chainLock;
 std::unordered_map<void*, InstanceChain> g_instanceChains;
 std::unordered_map<void*, DeviceChain> g_deviceChains;
+std::string g_channelReport;
 
 void* dispatchKey(const void* handle) { return *(void* const*)handle; }
+
+// The chain of the device a handle (device, queue, command buffer) belongs to; they share its dispatch key.
+DeviceChain deviceChain(const void* handle) {
+    std::lock_guard<std::mutex> lock(g_chainLock);
+    return g_deviceChains.at(dispatchKey(handle));
+}
 
 // ---- keys -----------------------------------------------------------------------------------
 
@@ -208,7 +225,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateInstance(const VkInstanceCreateInfo* info, 
     {
         std::lock_guard<std::mutex> lock(g_chainLock);
         g_instanceChains[dispatchKey(*out)] =
-            InstanceChain{next, (PFN_vkDestroyInstance)next(*out, "vkDestroyInstance")};
+            InstanceChain{next, (PFN_vkDestroyInstance)next(*out, "vkDestroyInstance"), *out};
     }
     g_hooked = 1;
     return VK_SUCCESS;
@@ -236,35 +253,120 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateDevice(VkPhysicalDevice gpu, const VkDevice
     PFN_vkGetInstanceProcAddr nextInstance = link->u.pLayerInfo->pfnNextGetInstanceProcAddr;
     PFN_vkGetDeviceProcAddr nextDevice = link->u.pLayerInfo->pfnNextGetDeviceProcAddr;
     link->u.pLayerInfo = link->u.pLayerInfo->pNext;
+    // Command buffers the layer allocates itself need the loader's dispatch word.
+    PFN_vkSetDeviceLoaderData setLoaderData = nullptr;
+    for (auto* data = (const VkLayerDeviceCreateInfo*)info->pNext; data; data = (const VkLayerDeviceCreateInfo*)data->pNext) {
+        if (data->sType == VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO && data->function == VK_LOADER_DATA_CALLBACK) {
+            setLoaderData = data->u.pfnSetDeviceLoaderData;
+        }
+    }
     auto create = (PFN_vkCreateDevice)nextInstance(VK_NULL_HANDLE, "vkCreateDevice");
     VkResult result = create(gpu, info, alloc, out);
     if (result != VK_SUCCESS) return result;
+    VkInstance instance = VK_NULL_HANDLE;
     {
         std::lock_guard<std::mutex> lock(g_chainLock);
-        g_deviceChains[dispatchKey(*out)] =
-            DeviceChain{nextDevice, (PFN_vkDestroyDevice)nextDevice(*out, "vkDestroyDevice"),
-                        (PFN_vkCreateShaderModule)nextDevice(*out, "vkCreateShaderModule")};
+        auto it = g_instanceChains.find(dispatchKey(gpu));
+        if (it != g_instanceChains.end()) instance = it->second.instance;
+    }
+    DeviceChain chain{nextDevice,
+                      (PFN_vkDestroyDevice)nextDevice(*out, "vkDestroyDevice"),
+                      (PFN_vkCreateShaderModule)nextDevice(*out, "vkCreateShaderModule"),
+                      (PFN_vkCreatePipelineLayout)nextDevice(*out, "vkCreatePipelineLayout"),
+                      (PFN_vkCmdBindDescriptorSets)nextDevice(*out, "vkCmdBindDescriptorSets"),
+                      (PFN_vkQueueSubmit)nextDevice(*out, "vkQueueSubmit"),
+                      (PFN_vkQueuePresentKHR)nextDevice(*out, "vkQueuePresentKHR"),
+                      (PFN_vkGetDeviceQueue)nextDevice(*out, "vkGetDeviceQueue"),
+                      (PFN_vkGetDeviceQueue2)nextDevice(*out, "vkGetDeviceQueue2"),
+                      nullptr};
+    std::string report;
+    if (instance != VK_NULL_HANDLE) {
+        chain.channel = rrp::createChannel(gpu, *out, info, nextDevice, nextInstance, instance, setLoaderData, report);
+    } else {
+        report = "; channel down (no instance)";
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_chainLock);
+        g_deviceChains[dispatchKey(*out)] = chain;
+        g_channelReport = report;
     }
     g_devices++;
     return VK_SUCCESS;
 }
 
 VKAPI_ATTR void VKAPI_CALL DestroyDevice(VkDevice device, const VkAllocationCallbacks* alloc) {
-    PFN_vkDestroyDevice destroy;
+    DeviceChain chain;
     {
         std::lock_guard<std::mutex> lock(g_chainLock);
         auto it = g_deviceChains.find(dispatchKey(device));
         if (it == g_deviceChains.end()) return;
-        destroy = it->second.destroy;
+        chain = it->second;
         g_deviceChains.erase(it);
     }
-    destroy(device, alloc);
+    rrp::destroyChannel(chain.channel);
+    chain.destroy(device, alloc);
+}
+
+// ---- the channel's hooks: forward untouched while the device has no channel ---------------------
+
+VKAPI_ATTR VkResult VKAPI_CALL CreatePipelineLayout(VkDevice device, const VkPipelineLayoutCreateInfo* info,
+                                                    const VkAllocationCallbacks* alloc, VkPipelineLayout* out) {
+    DeviceChain chain = deviceChain(device);
+    if (!rrp::channelUp(chain.channel)) return chain.createPipelineLayout(device, info, alloc, out);
+    return rrp::createPipelineLayout(chain.channel, device, info, alloc, out);
+}
+
+VKAPI_ATTR void VKAPI_CALL CmdBindDescriptorSets(VkCommandBuffer cmd, VkPipelineBindPoint point, VkPipelineLayout layout,
+                                                 uint32_t firstSet, uint32_t count, const VkDescriptorSet* sets,
+                                                 uint32_t dynamicCount, const uint32_t* dynamicOffsets) {
+    DeviceChain chain = deviceChain(cmd);
+    if (!rrp::channelUp(chain.channel)) {
+        chain.cmdBindDescriptorSets(cmd, point, layout, firstSet, count, sets, dynamicCount, dynamicOffsets);
+        return;
+    }
+    rrp::cmdBindDescriptorSets(chain.channel, cmd, point, layout, firstSet, count, sets, dynamicCount, dynamicOffsets);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL QueueSubmit(VkQueue queue, uint32_t count, const VkSubmitInfo* submits, VkFence fence) {
+    DeviceChain chain = deviceChain(queue);
+    if (!rrp::channelUp(chain.channel)) return chain.queueSubmit(queue, count, submits, fence);
+    return rrp::queueSubmit(chain.channel, queue, count, submits, fence);
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL QueuePresentKHR(VkQueue queue, const VkPresentInfoKHR* info) {
+    DeviceChain chain = deviceChain(queue);
+    if (!rrp::channelUp(chain.channel)) return chain.queuePresent(queue, info);
+    return rrp::queuePresent(chain.channel, queue, info);
+}
+
+VKAPI_ATTR void VKAPI_CALL GetDeviceQueue(VkDevice device, uint32_t family, uint32_t index, VkQueue* out) {
+    DeviceChain chain = deviceChain(device);
+    if (!rrp::channelUp(chain.channel)) {
+        chain.getDeviceQueue(device, family, index, out);
+        return;
+    }
+    rrp::getDeviceQueue(chain.channel, device, family, index, out);
+}
+
+VKAPI_ATTR void VKAPI_CALL GetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* info, VkQueue* out) {
+    DeviceChain chain = deviceChain(device);
+    if (!rrp::channelUp(chain.channel)) {
+        chain.getDeviceQueue2(device, info, out);
+        return;
+    }
+    rrp::getDeviceQueue2(chain.channel, device, info, out);
 }
 
 VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetDeviceProcAddr(VkDevice device, const char* name) {
     if (!strcmp(name, "vkGetDeviceProcAddr")) return (PFN_vkVoidFunction)GetDeviceProcAddr;
     if (!strcmp(name, "vkDestroyDevice")) return (PFN_vkVoidFunction)DestroyDevice;
     if (!strcmp(name, "vkCreateShaderModule")) return (PFN_vkVoidFunction)CreateShaderModule;
+    if (!strcmp(name, "vkCreatePipelineLayout")) return (PFN_vkVoidFunction)CreatePipelineLayout;
+    if (!strcmp(name, "vkCmdBindDescriptorSets")) return (PFN_vkVoidFunction)CmdBindDescriptorSets;
+    if (!strcmp(name, "vkQueueSubmit")) return (PFN_vkVoidFunction)QueueSubmit;
+    if (!strcmp(name, "vkQueuePresentKHR")) return (PFN_vkVoidFunction)QueuePresentKHR;
+    if (!strcmp(name, "vkGetDeviceQueue")) return (PFN_vkVoidFunction)GetDeviceQueue;
+    if (!strcmp(name, "vkGetDeviceQueue2")) return (PFN_vkVoidFunction)GetDeviceQueue2;
     PFN_vkGetDeviceProcAddr next;
     {
         std::lock_guard<std::mutex> lock(g_chainLock);
@@ -283,6 +385,12 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetInstanceProcAddr(VkInstance instance
     if (!strcmp(name, "vkGetDeviceProcAddr")) return (PFN_vkVoidFunction)GetDeviceProcAddr;
     if (!strcmp(name, "vkDestroyDevice")) return (PFN_vkVoidFunction)DestroyDevice;
     if (!strcmp(name, "vkCreateShaderModule")) return (PFN_vkVoidFunction)CreateShaderModule;
+    if (!strcmp(name, "vkCreatePipelineLayout")) return (PFN_vkVoidFunction)CreatePipelineLayout;
+    if (!strcmp(name, "vkCmdBindDescriptorSets")) return (PFN_vkVoidFunction)CmdBindDescriptorSets;
+    if (!strcmp(name, "vkQueueSubmit")) return (PFN_vkVoidFunction)QueueSubmit;
+    if (!strcmp(name, "vkQueuePresentKHR")) return (PFN_vkVoidFunction)QueuePresentKHR;
+    if (!strcmp(name, "vkGetDeviceQueue")) return (PFN_vkVoidFunction)GetDeviceQueue;
+    if (!strcmp(name, "vkGetDeviceQueue2")) return (PFN_vkVoidFunction)GetDeviceQueue2;
     if (instance == VK_NULL_HANDLE) return nullptr;
     PFN_vkGetInstanceProcAddr next;
     {
@@ -504,6 +612,28 @@ RRP_EXPORT int64_t rrp_apply(const uint32_t* in, size_t words, const uint32_t* d
     if (code.size() > capacity) return -2;
     memcpy(out, code.data(), code.size() * 4);
     return (int64_t)code.size();
+}
+
+// The frame block for the runtime's next frame (render thread; at most 4096 bytes, see channel.h).
+// 0 accepted, -1 wrong size, -2 no channel.
+RRP_EXPORT int32_t rrp_publish_frame(const void* bytes, uint32_t size) { return rrp::publishFrame(bytes, size); }
+
+// A texture of set 4 (binding 1 noise: 128^3 RGBA8; binding 2 cirrus: 2048^2 R8), copied and uploaded at
+// the next frame. 0 accepted, -1 wrong binding or size, -2 no channel.
+RRP_EXPORT int32_t rrp_upload(uint32_t binding, const void* bytes, uint64_t size) {
+    return rrp::upload(binding, bytes, size);
+}
+
+// The channel's counters [state (0 down, 1 up, 2 lost), layoutsExtended, layoutsRefused, setBinds,
+// framesLatched, submitsSkipped, uploads, lost] into out, and its creation report (UTF-8) into report.
+RRP_EXPORT void rrp_channel_status(uint32_t* out, char* report, int32_t capacity) {
+    std::lock_guard<std::mutex> lock(g_chainLock);
+    rrp::Channel* channel = nullptr;
+    for (auto& [key, chain] : g_deviceChains) {
+        if (chain.channel) channel = chain.channel;
+    }
+    rrp::channelStatus(channel, out);
+    snprintf(report, capacity, "%s", g_channelReport.c_str());
 }
 
 // The layer's key of a module (32 bytes into out); 0 on success. The build tool keys with this.

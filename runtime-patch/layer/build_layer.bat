@@ -38,8 +38,8 @@ if not exist "%OUT_DIR%" mkdir "%OUT_DIR%"
 
 echo Compiling rtxremix_patch_layer.dll ...
 cl /nologo /O2 /Zi /LD /EHsc /std:c++17 /DVK_USE_PLATFORM_WIN32_KHR ^
-   /I"%VK_INCLUDE%" "%~dp0patch_layer.cpp" ^
-   /Fe"%OUT_DIR%\rtxremix_patch_layer.dll" /Fo"%OUT_DIR%\rtxremix_patch_layer.obj" /Fd"%OUT_DIR%\rtxremix_patch_layer.pdb" ^
+   /I"%VK_INCLUDE%" "%~dp0patch_layer.cpp" "%~dp0channel.cpp" ^
+   /Fe"%OUT_DIR%\rtxremix_patch_layer.dll" /Fo"%OUT_DIR%\\" /Fd"%OUT_DIR%\rtxremix_patch_layer.pdb" ^
    /link /nologo /DEBUG
 if errorlevel 1 (
     echo ERROR: Compilation failed.

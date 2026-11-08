@@ -146,7 +146,19 @@ literals arrive as dxvk wrote them, and a pass must never renumber an existing i
 or write an original binding decoration anew (`Module.delta` refuses). The build
 applies every delta through the layer's own `rrp_apply`, plain and with every
 binding literal raised as dxvk would, and it must give back the module the passes
-made. `-Drtxremix.runtimePatches=false` runs the runtime as shipped. The
+made. `-Drtxremix.runtimePatches=false` runs the runtime as shipped. The layer
+also carries what the mod hands patched shaders, as descriptor set 4
+(`runtime-patch/layer/channel.cpp`): the runtime's modules use sets 0 to 3 and
+bind only through `vkCmdBindDescriptorSets`, so every pipeline layout gets set 4
+appended (empty layouts pad the gap) and set 4 is bound again after every compute
+and ray-tracing bind. The mod publishes a frame block (`rrp_publish_frame`) and
+textures (`rrp_upload`); at the first graphics-queue submit after a present the
+layer latches the latest block into one of four fenced ring slots and submits its
+own command buffer ahead of the runtime's, copying the block and any upload
+between barriers that cover every command before and after it on that queue, so
+every pass of a frame reads one block. A mod that stops publishing has its block
+zeroed after 30 frames. The counters are logged after startup and at 1200 frames
+(`RuntimePatchLayer.logStatus`). The
 first pass, `sky-fade`: the composite faded every pixel that was not a primary
 miss into the sky, and a primary ray that crossed glass or water into the sky is
 not a miss but stores the miss view Z, so the sky seen through them lost its

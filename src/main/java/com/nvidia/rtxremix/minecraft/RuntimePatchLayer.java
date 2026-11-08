@@ -38,6 +38,9 @@ public final class RuntimePatchLayer {
     private static final Pattern ACTIVE_GROUP = Pattern.compile("([a-z0-9-]+) ACTIVE");
 
     private static MethodHandle status;
+    private static MethodHandle channelStatus;
+    private static MethodHandle publishFrame;
+    private static MethodHandle upload;
     /** The groups arming reported ACTIVE. Written once on the render thread before the runtime starts. */
     private static volatile Set<String> active = Set.of();
     private static volatile boolean shadowAbsorption;
@@ -63,6 +66,13 @@ public final class RuntimePatchLayer {
                     FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
             status = linker.downcallHandle(layer.find("rrp_status").orElseThrow(),
                     FunctionDescriptor.ofVoid(ValueLayout.ADDRESS));
+            channelStatus = linker.downcallHandle(layer.find("rrp_channel_status").orElseThrow(),
+                    FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+            publishFrame = linker.downcallHandle(layer.find("rrp_publish_frame").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+            upload = linker.downcallHandle(layer.find("rrp_upload").orElseThrow(),
+                    FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.JAVA_INT, ValueLayout.ADDRESS,
+                            ValueLayout.JAVA_LONG));
             try (Arena arena = Arena.ofConfined()) {
                 MemorySegment report = arena.allocate(512);
                 int result = (int) arm.invokeExact(report, 512);
@@ -119,8 +129,45 @@ public final class RuntimePatchLayer {
             } else {
                 LOGGER.info("Runtime patch layer ({}): {}", when, line);
             }
+            MemorySegment channel = arena.allocate(ValueLayout.JAVA_INT, 8);
+            MemorySegment report = arena.allocate(256);
+            channelStatus.invokeExact(channel, report, 256);
+            LOGGER.info("Runtime patch channel ({}){}: state={} layoutsExtended={} layoutsRefused={} setBinds={} "
+                            + "framesLatched={} submitsSkipped={} uploads={}", when,
+                    report.getString(0, StandardCharsets.UTF_8),
+                    channel.getAtIndex(ValueLayout.JAVA_INT, 0), channel.getAtIndex(ValueLayout.JAVA_INT, 1),
+                    channel.getAtIndex(ValueLayout.JAVA_INT, 2), channel.getAtIndex(ValueLayout.JAVA_INT, 3),
+                    channel.getAtIndex(ValueLayout.JAVA_INT, 4), channel.getAtIndex(ValueLayout.JAVA_INT, 5),
+                    channel.getAtIndex(ValueLayout.JAVA_INT, 6));
         } catch (Throwable t) {
             LOGGER.warn("Runtime patch layer status unavailable: {}", t.toString());
+        }
+    }
+
+    /**
+     * Hands the patched shaders the frame block (set 4, binding 0) for the runtime's next frame; render
+     * thread. False when the layer has no channel.
+     */
+    public static boolean publishFrame(MemorySegment frame, int bytes) {
+        if (publishFrame == null) {
+            return false;
+        }
+        try {
+            return (int) publishFrame.invokeExact(frame, bytes) == 0;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** Hands the patched shaders a texture of set 4 (1 noise, 2 cirrus), uploaded with the next frame. */
+    public static boolean upload(int binding, MemorySegment bytes) {
+        if (upload == null) {
+            return false;
+        }
+        try {
+            return (int) upload.invokeExact(binding, bytes, bytes.byteSize()) == 0;
+        } catch (Throwable t) {
+            return false;
         }
     }
 }
