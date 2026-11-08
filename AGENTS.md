@@ -631,6 +631,14 @@ what lies behind, so around a lamp the haze and the clouds only brighten the
 image and, after sunset, the clouds' shadows leave it: faded, clouded or
 shaded with the distant land behind, the flame went out and the land showed
 through the glow as pale outlines.
+Sky seen through stained glass, ice or water within 32 blocks stays as the
+runtime draws it, its own clouds there tinted with it, and the sky's measures
+leave it out (`GlassVolume`, a window of the see-through blocks around the
+camera measured a layer a frame, which the lens follows block by block along
+the view). With the sky behind glass tinted the marched clouds floated white
+over it, and the glass's tint taken for the sky's spread around it. Told by the
+image's hue instead, whole clouds in open sky passed for seen through glass and
+turned cyan, and under a large roof the sky's measures took the tint.
 Keeping the image wherever the two marches
 agreed drew the panorama's speckle and outlines, which the denoiser smooths out
 of the image, onto the bases of clouds overhead. The panorama copy is mipmapped
@@ -645,7 +653,11 @@ After the composite, the sun mirrored on level water glows and its glints
 streak: quarter-resolution passes keep the near-saturated pixels whose view ray,
 turned back up off the horizontal, nears the sun, and streak only those that
 stand out from their neighbours, in the starburst's six directions.
-The floors of sunlit water get caustics as far as the water is measured.
+The floors of sunlit water get caustics as far as the water is measured. A
+point takes its light from the water column a little in front of it along the
+view: on a pool's wall, which lies on the edge between the water's column and the
+wall's, the depth's error picked one or the other pixel column by pixel column, and
+the web on the wall broke into fine vertical stripes.
 `WaterColumns` keeps, in a ring texture 512 columns across around the camera,
 refreshed a row a frame and a row within 32 blocks of it, each column's water
 surface, floor (searched 32 blocks down) and the top that shades it. The 32
@@ -773,6 +785,10 @@ diluting the sampler's candidate pool.
   paint order, because Remix orders coplanar decals by primitive index rather
   than by depth; text turns draw order into depth the same way
   (`RemixEntitySubmitter`).
+- Coplanar alpha-tested layers must not overlap: Remix continues a ray past a
+  transparent texel from beyond its plane, so only the first layer hit is seen.
+  Placed redstone dust's layers are cut so each texel is drawn once, by the
+  topmost layer opaque there (`DirectQuadWriter`).
 - A local first-person light is submitted with a zero volumetric radiance scale,
   because the volumetric grid reuses the previous frame's radiance and a
   camera-locked emitter would smear into distant geometry (`LightManager`).
