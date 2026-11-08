@@ -887,6 +887,10 @@ diluting the sampler's candidate pool.
   image, or it undoes the lens where it draws (`RemixWeatherRenderer`).
 - The developer tools launch only through a signed-in Prism; they never pass
   Prism's `--offline` or launch `runClient` (`test_public_boundary.py`).
+- Working-tree line endings follow `.gitattributes` and no file mixes them
+  (`test_line_endings.py`): a scripted edit reads and writes bytes, or opens
+  with `newline=''` and keeps the file's own ending, since Python's text mode
+  on Windows writes CRLF into `eol=lf` Java.
 
 ## Focused Engineering Guides
 
