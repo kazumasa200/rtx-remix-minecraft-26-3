@@ -22,6 +22,11 @@ also part of every mod file name.
 
 - Distant Horizons LODs show block textures when its LOD Textures option is on,
   as they do without RTX, instead of one flat colour per block (#25).
+- Powered redstone dust glows in its own colour and fades as the signal
+  weakens. A full signal stays at full brightness, and unpowered dust stays
+  dark. Dust from a 128x pack is cut so a crossing does not glow as a solid
+  square, and a layer the cut cannot split stays dark instead of lighting the
+  whole block face.
 
 ## 0.4.0-pre.4 - 2026-11-08
 

@@ -428,7 +428,7 @@ public final class BlockQuadEmitter {
         } finally {
             parts.clear();
         }
-        writer.flushBlock(texManager, RedstoneEmission.of(state));
+        writer.flushBlock(texManager, RedstoneEmission.of(state), RedstoneEmission.powerOf(state));
     }
 
     /**

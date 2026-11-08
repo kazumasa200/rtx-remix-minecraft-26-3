@@ -47,8 +47,8 @@ public final class DirectQuadWriter {
     private static final int MAX_BLOCK_QUADS = 1 << 16;
     private static final float DECAL_NORMAL_DOT_EPSILON = 0.999f;
     private static final float DECAL_PLANE_DISTANCE_EPSILON = 1.0E-3f;
-    /** Texels per block edge beyond which a dust stack is left uncut; bounds the owner grid. */
-    private static final int MAX_STACK_RESOLUTION = 64;
+    /** Texels per block edge beyond which a dust stack is left uncut; bounds the owner grid. 128 covers a 128x pack. */
+    private static final int MAX_STACK_RESOLUTION = 128;
     private static final float GRID_EPSILON = 1.0E-4f;
     /**
      * How far toward its corners, as a fraction of its half-width, a stack cell is sampled to
@@ -233,6 +233,8 @@ public final class DirectQuadWriter {
     // --- per-block staging (flat arrays, zero alloc) ---
 
     private int stageCount;
+    /** Signal strength of the block being flushed, 0 to 15. Powered dust scales its vertex colour by this over 15. */
+    private int dustPower = 15;
     private int stageCapacity = INITIAL_BLOCK_QUADS;
     private float[] stagePos = new float[INITIAL_BLOCK_QUADS * 12];
     private float[] stageUvs = new float[INITIAL_BLOCK_QUADS * 8];
@@ -403,6 +405,16 @@ public final class DirectQuadWriter {
      *                         {@link RedstoneEmission#NONE} for anything but redstone wire
      */
     public void flushBlock(BlockTextureManager tex, RedstoneEmission redstoneEmission) {
+        flushBlock(tex, redstoneEmission, 15);
+    }
+
+    /**
+     * @param power the wire's signal strength, 0 to 15; ignored unless the block is powered dust.
+     *              15 leaves the vertex colour as staged. A lower strength scales it, so the glow
+     *              fades further than vanilla's red floor.
+     */
+    public void flushBlock(BlockTextureManager tex, RedstoneEmission redstoneEmission, int power) {
+        dustPower = power;
         if (stageCount == 0) return;
         detectOverlays(tex);
 
@@ -439,6 +451,11 @@ public final class DirectQuadWriter {
         // Dust glows under vanilla's power tint; a layer its model leaves untinted, such as a
         // pack's overlay, has no power colour to glow with.
         if (emission == RedstoneEmission.POWERED && stageColor[i] == UNTINTED) emission = RedstoneEmission.UNPOWERED;
+        // A stack the cut leaves as a decal would emit across its whole quad: emission is not
+        // weighted by texel alpha. An uncut overlay stays dark instead of glowing as a square.
+        if (emission == RedstoneEmission.POWERED && cat == ChunkManager.CAT_OVERLAY) {
+            emission = RedstoneEmission.UNPOWERED;
+        }
         // Powered dust emits its albedo, so the power tint can dim it. The emissive atlas
         // would ignore that tint, and an emitting sprite drops subsurface scattering.
         if (emission != RedstoneEmission.POWERED && emission != RedstoneEmission.UNPOWERED
@@ -455,7 +472,17 @@ public final class DirectQuadWriter {
         int boundsMax = HardcodedVertex.packHalf2x16(stageSU1[i], stageSV1[i]);
         bb.writeQuad(positions, posOff, uvs, uvOff,
                      stageNx[i], stageNy[i], stageNz[i],
-                     stageColor[i], boundsMin, boundsMax);
+                     poweredDustColor(stageColor[i], bb.redstoneEmission), boundsMin, boundsMax);
+    }
+
+    /** Scales a powered quad's RGB by the wire's strength over 15. Alpha and power 15 stay as staged. */
+    private int poweredDustColor(int color, RedstoneEmission emission) {
+        if (emission != RedstoneEmission.POWERED || dustPower >= 15) return color;
+        int power = Math.max(dustPower, 0);
+        int r = ((color >> 16) & 0xFF) * power / 15;
+        int g = ((color >> 8) & 0xFF) * power / 15;
+        int b = (color & 0xFF) * power / 15;
+        return (color & 0xFF000000) | (r << 16) | (g << 8) | b;
     }
 
     // --- dust layer stacks ---

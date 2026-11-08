@@ -189,6 +189,62 @@ class DustLayerStackTest {
     }
 
     @Test
+    void anUncutTintedOverlayDoesNotGlow() {
+        var line = TerrainSpriteFixtures.sprite("redstone_dust_line0", 0, false, false);
+        var overlay = TerrainSpriteFixtures.animated(
+                TerrainSpriteFixtures.sprite("redstone_dust_overlay", 16, OVERLAY, false));
+        DirectQuadWriter writer = new DirectQuadWriter();
+        try {
+            writer.beginSection();
+            stage(writer, line, 0, 1, 0, 1, 1, LINE_TINT);
+            stage(writer, overlay, 0, 1, 0, 1, 1, LINE_TINT);
+            writer.flushBlock(new TestTextures(line, overlay), RedstoneEmission.POWERED, 8);
+            SectionMeshData mesh = writer.buildMeshData();
+            try {
+                assertEquals(RedstoneEmission.POWERED, surfaceOf(mesh, ChunkManager.CAT_SOLID).redstoneEmission());
+                assertEquals(RedstoneEmission.UNPOWERED, surfaceOf(mesh, ChunkManager.CAT_OVERLAY).redstoneEmission());
+                assertEquals(0xFF3F0000, vertexColor(surfaceOf(mesh, ChunkManager.CAT_SOLID)));
+                assertEquals(LINE_TINT, vertexColor(surfaceOf(mesh, ChunkManager.CAT_OVERLAY)));
+            } finally {
+                mesh.release();
+            }
+        } finally {
+            writer.releaseBuffers();
+        }
+    }
+
+    @Test
+    void poweredDustColorScalesWithSignalStrength() {
+        var line = TerrainSpriteFixtures.sprite("redstone_dust_line0", 0, false, false);
+        DirectQuadWriter writer = new DirectQuadWriter();
+        try {
+            assertEquals(LINE_TINT, writtenColor(writer, line, RedstoneEmission.POWERED, 15));
+            assertEquals(0xFF3F0000, writtenColor(writer, line, RedstoneEmission.POWERED, 8));
+            assertEquals(0xFF070000, writtenColor(writer, line, RedstoneEmission.POWERED, 1));
+            assertEquals(LINE_TINT, writtenColor(writer, line, RedstoneEmission.UNPOWERED, 1));
+        } finally {
+            writer.releaseBuffers();
+        }
+    }
+
+    private static int writtenColor(DirectQuadWriter writer, BlockTextureManager.SpriteEntry sprite,
+                                    RedstoneEmission emission, int power) {
+        writer.beginSection();
+        stage(writer, sprite, 0, 1, 0, 1, 1, LINE_TINT);
+        writer.flushBlock(new TestTextures(sprite), emission, power);
+        SectionMeshData mesh = writer.buildMeshData();
+        try {
+            return vertexColor(mesh.surfaces().getFirst());
+        } finally {
+            mesh.release();
+        }
+    }
+
+    private static int vertexColor(SectionMeshData.Surface surface) {
+        return surface.vertexBuffer().getInt(32);
+    }
+
+    @Test
     void cutStacksStopAddingQuadsAtTheSectionBudget() {
         var base = TerrainSpriteFixtures.sprite("redstone_dust_dot", 0, FULL, false);
         var top = TerrainSpriteFixtures.sprite("redstone_dust_line0", 16, CHECKER, false);

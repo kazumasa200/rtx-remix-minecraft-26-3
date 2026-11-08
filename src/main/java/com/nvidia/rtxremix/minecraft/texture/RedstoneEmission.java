@@ -13,8 +13,9 @@ import net.minecraft.world.level.block.state.BlockState;
  * <p>Dust draws every power level from the same sprites and tints them by power, so the
  * sprites cannot say whether it glows. Powered dust emits its own albedo, which the runtime
  * tints by the vertex colour exactly as it tints the albedo, so the glow dims with vanilla's
- * power colour; unpowered dust emits nothing. Only placed dust knows its power, so nothing
- * else drawing these sprites glows.
+ * power colour. The writer then scales that colour by the strength over 15, which leaves a
+ * full signal unchanged and darkens the low end past vanilla's red floor. Unpowered dust emits
+ * nothing. Only placed dust knows its power, so nothing else drawing these sprites glows.
  */
 public enum RedstoneEmission {
     /** Not dust: the ordinary atlas material. */
@@ -29,10 +30,18 @@ public enum RedstoneEmission {
      * model is all dust, whatever sprites a pack gives it, so the whole block follows its power.
      */
     public static RedstoneEmission of(BlockState state) {
-        if (!(state.getBlock() instanceof RedstoneWireBlock) || !state.hasProperty(RedstoneWireBlock.POWER)) {
-            return NONE;
-        }
+        if (!isWire(state)) return NONE;
         return forPower(state.getValue(RedstoneWireBlock.POWER));
+    }
+
+    /** The wire's signal strength, 0 to 15, or 0 when the block is not dust. */
+    public static int powerOf(BlockState state) {
+        if (!isWire(state)) return 0;
+        return state.getValue(RedstoneWireBlock.POWER);
+    }
+
+    private static boolean isWire(BlockState state) {
+        return state.getBlock() instanceof RedstoneWireBlock && state.hasProperty(RedstoneWireBlock.POWER);
     }
 
     static RedstoneEmission forPower(int power) {

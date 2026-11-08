@@ -115,7 +115,8 @@ public class BlockTextureManager {
      * otherwise average every lamp, torch and lava texel into a yellow line at night. An
      * emitting sprite takes the plain emissive material and loses its subsurface scattering.
      * {@link RedstoneEmission#POWERED} emits the albedo, which the runtime tints by the dust's
-     * power colour. Blended layers have no powered-dust variant.
+     * power colour. Unpowered subsurface dust reuses the ordinary subsurface material: with
+     * subsurface on, both sample no emissive atlas. Blended layers have no powered-dust variant.
      */
     private final RemixMaterial[][][] atlasMaterials =
             new RemixMaterial[REDSTONE_EMISSIONS.length][2][LAYER_COUNT];
@@ -642,8 +643,12 @@ public class BlockTextureManager {
                 atlasMaterials[emission.ordinal()][PLAIN][lt] =
                         createMaterialViaStore(atlasMaterialInfo(lt, false, emission));
                 if (hasAnySSS && !blended) {
+                    // Unpowered dust with subsurface matches ordinary subsurface terrain, so it
+                    // shares that material instead of taking a second copy of it.
                     atlasMaterials[emission.ordinal()][SUBSURFACE][lt] =
-                            createMaterialViaStore(atlasMaterialInfo(lt, true, emission));
+                            emission == RedstoneEmission.UNPOWERED
+                                    ? atlasMaterials[RedstoneEmission.NONE.ordinal()][SUBSURFACE][lt]
+                                    : createMaterialViaStore(atlasMaterialInfo(lt, true, emission));
                 }
             }
         }
@@ -1113,10 +1118,13 @@ public class BlockTextureManager {
 
     private void rebuildAtlasSssMaterial(int layerType) {
         for (RedstoneEmission emission : REDSTONE_EMISSIONS) {
+            if (emission == RedstoneEmission.UNPOWERED) continue;
             RemixMaterial[] subsurface = atlasMaterials[emission.ordinal()][SUBSURFACE];
             destroyManagedMaterial(subsurface[layerType]);
             subsurface[layerType] = createMaterialViaStore(atlasMaterialInfo(layerType, true, emission));
         }
+        atlasMaterials[RedstoneEmission.UNPOWERED.ordinal()][SUBSURFACE][layerType] =
+                atlasMaterials[RedstoneEmission.NONE.ordinal()][SUBSURFACE][layerType];
     }
 
     private void forgetCachedCutoutSpriteMaterials() {
