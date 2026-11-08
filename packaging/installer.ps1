@@ -235,11 +235,12 @@ $script:PRISM_MIN_PORTABLE_VERSION = '9.1'
 # them as written. The Prism instance gets them without their heap sizes
 # (Get-PrismJvmArgs), which reach the game through its memory settings
 # (Get-PrismMemorySettings).
-$script:RECOMMENDED_JVM_ARGS = '-Xms16G -Xmx16G -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M -XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump'
+$script:RECOMMENDED_JVM_ARGS = '-Xms16G -Xmx16G -XX:+UseZGC -XX:+UseCompactObjectHeaders -XX:+AlwaysPreTouch -XX:+UseStringDeduplication -XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump'
 
 # Every earlier RECOMMENDED_JVM_ARGS, oldest first, exactly as written here:
-# the sets from 2026-04-21, 2026-05-12, 2026-09-03 and 2026-10-22, the last
-# the Minecraft launcher's 2 GB heap with G1GC. Installers wrote each
+# the sets from 2026-04-21, 2026-05-12, 2026-09-03, 2026-10-22 and 2026-10-24,
+# the fourth the Minecraft launcher's 2 GB heap with G1GC and the last that
+# tuning on a fixed 16 GB heap. Installers wrote each
 # set to the Microsoft launcher profile as it is, and to the Prism instance
 # as it is or, once installers left the heap out of Prism's JVM args,
 # without its heap sizes. Sync-JvmArgs replaces any of those forms without
@@ -252,6 +253,7 @@ $script:PREVIOUS_RECOMMENDED_JVM_ARGS = @(
     '-XX:MaxRAMPercentage=100.0 -XX:SoftMaxHeapSize=8G -XX:+UseZGC -XX:+ZGenerational -XX:ZUncommitDelay=30 -Xss1M -XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump'
     '-Xmx12G -XX:SoftMaxHeapSize=8G -XX:+UseZGC -XX:+ZGenerational -XX:ZUncommitDelay=30 -Xss1M -XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump'
     '-Xmx2G -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M -XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump'
+    '-Xms16G -Xmx16G -XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M -XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump'
 )
 
 # Prism's own MinMemAlloc default, the instance's -Xms when the JVM args set none.

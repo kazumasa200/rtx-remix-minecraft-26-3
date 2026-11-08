@@ -90,7 +90,7 @@ Fabric Loader 0.19.5 or newer, and Fabric API 0.165.0+26.3 or newer.
    folder. It carries the runtime and its textures and unpacks them into the
    game folder on first launch.
 2. Optionally give the instance the JVM arguments the installer would set:
-   a fixed 16 GB heap with G1GC, listed as `RECOMMENDED_JVM_ARGS` in
+   a fixed 16 GB heap with ZGC, listed as `RECOMMENDED_JVM_ARGS` in
    [`packaging/installer.ps1`](../packaging/installer.ps1).
 
 Upgrade, Repair, and Uninstall do not know about a manual install. To update,

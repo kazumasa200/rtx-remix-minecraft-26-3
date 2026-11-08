@@ -160,12 +160,10 @@ loom {
     runs {
         client {
             // Keep in sync with RECOMMENDED_JVM_ARGS in packaging/installer.ps1.
-            // The Minecraft Launcher 26.3 G1 tuning for supported Windows arches
-            // (version metadata supplies HeapDumpPath; the profile supplies G1),
-            // with the heap fixed at 16 GB instead of the launcher's 2 GB.
-            vmArgs "-Xms16G", "-Xmx16G", "-XX:+UnlockExperimentalVMOptions", "-XX:+UseG1GC",
-                   "-XX:G1NewSizePercent=20", "-XX:G1ReservePercent=20",
-                   "-XX:MaxGCPauseMillis=50", "-XX:G1HeapRegionSize=32M",
+            // ZGC on a heap fixed at 16 GB and touched up front (docs/TUNING.md#jvm-arguments);
+            // the launcher's version metadata supplies HeapDumpPath.
+            vmArgs "-Xms16G", "-Xmx16G", "-XX:+UseZGC", "-XX:+UseCompactObjectHeaders",
+                   "-XX:+AlwaysPreTouch", "-XX:+UseStringDeduplication",
                    "-XX:HeapDumpPath=MojangTricksIntelDriversForPerformance_javaw.exe_minecraft.exe.heapdump"
             if (benchmarkJfrPath.isPresent()) {
                 def jfrPath = benchmarkJfrPath.get().replace('\\', '/')
