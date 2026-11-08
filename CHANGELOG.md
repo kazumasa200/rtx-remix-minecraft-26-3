@@ -23,6 +23,10 @@ also part of every mod file name.
 - The sky seen through stained glass or water keeps its tint instead of
   showing through untinted, by a patch to the runtime's composite shader that
   the mod's Vulkan layer applies as the runtime loads it.
+- Sunlight through water and thick glass dims with the distance it travels
+  inside, so a shallow pool's floor is lit nearly as brightly as the ground
+  beside it and a deep one darkens and turns blue, instead of every floor
+  under water being lit alike. Adapted from PurrsianMilkman's runtime patch.
 - The Unbound clouds seen through stained glass, ice or water show as the
   runtime draws them, tinted with the sky behind, instead of white over it.
 - Under water, the caustics on a pool's walls no longer break into fine vertical

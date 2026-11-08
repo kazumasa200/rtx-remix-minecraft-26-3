@@ -54,6 +54,7 @@ def _stage_runtime_patches(project_dir: Path, arch: str, destination: Path) -> N
             shutil.rmtree(destination / "patches")
         shutil.copytree(patches, destination / "patches")
 
+
 def install_development_build(project_dir: Path, *, game_dir: Path | None = None, arch: str | None = None) -> int:
     """Stage built artifacts, returning 1 on missing prerequisites or a failed migration.
 

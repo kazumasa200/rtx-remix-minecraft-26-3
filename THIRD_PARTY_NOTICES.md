@@ -13,6 +13,14 @@ locations given.
 - License: Apache License, Version 2.0 (see [LICENSE](LICENSE))
 - Source: https://github.com/gradle/gradle
 
+### Shadow-absorption runtime patch
+
+- Files: `tools/src/rtx_tools/runtime_patch/shadow.py` (adapted), the shader modules it builds
+- Copyright PurrsianMilkman
+- License: Apache License, Version 2.0, with its notice:
+- [packaging/licenses/runtime-patches/](packaging/licenses/runtime-patches/)
+- Source: https://github.com/PurrsianMilkman/Minecraft-RTX-Remix-Glass-Water-Light-Fix
+
 ## Redistributed binaries (packaged releases)
 
 Packaged release JARs bundle the NVIDIA RTX Remix runtime (staged under

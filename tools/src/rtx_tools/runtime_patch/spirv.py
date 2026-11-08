@@ -5,6 +5,7 @@
 Passes only change operands and append instructions or ids; every original result id stays, because
 the layer copies the runtime's binding literals onto a replacement by decoration target id.
 """
+
 from __future__ import annotations
 
 import ctypes
@@ -44,20 +45,33 @@ class Instruction:
         return self.words[2] if len(self.words) > 2 else None
 
 
+def op(opcode: int, *operands: int) -> list[int]:
+    """One instruction's words."""
+    return [((len(operands) + 1) << 16) | opcode, *operands]
+
+
+def f32(value: float) -> int:
+    """A float constant's literal word."""
+    return struct.unpack("<I", struct.pack("<f", value))[0]
+
+
 class Module:
-    """One module's words, with lookups for pattern passes. Edits go through set_word."""
+    """One module's words, with lookups for pattern passes. A pass edits through set_word, or queues
+    instructions with insert_after/replace and new ids with new_id, then calls commit."""
 
     def __init__(self, words: list[int]):
         if len(words) < 5 or words[0] != MAGIC:
             raise ValueError("not a SPIR-V module")
         self.words = list(words)
+        self._after: dict[int, list[list[int]]] = {}
+        self._replace: dict[int, list[list[int]]] = {}
         self.instructions: list[Instruction] = []
         i = 5
         while i < len(self.words):
             count, op = self.words[i] >> 16, self.words[i] & 0xFFFF
             if count == 0 or i + count > len(self.words):
                 raise ValueError(f"malformed instruction at word {i}")
-            self.instructions.append(Instruction(i, op, tuple(self.words[i:i + count])))
+            self.instructions.append(Instruction(i, op, tuple(self.words[i : i + count])))
             i += count
         self.names: dict[int, str] = {}
         for ins in self.instructions:
@@ -65,8 +79,8 @@ class Module:
                 self.names.setdefault(ins.words[1], _string(ins.words[2:]))
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> "Module":
-        return cls(list(struct.unpack(f"<{len(data) // 4}I", data[:len(data) // 4 * 4])))
+    def from_bytes(cls, data: bytes) -> Module:
+        return cls(list(struct.unpack(f"<{len(data) // 4}I", data[: len(data) // 4 * 4])))
 
     def to_bytes(self) -> bytes:
         return struct.pack(f"<{len(self.words)}I", *self.words)
@@ -83,6 +97,31 @@ class Module:
     def set_word(self, index: int, value: int) -> None:
         self.words[index] = value
 
+    def new_id(self) -> int:
+        bound = self.words[3]
+        self.words[3] = bound + 1
+        return bound
+
+    def insert_after(self, index: int, *instructions: list[int]) -> None:
+        """Queues instructions after the instruction at index (an index into self.instructions)."""
+        self._after.setdefault(index, []).extend(instructions)
+
+    def replace(self, index: int, *instructions: list[int]) -> None:
+        """Queues instructions in place of the instruction at index."""
+        if index in self._replace:
+            raise ValueError(f"instruction {index} replaced twice")
+        self._replace[index] = list(instructions)
+
+    def commit(self) -> None:
+        """Applies the queued edits and re-reads the module."""
+        words = self.words[:5]
+        for index, ins in enumerate(self.instructions):
+            for new in self._replace.get(index, [self.words[ins.at : ins.at + len(ins.words)]]):
+                words.extend(new)
+            for new in self._after.get(index, []):
+                words.extend(new)
+        self.__init__(words)
+
 
 def _string(words: tuple[int, ...]) -> str:
     raw = struct.pack(f"<{len(words)}I", *words)
@@ -91,7 +130,7 @@ def _string(words: tuple[int, ...]) -> str:
 
 def module_size(blob: bytes) -> int:
     """Bytes of the module at blob[0]: instructions up to the last OpFunctionEnd before a non-OpFunction."""
-    words = struct.unpack(f"<{len(blob) // 4}I", blob[:len(blob) // 4 * 4])
+    words = struct.unpack(f"<{len(blob) // 4}I", blob[: len(blob) // 4 * 4])
     i, end = 5, 0
     while i < len(words):
         count, op = words[i] >> 16, words[i] & 0xFFFF
@@ -121,9 +160,9 @@ def embedded_modules(dll: bytes) -> list[Embedded]:
         if pos < 0:
             return found
         if pos >= floor and pos % 4 == 0:
-            size = module_size(dll[pos:pos + 8 * 1024 * 1024])
+            size = module_size(dll[pos : pos + 8 * 1024 * 1024])
             if size > 100:
-                found.append(Embedded(pos, size, dll[pos:pos + size]))
+                found.append(Embedded(pos, size, dll[pos : pos + size]))
                 floor = pos + size
         pos += 4
 

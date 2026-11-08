@@ -8,6 +8,7 @@ construction. Every replaced module passes spirv-val when SPIRV-Tools is availab
 into patches.lock with validated set. Without SPIRV-Tools the build checks each output against the lock
 instead, so changing a pass needs the Vulkan SDK and building the mod does not.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -44,13 +45,17 @@ def _validate(validator: Path, data: bytes) -> str | None:
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "m.spv"
         path.write_bytes(data)
-        run = subprocess.run([str(validator), "--target-env", "vulkan1.2", "--scalar-block-layout", str(path)],
-                             capture_output=True, text=True)
+        run = subprocess.run(
+            [str(validator), "--target-env", "vulkan1.2", "--scalar-block-layout", str(path)],
+            capture_output=True,
+            text=True,
+        )
         return None if run.returncode == 0 else (run.stderr or run.stdout).strip()[-400:]
 
 
-def build(dll: Path, layer_dll: Path, out: Path, lock: Path, strict: bool = False,
-          passes: list[Pass] | None = None) -> list[PassOutcome]:
+def build(
+    dll: Path, layer_dll: Path, out: Path, lock: Path, strict: bool = False, passes: list[Pass] | None = None
+) -> list[PassOutcome]:
     """Writes the patch set for dll into out (its patches/ folder). Returns one outcome per pass; a pass
     outside its expected match counts, or with a module that fails validation, is left out."""
     passes = PASSES if passes is None else passes
@@ -83,12 +88,15 @@ def build(dll: Path, layer_dll: Path, out: Path, lock: Path, strict: bool = Fals
     for p in passes:
         o = outcomes[p.id]
         if o.ok and o.modules not in p.expect.modules:
-            o.ok, o.reason = False, f"{o.modules} modules, expected {p.expect.modules.start}-{p.expect.modules.stop - 1}"
+            o.ok, o.reason = (
+                False,
+                f"{o.modules} modules, expected {p.expect.modules.start}-{p.expect.modules.stop - 1}",
+            )
         if o.ok and any(s not in p.expect.sites_per_module for s in o.sites):
             o.ok, o.reason = False, f"sites per module {o.sites} outside the expected range"
 
     lock_out: dict[str, dict] = {}
-    for key, (offset, size, new, pass_id) in sorted(edited.items()):
+    for key, (_offset, _size, new, pass_id) in sorted(edited.items()):
         o = outcomes[pass_id]
         if not o.ok:
             continue

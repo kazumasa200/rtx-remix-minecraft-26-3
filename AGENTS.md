@@ -143,7 +143,19 @@ existing id. `-Drtxremix.runtimePatches=false` runs the runtime as shipped. The
 first pass, `sky-fade`: the composite faded every pixel that was not a primary
 miss into the sky, and a primary ray that crossed glass or water into the sky is
 not a miss but stores the miss view Z, so the sky seen through them lost its
-tint; the fade's guard reads the view-Z test instead.
+tint; the fade's guard reads the view-Z test instead. The second,
+`shadow-absorption` (after PurrsianMilkman's patch, Apache-2.0, notice under
+`packaging/licenses/runtime-patches/`), changes every shadow ray-query loop that
+crosses thick translucent surfaces: the runtime dimmed a shadow ray by a
+surface's transmittance once per crossing, whatever the distance inside, so a
+lake floor ten blocks down was lit like a puddle's. The loop now adds up the
+optical depth between entries and exits, signed by facing so the order of the
+candidates does not matter, closes an entry still open at the ray's end, and
+multiplies the light by exp(-depth) once. Glass and water absorb as the eye sees
+through them; a surface whose measurement distance is 32 or more is a cloud and
+absorbs at 0.15 of that, the 1 - g of forward-scattering cloud. A pass that
+inserts code takes new ids above the module's bound and queues its instructions
+through `Module.insert_after` and `replace`.
 
 Baseline LabPBR textures live in `src/main/resources/assets/` and load as the
 mod's own resource pack, `rtx-remix-renderer`, below user packs: Fabric API for

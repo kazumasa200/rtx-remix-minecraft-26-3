@@ -506,6 +506,7 @@ def cmd_patches_build(args) -> int:
         print(f"{outcome.id}: {outcome.modules} modules, sites {outcome.sites}; {state}")
     return 0 if all(o.ok for o in outcomes) or not args.strict else 1
 
+
 def cmd_world_import(args) -> int:
     client.active()
     target = runner.import_world(args.source, name=args.name, replace=args.replace)

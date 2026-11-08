@@ -7,12 +7,24 @@ and sites it expects on the pinned runtime; a pass whose matches fall outside th
 the patch set (and fails a strict build), so a runtime update that changes the inlined code is noticed
 at build time rather than shipped half patched.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .spirv import (OP_BRANCH_CONDITIONAL, OP_CONSTANT, OP_CONSTANT_FALSE, OP_FORD_EQUAL, OP_IEQUAL, OP_LABEL,
-                    OP_LOAD, OP_LOGICAL_NOT, OP_STORE, Module)
+from . import shadow
+from .spirv import (
+    OP_BRANCH_CONDITIONAL,
+    OP_CONSTANT,
+    OP_CONSTANT_FALSE,
+    OP_FORD_EQUAL,
+    OP_IEQUAL,
+    OP_LABEL,
+    OP_LOAD,
+    OP_LOGICAL_NOT,
+    OP_STORE,
+    Module,
+)
 
 
 @dataclass(frozen=True)
@@ -66,17 +78,41 @@ class SkyFade(Pass):
         if view_z_test is None:
             return 0
         loads = {ins.words[2] for ins in module.instructions if ins.op == OP_LOAD and ins.words[3] in variables}
-        threes = {ins.words[2] for ins in module.instructions
-                  if ins.op == OP_CONSTANT and len(ins.words) == 4 and ins.words[3] == 3}
+        threes = {
+            ins.words[2]
+            for ins in module.instructions
+            if ins.op == OP_CONSTANT and len(ins.words) == 4 and ins.words[3] == 3
+        }
         changed = 0
         for index, ins in enumerate(module.instructions):
             if ins.op != OP_LOGICAL_NOT or ins.words[3] not in loads:
                 continue
-            window = module.instructions[max(0, index - 12):index]
+            window = module.instructions[max(0, index - 12) : index]
             if any(w.op == OP_IEQUAL and (w.words[3] in threes or w.words[4] in threes) for w in window):
                 module.set_word(ins.at + 3, view_z_test)
                 changed += 1
         return changed
 
 
-PASSES: list[Pass] = [SkyFade()]
+class ShadowAbsorption(Pass):
+    """Shadow rays through a thick translucent surface (glass, water) were dimmed by its transmittance once
+    per surface crossed, whatever the distance travelled inside, so a lake floor ten blocks down was lit like
+    a puddle's. Each shadow ray-query loop now absorbs by the distance between entries and exits
+    (`shadow.apply`). A surface whose measurement distance is at least CLOUD_DISTANCE is a cloud and absorbs at
+    CLOUD_SCALE (1 - g of a forward-scattering cloud); everything else absorbs physically, as the eye sees
+    through it.
+    """
+
+    id = "shadow-absorption"
+    version = 1
+    expect = Expect(modules=range(149, 150), sites_per_module=range(1, 8))
+
+    GLASS_SCALE = 1.0
+    CLOUD_SCALE = 0.15
+    CLOUD_DISTANCE = 32.0
+
+    def apply(self, module: Module) -> int:
+        return shadow.apply(module, self.GLASS_SCALE, self.CLOUD_SCALE, self.CLOUD_DISTANCE)
+
+
+PASSES: list[Pass] = [SkyFade(), ShadowAbsorption()]

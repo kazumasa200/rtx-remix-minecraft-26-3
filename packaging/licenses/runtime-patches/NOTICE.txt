@@ -1,0 +1,8 @@
+The shadow-absorption runtime patch (tools/src/rtx_tools/runtime_patch/shadow.py) is
+adapted from shadow_ray_patch.py in Minecraft-RTX-Remix-Glass-Water-Light-Fix by
+PurrsianMilkman, https://github.com/PurrsianMilkman/Minecraft-RTX-Remix-Glass-Water-Light-Fix
+(commit f33c99e), licensed under the Apache License, Version 2.0 (LICENSE-Apache-2.0.txt).
+
+Changes: rewritten to edit SPIR-V words instead of disassembly text, applied at load by the
+mod's Vulkan layer instead of in the runtime file, and with a separate absorption scale for
+surfaces whose transmittance measurement distance marks them as clouds.
