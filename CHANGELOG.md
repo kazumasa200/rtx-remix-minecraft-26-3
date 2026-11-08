@@ -11,6 +11,8 @@ also part of every mod file name.
 
 ## Unreleased
 
+## 0.4.0-pre.4 - 2026-11-08
+
 ### Changed
 
 - Torches, lamps and other lights in distant Distant Horizons terrain fade
