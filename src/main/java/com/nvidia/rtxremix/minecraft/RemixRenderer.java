@@ -364,6 +364,7 @@ public class RemixRenderer {
                 LOGGER.info("Remix presentation mode: {}", presentationMode);
                 StartupInfo startupInfo = StartupInfo.builder()
                     .hwnd(windowHandle)
+                    .forceNoVkSwapchain(false)
                     .interopImage(true)
                     .build();
                 remixApi.startup(startupInfo);
@@ -1459,8 +1460,9 @@ public class RemixRenderer {
         }
         boolean failed = false;
         try {
+            GlInterop interop = requireInterop();
             try (ProfileScope ignored = ProfileScope.begin("Interop.GLToVK")) {
-                blitGlToRemix();
+                blitGlToRemix(interop);
             } catch (RuntimeException e) {
                 failed = true;
                 logPresentFailureOnce("Error copying GL frame to Remix", e);
@@ -1470,7 +1472,7 @@ public class RemixRenderer {
             presentInfo.skipVulkanSwapchain = 0;
             presentInfo.interopFlipY = 1;
             presentInfo.clientDoneSemaphore_ValueToWait =
-                    interopGlVk.getClientDoneSemaphoreValue();
+                    interop.getClientDoneSemaphoreValue();
             presentInfo.disableCpuWaitForExternalSemaphores = 0;
             try (ProfileScope ignored = ProfileScope.begin("Remix.Present")) {
                 remixApi.present(presentInfo);
@@ -1538,7 +1540,14 @@ public class RemixRenderer {
         presentationSourceHeight = height;
     }
 
-    private void blitGlToRemix() {
+    private GlInterop requireInterop() {
+        if (interopGlVk == null) {
+            throw new IllegalStateException("Initialized renderer has no GL/Vulkan interop");
+        }
+        return interopGlVk;
+    }
+
+    private void blitGlToRemix(GlInterop interop) {
         if (!submitFrameCalled) {
             // if there was no submitFrame, then interop image might not be allocated yet
             // we must have a image to blit into (e.g. UI if there's no world)
@@ -1547,15 +1556,19 @@ public class RemixRenderer {
 
         // must be called after Submit(), which allocates the image
         InteropInfo interopInfo = remixApi.dxvkGetInteropInfo();
-        interopGlVk.recreateImagesIf(interopInfo);
+        interop.recreateImagesIf(interopInfo);
+
+        // Every Submit hands the shared image from Vulkan to GL. The world
+        // overlay path may already have acquired this same timeline value.
+        interop.waitForVk(interopInfo);
 
         if (presentationSourceFbo >= 0) {
-            interopGlVk.copyFromFramebuffer(presentationSourceFbo,
+            interop.copyFromFramebuffer(presentationSourceFbo,
                     presentationSourceWidth, presentationSourceHeight);
         }
 
         // signal that GL is done copying, so VK can read the image and present
-        interopGlVk.signalDone();
+        interop.signalDone();
     }
 
     public int getInteropDepthTexture() {
