@@ -188,6 +188,8 @@
   "rtxremix.setting.materials.puddlesWhenDry.tip": "Keeps the ground wet and the puddles standing when it is not raining, in biomes where it rains. Without rain their water is still, with no raindrop rings. Off, they dry up about two minutes after the rain stops.",
   "rtxremix.setting.debug.puddleMask": "Show Puddle Mask",
   "rtxremix.setting.debug.puddleMask.tip": "Paints rain puddles red, by how much water stands there, to show where they lie and how their edges fade. For finding problems only.",
+  "rtxremix.setting.debug.cloudMaterialSpike": "Cloud Materials",
+  "rtxremix.setting.debug.cloudMaterialSpike.tip": "Draws five copies of one cloud over the test site at x 20 to 160, z 110, 30 blocks up, each with a candidate material for the clouds as world geometry: A translucent with a 60% diffuse layer, B translucent alone, C A over a subsurface core, D the subsurface material the Procedural clouds use, E A with a 90% diffuse layer. For the runtime-patch experiment only.",
   "rtxremix.setting.debug.domeClouds": "Show Dome Clouds Only",
   "rtxremix.setting.debug.domeClouds.tip": "Leaves the Unbound clouds as RTX Remix draws them on the sky dome, instead of drawing them again per pixel over the image, and draws no cloud shadows. Shows whether a flaw in the clouds comes from the per-pixel clouds. For finding problems only.",
   "rtxremix.setting.debug.sceneOriginOffset": "Offset Scene Origin",

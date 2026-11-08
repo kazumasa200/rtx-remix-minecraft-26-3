@@ -121,6 +121,7 @@ class SettingsRowWidthTest {
             entry("rtxremix.setting.debug.puddleMask", "OFF"),
             entry("rtxremix.setting.debug.domeClouds", "OFF"),
             entry("rtxremix.setting.debug.sceneOriginOffset", "OFF"),
+            entry("rtxremix.setting.debug.cloudMaterialSpike", "OFF"),
             entry("rtxremix.setting.post.exposure", "2.00"),
             entry("rtxremix.setting.post.shadows", "-5.00"),
             entry("rtxremix.setting.post.highlights", "10.00"),
