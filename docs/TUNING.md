@@ -270,12 +270,17 @@ instance gets Prism's global maximum, by default 4096 MiB on a machine with
 Path tracing does not remove Minecraft's allocation rate, it adds a render
 thread that must not be paused.
 
-These are the Minecraft 26.3 launcher's G1GC settings for supported Windows
-arches, with the heap fixed at 16 GB (`-Xms16G -Xmx16G`) instead of the
-launcher's 2 GB, so the heap neither grows nor shrinks during play. Measured on
-N1X, G1 showed none of the large frame-time spikes seen with generational ZGC. Reducing allocation volume stays
-necessary regardless of collector, since concurrent collector work competes with
-the render thread.
+These run ZGC on a heap fixed at 16 GB (`-Xms16G -Xmx16G`), touched up front
+(`-XX:+AlwaysPreTouch`) so the heap neither grows, shrinks nor faults pages in
+during play, with compact object headers and string deduplication. On an RTX
+5090 over the 4K city flight, the launcher's G1 settings on the same heap paused
+68 times, up to 82 ms, and the slowest frame took 77 ms; ZGC stalled no
+allocation, the slowest frame took 51 ms and the 99th percentile fell from 31.7
+to 29.2 ms, with the mean unchanged. Distant Horizons warns about G1 for the
+same reason. Earlier, on N1X, G1 had shown none of the large frame-time spikes
+generational ZGC did there. Reducing allocation volume stays necessary
+regardless of collector, since concurrent collector work competes with the
+render thread.
 
 The Intel driver workaround must keep this exact spelling:
 
