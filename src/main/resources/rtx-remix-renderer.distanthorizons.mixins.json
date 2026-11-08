@@ -5,6 +5,7 @@
     "plugin": "com.nvidia.rtxremix.minecraft.lod.dh.DistantHorizonsMixinPlugin",
     "compatibilityLevel": "JAVA_25",
     "client": [
+        "BlockTextureRegistryAccessor",
         "ClientApiFadeMixin",
         "LodBufferContainerMixin",
         "LodRenderSectionMixin",

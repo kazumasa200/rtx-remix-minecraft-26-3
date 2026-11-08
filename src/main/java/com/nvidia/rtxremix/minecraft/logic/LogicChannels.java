@@ -16,6 +16,7 @@ public final class LogicChannels {
     public static final String UNDERWATER = "mc.underwater";
     public static final String VIEW_DISTANCE = "mc.view_distance";
     public static final String VIEW_DISTANCE_LOD = "mc.view_distance.lod";
+    public static final String VIEW_DISTANCE_LOD_MODE = "mc.view_distance.lod_mode";
     public static final String VOLUMETRICS_SETTLING = "mc.volumetrics.settling";
     public static final String WEATHER_RAIN = "mc.weather.rain";
     public static final String WEATHER_THUNDER = "mc.weather.thunder";

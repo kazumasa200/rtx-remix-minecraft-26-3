@@ -317,13 +317,13 @@ class ConfLayerDriverTest {
     // --- layer table invariants ---
 
     @Test
-    void staticTableHasElevenUniqueRows() {
-        // 1 water + 2 view-distance controllers + 1 volumetric settling
+    void staticTableHasTwelveUniqueRows() {
+        // 1 water + 3 view-distance controllers + 1 volumetric settling
         // controller + 2 weather + 1 lightning + 4 time profiles. Optional
         // biome and zone rows are discovered from disk.
         assertEquals(67, ConfLayerDriver.vanillaBiomeNames().size(),
                 "vanilla 26.3 biome count (Biomes)");
-        assertEquals(11, ConfLayerDriver.STATIC_LAYER_TABLE.size());
+        assertEquals(12, ConfLayerDriver.STATIC_LAYER_TABLE.size());
         Set<String> names = new HashSet<>();
         Set<String> paths = new HashSet<>();
         for (var spec : ConfLayerDriver.STATIC_LAYER_TABLE) {
@@ -390,6 +390,8 @@ class ConfLayerDriverTest {
                 expected = 3000f;
             } else if (spec.name().equals(LogicChannels.VIEW_DISTANCE_LOD)) {
                 expected = 3001f;
+            } else if (spec.name().equals(LogicChannels.VIEW_DISTANCE_LOD_MODE)) {
+                expected = 3002f;
             } else if (spec.name().equals(LogicChannels.VOLUMETRICS_SETTLING)) {
                 expected = 3100f;
             } else if (spec.name().startsWith(LogicChannels.ZONE_PREFIX)) {
@@ -423,7 +425,9 @@ class ConfLayerDriverTest {
     @Test
     void blendThresholdsMatchTheAuthoredLayerBehavior() {
         for (var spec : representativeLayerSpecs()) {
-            float expected = spec.name().equals(LogicChannels.UNDERWATER)
+            // The fade mode switches as soon as any LOD terrain draws past Minecraft's own.
+            float expected = spec.name().equals(LogicChannels.VIEW_DISTANCE_LOD_MODE) ? 0.0001f
+                    : spec.name().equals(LogicChannels.UNDERWATER)
                     || spec.name().startsWith(LogicChannels.TIME_PREFIX) ? 0.5f : 0.01f;
             assertEquals(expected, spec.blendThreshold(), spec.name());
         }

@@ -358,7 +358,7 @@ public class RtxRemixMod implements ClientModInitializer {
         LOGGER.info("RTX Remix Renderer v{} initializing...", getModVersion());
         LOGGER.info("========================================");
 
-        NativeExtractor.extractIfNeeded();
+        boolean nativeExtractionSucceeded = NativeExtractor.extractIfNeeded();
         TracyGCListener.install();
         LOGGER.info(ClientLightSnapshotPolicy.effectiveStateLine());
         LOGGER.info(LocalChunkBatchPacing.effectiveStateLine());
@@ -492,6 +492,10 @@ public class RtxRemixMod implements ClientModInitializer {
             LOGGER.warn("RTX Remix SDK not found!");
             LOGGER.warn("Expected d3d9.dll at: {}",
                     RemixRenderer.runtimeDll(FabricLoader.getInstance().getGameDir()));
+            if (!nativeExtractionSucceeded) {
+                LOGGER.warn("Extracting the runtime from the mod JAR failed this launch; "
+                        + "see the error above. Relaunch to retry.");
+            }
             LOGGER.warn("Mod will continue but rendering disabled.");
             LOGGER.warn("========================================");
         }
@@ -614,7 +618,14 @@ public class RtxRemixMod implements ClientModInitializer {
             }
         });
 
-        LOGGER.info("RTX Remix Renderer initialized successfully!");
+        // Native initialization happens later, when the client starts, and
+        // RemixRenderer logs its own result; this line only closes mod setup.
+        if (remixAvailable) {
+            LOGGER.info("RTX Remix Renderer mod setup complete");
+        } else {
+            LOGGER.warn("RTX Remix Renderer mod setup complete, with path tracing disabled: "
+                    + "the runtime is missing");
+        }
     }
 
     /**

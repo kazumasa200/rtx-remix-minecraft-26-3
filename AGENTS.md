@@ -239,8 +239,9 @@ own frame index. Still shots for the screenshot tool use their own codec
 `docs/CAMERA_PATHS.md` is the canonical guide.
 
 **Gameplay-driven conf layers.** `ConfLayerDriver` fades a fixed table of mod
-layers (water, view distance and its LOD extension, volumetric settling, rain,
-thunder, a lightning flash, and four times of day) by gameplay state. The
+layers (water, view distance, its LOD extension and the fade mode that goes
+with it, volumetric settling, rain, thunder, a lightning flash, and four times
+of day) by gameplay state. The
 lightning layer slows the auto exposure while a bolt flashes and for a moment
 after, or the exposure undid the flash within a fifth of a second. Option layers come from a mod
 root shipping archetypes, acquired at init, and a world root inside a save
@@ -249,7 +250,11 @@ above its mod counterpart, so a map overrides per option rather than replacing
 an archetype, and it needs the integrated server, so it is single-player only.
 Profiles resolve above `rtx.conf` and below user settings and quality presets.
 `ViewDistanceFade` sets the view-distance fade from Minecraft's render distance,
-or from the LOD radius while LOD terrain draws.
+or from the LOD radius while LOD terrain draws. While it draws, the fade also
+switches from the smooth mode to the noise mode (`view_distance_lod_mode.conf`):
+the smooth mode blended a ray that crossed glass or water and then met the sky
+into the untinted sky, and at Minecraft's own render distance the noise mode
+would cut away the last blocks the smooth mode fades.
 
 **Clouds.** Four styles (`CloudStyle`). Classic (the default) voxelizes
 vanilla's cloud texture with vanilla's world-time period and phase. Procedural
@@ -416,7 +421,13 @@ vanilla fade is skipped then too (`ClientApiFadeMixin`): fading the main
 target's terrain toward its empty textures drew black wherever the main target's
 depth held land.
 LOD quads carry the LOD mod's one averaged colour per block, which lights the
-ground as vertex colour over a white texel. The runtime takes emission and a
+ground as vertex colour. With the LOD mod's LOD textures on, a quad near enough
+also names a 16-texel tile of the face's colour against that average, which the
+LOD mod draws as colour times twice the tile. `LodTiles` copies the tiles into one
+texture, each divided by its largest factor, and the quad carries its colour
+times that factor, since the runtime multiplies a vertex colour by a texture that
+holds at most 1; the coordinates repeat the tile once a block in the LOD mod's
+orientation, wrapped within its bounds. Tile 0, the untextured one, is white. The runtime takes emission and a
 translucent surface's transmittance only from textures, so lava and glowing
 blocks (the LOD mod's `LAVA` and `ILLUMINATED` materials) and its translucent
 buffer (glass, ice) carry their colour as coordinates into a palette texture of
@@ -426,7 +437,11 @@ and the translucent buffer is thin-walled glass tinted by the block's hue. Drawn
 ground, glass stood as pale solid blocks and lava did not glow. The LOD mod
 draws an area of many blocks as one of them, so a rooftop torch became a box
 several blocks across, which at the full emission lit the roofs around and
-bloomed to white.
+bloomed to white. That fifth holds where a cell is one block; a coarser
+section's lamps glow over the area of their box less (`LodSection.blocksPerCell`),
+so a lamp gives off one block's light at any detail and distant ones fade. The
+vertex says only that a block glows, not which block or how large its flame
+is, so the rule is the same for every block and mod.
 The LOD mod names a material by block id before it asks about light, so
 glowstone and lit redstone lamps came out as stone; every block that gives off
 light, liquids aside, is marked illuminated through its block-state event
@@ -611,6 +626,12 @@ what lies behind, so around a lamp the haze and the clouds only brighten the
 image and, after sunset, the clouds' shadows leave it: faded, clouded or
 shaded with the distant land behind, the flame went out and the land showed
 through the glow as pale outlines.
+A sky pixel whose hue parts far from the sky expected there is taken for sky
+seen through stained glass or water (`SEEN_THROUGH`): the composite takes that
+tint off the image and lays it back over the clouds and the sky it replaces,
+and the glow pass measures none of it. Replaced untinted, the clouds over a red
+glass roof drew white; measured as sky, the glass's tint turned the clouds
+beside it cyan.
 Keeping the image wherever the two marches
 agreed drew the panorama's speckle and outlines, which the denoiser smooths out
 of the image, onto the bases of clouds overhead. The panorama copy is mipmapped
@@ -882,9 +903,11 @@ RTX Remix C API. It must never import `net.minecraft` or `net.fabricmc`;
 `RemixJavaBoundaryTest.shimSourcesDoNotImportMinecraftOrFabric` enforces this
 boundary across `rtxremix-java/src/`. Keep game-state capture and Fabric
 integration in the mod, not in the shim. Wrapper and affected mod callers
-change in the same pull request. This fork has not changed the wrapper since
-the upstream import; its features reuse the existing batched
-`updateTextureFromMemory`, config-variable and config-layer entry points.
+change in the same pull request. The fork's own features add nothing to the
+wrapper: they reuse the existing batched `updateTextureFromMemory`,
+config-variable and config-layer entry points. The wrapper changes only by
+taking upstream's fixes to it (Java 8 compatibility, the `remixCall` fault
+guard, crash dumps without the sign-in token).
 
 The wrapper's source of truth, in order, is:
 
@@ -939,6 +962,18 @@ are left alone. Run source-management commands from the repository root:
 - `tools\rtx.bat sdk tracy-tools` fetches the pinned Tracy tools.
 - Bridge-only builds use `gradlew.bat compileNativeWin64 compileNativeArm64`,
   or `rtxremix-java/native/build_native.bat x64` or `arm64`.
+
+Every call from the bridge into the runtime, the Remix C API, its D3D9
+objects, and its Tracy exports, goes through `remixCall`. The exceptions are
+`LoadLibraryW` and `FreeLibrary` of `d3d9.dll`, which run its `DllMain` under
+the loader lock. Remix calls run on Java threads, where on x64 HotSpot catches
+a native fault before any unhandled-exception filter; there the guard hands a
+fatal fault in the runtime to the runtime's crash reporter first and leaves
+faults in `jvm.dll`, stack overflows, and floating-point exceptions to
+HotSpot. Other architectures leave every fault to HotSpot until forwarding is
+checked on them, and `-Drtxremix.forwardRemixFaults=false` does the same on
+x64. Keep the guarded body to the call itself: marshalling, string lengths,
+and vtable loads stay outside it.
 
 The C API is reached only through JNI, never a JNA interface table. Java-side
 handles stay raw `long` values, not JNA `Pointer`s or wrapper objects. Native

@@ -159,10 +159,14 @@ public final class LodTerrain {
     private int clipCenterX = Integer.MIN_VALUE;
     private int clipCenterZ = Integer.MIN_VALUE;
     private RemixMaterial groundMaterial;
+    /** The LOD mod's block-face tiles, when it is installed (#25). */
+    private final LodTiles tiles = DISTANT_HORIZONS ? new LodTiles(DistantHorizonsCompat.TILES) : null;
+    private RemixMaterial tileMaterial;
     private RemixTexture palette;
     private RemixMaterial glassMaterial;
     private RemixMaterial glowMaterial;
-    private RemixMaterial lampMaterial;
+    /** Indexed by the LOD's detail level: 0 draws a block as one block, each level doubles it. */
+    private final RemixMaterial[] lampMaterials = new RemixMaterial[32];
 
     public LodTerrain(PerformanceTimer timer) {
         this.timer = timer;
@@ -226,6 +230,7 @@ public final class LodTerrain {
         cameraZ = camera.z;
         resolveSwaps(api, eventsPending);
         updateClip(camera, terrain);
+        if (tiles != null) tiles.refresh(api);
         startBuilds(textures);
         retirement.drainFrame();
         timer.count(cntAwaited, awaited.size());
@@ -265,6 +270,9 @@ public final class LodTerrain {
         builder.shutdownNow();
         if (groundMaterial != null && !groundMaterial.isDeleted()) groundMaterial.destroy();
         groundMaterial = null;
+        if (tileMaterial != null && !tileMaterial.isDeleted()) tileMaterial.destroy();
+        tileMaterial = null;
+        if (tiles != null) tiles.destroy();
         destroyPaletteMaterials();
         if (palette != null && !palette.isDeleted()) palette.destroy();
         palette = null;
@@ -273,10 +281,13 @@ public final class LodTerrain {
     private void destroyPaletteMaterials() {
         if (glassMaterial != null && !glassMaterial.isDeleted()) glassMaterial.destroy();
         if (glowMaterial != null && !glowMaterial.isDeleted()) glowMaterial.destroy();
-        if (lampMaterial != null && !lampMaterial.isDeleted()) lampMaterial.destroy();
+        for (int level = 0; level < lampMaterials.length; level++) {
+            RemixMaterial lamp = lampMaterials[level];
+            if (lamp != null && !lamp.isDeleted()) lamp.destroy();
+            lampMaterials[level] = null;
+        }
         glassMaterial = null;
         glowMaterial = null;
-        lampMaterial = null;
     }
 
     private void setCapturing(boolean on) {
@@ -580,12 +591,14 @@ public final class LodTerrain {
 
     private void startBuilds(BlockTextureManager textures) {
         if (buildQueue.isEmpty() || buildsInFlight >= MAX_BUILDS_IN_FLIGHT) return;
-        RemixMaterial ground = groundMaterial();
+        RemixMaterial tiled = tileMaterial();
+        RemixMaterial ground = tiled != null ? tiled : groundMaterial();
+        // Read once: a build sees the tiles uploaded before it began, and its quads name no other.
+        float[] tileScales = tiled != null ? tiles.scales() : null;
         RemixMaterial water = textures != null ? textures.getWaterSurfaceMaterial() : null;
         if (ground == null) return;
         RemixMaterial glass = glassMaterial();
         RemixMaterial glow = textures != null ? glowMaterial(textures.terrainEmissionIntensity()) : null;
-        RemixMaterial lamp = textures != null ? lampMaterial(textures.terrainEmissionIntensity()) : null;
 
         while (buildsInFlight < MAX_BUILDS_IN_FLIGHT && !buildQueue.isEmpty()) {
             LodSection section = buildQueue.poll();
@@ -602,13 +615,15 @@ public final class LodTerrain {
             int serial = section.serial;
             int buildEpoch = epoch;
             long signature = buildClip.signature(section.minX, section.minZ, section.width);
+            RemixMaterial lamp = textures != null
+                    ? lampMaterial(textures.terrainEmissionIntensity(), section) : null;
             buildsInFlight++;
             builder.execute(() -> {
                 RemixMesh mesh = null;
                 Throwable failure = null;
                 try {
                     mesh = LodMeshBuilder.build(geometry, buildClip, section.minX, section.minZ,
-                            ground, water, glass, glow, lamp);
+                            ground, tileScales, water, glass, glow, lamp);
                 } catch (Throwable t) {
                     failure = t;
                 } finally {
@@ -744,6 +759,32 @@ public final class LodTerrain {
         return groundMaterial;
     }
 
+    /**
+     * Ground that samples the LOD mod's tiles under each quad's colour, as the LOD mod draws
+     * it with its LOD textures on. Untextured quads read tile 0, which is white.
+     */
+    private RemixMaterial tileMaterial() {
+        if (tileMaterial != null && !tileMaterial.isDeleted()) return tileMaterial;
+        RemixTexture texture = tiles != null ? tiles.texture() : null;
+        if (texture == null || texture.isDeleted()) return null;
+        try {
+            MaterialInfo info = MaterialInfo.builder()
+                    .albedoTexture(texture.getHandle())
+                    .filterMode(0)
+                    .opaqueExt(MaterialInfoOpaqueEXT.builder()
+                            .albedoConstant(1f, 1f, 1f)
+                            .roughnessConstant(0.9f)
+                            .metallicConstant(0f)
+                            .build())
+                    .build();
+            tileMaterial = RemixMaterialStore.get().create(new RemixMaterial(info, List.of(texture), null));
+        } catch (RuntimeException e) {
+            LOGGER.error("Failed to create the LOD tile material", e);
+            tileMaterial = null;
+        }
+        return tileMaterial;
+    }
+
     private RemixTexture palette() {
         if (palette != null && !palette.isDeleted()) return palette;
         ByteBuffer pixels = LodPalette.fill(DirectBufferPool.acquire(LodPalette.WIDTH * LodPalette.HEIGHT * 4));
@@ -793,15 +834,21 @@ public final class LodTerrain {
     }
 
     /**
-     * Other blocks that give off light glow at {@link #LAMP_EMISSION} of the terrain's emission.
-     * The LOD mod draws an area of many blocks as one of them, so a rooftop torch became a box
-     * several blocks across, which at the full emission lit the roofs around and bloomed to
-     * white (#23); the block's own texture glows only where its flame is.
+     * Other blocks that give off light glow at {@link #LAMP_EMISSION} of the terrain's emission
+     * where the LOD draws a block as one block; the block's own texture glows only where its
+     * flame is. Farther out the LOD mod draws an area of many blocks as one of them, so a rooftop
+     * torch became a box several blocks across, which lit the roofs around and bloomed to white
+     * (#23). The glow is spread over that box, so a lamp gives off one block's light at any
+     * detail and the far ones fade, whatever block or mod they come from.
      */
-    private RemixMaterial lampMaterial(float intensity) {
-        if (lampMaterial != null && !lampMaterial.isDeleted()) return lampMaterial;
-        lampMaterial = paletteGlow(intensity * LAMP_EMISSION, "lamp");
-        return lampMaterial;
+    private RemixMaterial lampMaterial(float intensity, LodSection section) {
+        int cell = section.blocksPerCell();
+        int level = Math.min(lampMaterials.length - 1, Integer.numberOfTrailingZeros(cell));
+        RemixMaterial lamp = lampMaterials[level];
+        if (lamp != null && !lamp.isDeleted()) return lamp;
+        lamp = paletteGlow(intensity * LAMP_EMISSION / ((float) cell * cell), "lamp");
+        lampMaterials[level] = lamp;
+        return lamp;
     }
 
     private RemixMaterial paletteGlow(float intensity, String name) {

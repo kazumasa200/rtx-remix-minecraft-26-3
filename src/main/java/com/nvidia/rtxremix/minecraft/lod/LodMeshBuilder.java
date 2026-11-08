@@ -177,14 +177,16 @@ final class LodMeshBuilder {
 
     /**
      * Builds the mesh, or returns null when the clip removes every quad.
+     * With {@code tileScales}, {@code solid} samples the {@link LodTiles} texture and
+     * ground quads read the tile each names; without, {@code solid} is one white texel.
      * {@code water}, {@code glass}, {@code glow} and {@code lamp} may be null,
      * which draws those quads as plain ground. Lava takes {@code glow}, every
      * other block that gives off light {@code lamp}.
      */
     static RemixMesh build(LodGeometry geometry, Clip clip, int originX, int originZ,
-                           RemixMaterial solid, RemixMaterial water,
+                           RemixMaterial solid, float[] tileScales, RemixMaterial water,
                            RemixMaterial glass, RemixMaterial glow, RemixMaterial lamp) {
-        Bucket ground = new Bucket(Paint.VERTEX);
+        Bucket ground = tileScales != null ? new Bucket(tileScales) : new Bucket(Paint.VERTEX);
         Bucket waterBucket = water != null ? new Bucket(Paint.WATER) : ground;
         Bucket glassBucket = glass != null ? new Bucket(Paint.GLASS) : ground;
         Bucket glowBucket = glow != null ? new Bucket(Paint.PALETTE) : ground;
@@ -236,6 +238,7 @@ final class LodMeshBuilder {
             int material = data.get(base + 12);
             int face = data.get(base + 13);
             if (face < DOWN || face > EAST) continue;
+            int tile = (data.get(base + 14) & 0xFF) | (data.get(base + 15) & 0xFF) << 8;
 
             Bucket bucket;
             if (material == WATER_MATERIAL) {
@@ -250,14 +253,18 @@ final class LodMeshBuilder {
                 bucket = ground;
             }
             if (bucket.paint == Paint.GLASS) color = LodPalette.glassTint(color);
+            if (bucket.paint == Paint.TILE) {
+                tile = LodTiles.usable(tile, bucket.tileScales);
+                color = LodTiles.scaled(color, bucket.tileScales[tile]);
+            }
             QuadRect rect = new QuadRect(face, originX + x0, originX + x1, y0, y1,
-                    originZ + z0, originZ + z1);
+                    originZ + z0, originZ + z1, tile);
             emitClipped(rect, clip, originX, originZ, color, bucket);
         }
     }
 
     /** One decoded quad in world block coordinates (y stays section-local). */
-    private record QuadRect(int face, int x0, int x1, int y0, int y1, int z0, int z1) {}
+    private record QuadRect(int face, int x0, int x1, int y0, int y1, int z0, int z1, int tile) {}
 
     private static void emitClipped(QuadRect q, Clip clip, int originX, int originZ,
                                     int color, Bucket bucket) {
@@ -328,6 +335,8 @@ final class LodMeshBuilder {
         float sink = bucket.water ? SINK + WATER_SINK : SINK;
         float ly0 = q.y0 - sink;
         float ly1 = q.y1 - sink;
+        if (bucket.paint == Paint.TILE) bucket.tileCorners(q.face, q.tile, x0 - originX, x1 - originX,
+                q.y0, q.y1, z0 - originZ, z1 - originZ);
         switch (q.face) {
             case DOWN, UP -> bucket.quad(lx0, ly0, lz0, lx1, ly0, lz0, lx1, ly0, lz1, lx0, ly0, lz1,
                     0f, q.face == UP ? 1f : -1f, 0f, color, originX, originZ);
@@ -347,13 +356,21 @@ final class LodMeshBuilder {
         /** The colour's {@link LodPalette} texel, which emission can read. */
         PALETTE,
         /** The {@link LodPalette} texel of the colour's glass tint, read as transmittance. */
-        GLASS
+        GLASS,
+        /** The quad's {@link LodTiles} tile, repeated once a block, under its scaled vertex colour. */
+        TILE
     }
 
     /** Growable vertex and index data for one surface, from {@link DirectBufferPool}. */
     static final class Bucket {
         final Paint paint;
         final boolean water;
+        /** For {@link Paint#TILE}: the scales of the tiles uploaded when the build began. */
+        final float[] tileScales;
+        /** For {@link Paint#TILE}: the next quad's corner coordinates and its tile's bounds. */
+        private final float[] tileUvs = new float[8];
+        private int tileBoundsMin;
+        private int tileBoundsMax;
         ByteBuffer vertices;
         ByteBuffer indices;
         int quads;
@@ -361,6 +378,42 @@ final class LodMeshBuilder {
         Bucket(Paint paint) {
             this.paint = paint;
             this.water = paint == Paint.WATER;
+            this.tileScales = null;
+        }
+
+        Bucket(float[] tileScales) {
+            this.paint = Paint.TILE;
+            this.water = false;
+            this.tileScales = tileScales;
+        }
+
+        /**
+         * Places the next quad's corners on its tile as the LOD mod does: once a block, in
+         * the orientation its shader gives each face. Corners come in the order
+         * {@link LodMeshBuilder#emit} writes them; coordinates are whole blocks from the
+         * section origin, which repeat the tile as world coordinates would.
+         */
+        void tileCorners(int face, int tile, int x0, int x1, int y0, int y1, int z0, int z1) {
+            float u0 = LodTiles.u0(tile);
+            float v0 = LodTiles.v0(tile);
+            tileBoundsMin = LodTiles.boundsMin(tile);
+            tileBoundsMax = LodTiles.boundsMax(tile);
+            for (int corner = 0; corner < 4; corner++) {
+                boolean second = corner == 1 || corner == 2;
+                boolean upper = corner >= 2;
+                float s;
+                float t;
+                switch (face) {
+                    case DOWN -> { s = second ? x1 : x0; t = -(upper ? z1 : z0); }
+                    case UP -> { s = second ? x1 : x0; t = upper ? z1 : z0; }
+                    case NORTH -> { s = -(second ? x1 : x0); t = -(upper ? y1 : y0); }
+                    case SOUTH -> { s = second ? x1 : x0; t = -(upper ? y1 : y0); }
+                    case WEST -> { s = second ? z1 : z0; t = -(upper ? y1 : y0); }
+                    default -> { s = -(second ? z1 : z0); t = -(upper ? y1 : y0); }
+                }
+                tileUvs[corner * 2] = u0 + s * LodTiles.TILE_U;
+                tileUvs[corner * 2 + 1] = v0 + t * LodTiles.TILE_V;
+            }
         }
 
         Bucket(boolean water) {
@@ -372,10 +425,10 @@ final class LodMeshBuilder {
                   float nx, float ny, float nz, int color, int originX, int originZ) {
             ensureCapacity();
             int vertex = quads * 4;
-            vertex(vertex, ax, ay, az, nx, ny, nz, color, originX, originZ);
-            vertex(vertex + 1, bx, by, bz, nx, ny, nz, color, originX, originZ);
-            vertex(vertex + 2, cx, cy, cz, nx, ny, nz, color, originX, originZ);
-            vertex(vertex + 3, dx, dy, dz, nx, ny, nz, color, originX, originZ);
+            vertex(vertex, 0, ax, ay, az, nx, ny, nz, color, originX, originZ);
+            vertex(vertex + 1, 1, bx, by, bz, nx, ny, nz, color, originX, originZ);
+            vertex(vertex + 2, 2, cx, cy, cz, nx, ny, nz, color, originX, originZ);
+            vertex(vertex + 3, 3, dx, dy, dz, nx, ny, nz, color, originX, originZ);
             int at = quads * INDEX_BYTES;
             indices.putInt(at, vertex);
             indices.putInt(at + 4, vertex + 1);
@@ -386,7 +439,7 @@ final class LodMeshBuilder {
             quads++;
         }
 
-        private void vertex(int index, float x, float y, float z, float nx, float ny, float nz,
+        private void vertex(int index, int corner, float x, float y, float z, float nx, float ny, float nz,
                             int color, int originX, int originZ) {
             int at = index * STRIDE;
             vertices.putFloat(at, x);
@@ -411,10 +464,14 @@ final class LodMeshBuilder {
                     vertices.putFloat(at + 24, 0.5f);
                     vertices.putFloat(at + 28, 0.5f);
                 }
+                case TILE -> {
+                    vertices.putFloat(at + 24, tileUvs[corner * 2]);
+                    vertices.putFloat(at + 28, tileUvs[corner * 2 + 1]);
+                }
             }
             vertices.putInt(at + 32, paint == Paint.PALETTE || paint == Paint.GLASS ? WHITE : color);
-            vertices.putInt(at + 36, water ? WATER_BOUNDS_MIN : NO_BOUNDS);
-            vertices.putInt(at + 40, water ? WATER_BOUNDS_MAX : NO_BOUNDS);
+            vertices.putInt(at + 36, water ? WATER_BOUNDS_MIN : paint == Paint.TILE ? tileBoundsMin : NO_BOUNDS);
+            vertices.putInt(at + 40, water ? WATER_BOUNDS_MAX : paint == Paint.TILE ? tileBoundsMax : NO_BOUNDS);
             for (int pad = 44; pad < STRIDE; pad += 4) vertices.putInt(at + pad, 0);
         }
 
@@ -440,7 +497,7 @@ final class LodMeshBuilder {
             RemixMeshSurface surface = new RemixMeshSurface(material)
                     .setVertexData(vertices, quads * 4)
                     .setIndexData(indices, quads * 6);
-            if (water) surface.setFlags(MeshInfoSurfaceTriangles.TEXCOORD_BOUNDS);
+            if (water || paint == Paint.TILE) surface.setFlags(MeshInfoSurfaceTriangles.TEXCOORD_BOUNDS);
             surfaces.add(surface);
             vertices = null;
             indices = null;

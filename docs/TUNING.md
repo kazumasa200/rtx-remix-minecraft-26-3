@@ -82,7 +82,7 @@ per-frame budgets.
 | Key | Effect | Owner |
 |---|---|---|
 | `rtxremix.chunk.meshBuildThreads` | Threads in the column merge executor | `ChunkManager` |
-| `rtxremix.lod.lampEmission` | Share of the terrain's emission at which LOD blocks that give off light glow, lava aside, 0.2 by default | `LodTerrain` |
+| `rtxremix.lod.lampEmission` | Share of the terrain's emission at which LOD blocks that give off light glow, lava aside, 0.2 by default; coarser LOD sections divide it by the area each cell covers | `LodTerrain` |
 | `rtxremix.lod.buildThreads` | Low-priority threads building LOD terrain meshes against the current clip, 3 by default | `LodTerrain` |
 | `rtxremix.chunk.maxPendingBuilds` | Merges outstanding at once | `ChunkManager` |
 | `rtxremix.chunk.maxPendingMeshBytes` | Bytes of merged but not yet installed geometry | `ChunkManager` |
@@ -169,7 +169,10 @@ texture content. The key reads at startup.
 | `rtxremix.profile.tracyJavaMaxDepth` | Nesting depth limit for those Tracy zones. -1 means unlimited | `ProfileScope` |
 | `rtxremix.profile.clientTasks` | Enable per-client-task JFR events; only read when Java phase events are on | `ProfileScope` |
 | `rtxremix.profile.clientTaskSlowThresholdNs` | A client task slower than this gets its own JFR event | `ProfileScope` |
+| `rtxremix.crashDumpDetail` | Set to true to make the minidump the mod writes to `crash\` after a native crash also copy the memory that thread stacks point at, as version 0.1.0 did, which fills in the objects a crashing thread was using. That memory includes the launch arguments, with the launcher's access token, so keep these dumps private and out of public issues | `RemixRenderer` |
 | `rtxremix.debug.entityTypeSummary` | Enable a periodic per-entity-type capture summary in the log. It costs a map probe per entity per frame and a sort and format pass on the render thread, so it is a diagnostic, not a setting | `RemixEntityPass` |
+| `rtxremix.forwardRemixFaults` | Hand a fatal native fault inside a Remix call to the runtime's crash reporter, on x64. Set to false to leave it to HotSpot, whose `hs_err_pid*.log` keeps the Java frames that led to the call; the runtime then sends no report | `RemixRenderer` |
+| `rtxremix.debug.faultInRemixCall` | Crash the game after 120 presented frames to check crash reporting. `runtime` faults inside `d3d9.dll` during a Remix call on the render thread, which the runtime's crash reporter should catch; `jvm` faults inside `jvm.dll` under the same call, which HotSpot should still report in `hs_err_pid*.log`. Set `RTX_SENTRY_TEST_DSN` to an unreachable endpoint to keep the report on disk under `rtx-remix\logs\.sentry-native\` | `RemixRenderer` |
 
 Tracy zones only appear when the staged runtime was built with Tracy support.
 JFR works with any runtime.

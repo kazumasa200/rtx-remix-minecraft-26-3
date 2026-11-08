@@ -11,6 +11,28 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Fixed
+
+- With Distant Horizons' LOD terrain, the sky seen through stained glass or
+  water keeps its tint instead of showing through untinted.
+- The Unbound clouds seen through stained glass or water take its tint, and
+  the clouds beside the glass no longer turn cyan.
+
+### Added
+
+- Distant Horizons LODs show block textures when its LOD Textures option is on,
+  as they do without RTX, instead of one flat colour per block (#25).
+
+## 0.4.0-pre.4 - 2026-11-08
+
+### Changed
+
+- Torches, lamps and other lights in distant Distant Horizons terrain fade
+  with its detail: the nearest LODs keep their glow, and coarser ones, which
+  draw a light as a box several blocks wide, give off one block's light over
+  that box, so far rooftops no longer glow white. The rule needs no list of
+  blocks, so modded lights follow it too (#23).
+
 ## 0.4.0-pre.3 - 2026-11-04
 
 ### Added
