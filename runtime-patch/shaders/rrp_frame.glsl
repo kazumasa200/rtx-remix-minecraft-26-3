@@ -53,4 +53,47 @@ layout(set = 4, binding = 2) uniform sampler2D Cirrus;          // clamp, linear
 layout(set = 4, binding = 3) uniform sampler2D RrpSkyCache;     // the layer's pass: the sky of clouds
 layout(set = 4, binding = 4) uniform sampler2D RrpCloudShadow;  // the layer's pass: depth toward the light
 
+// The sky cache is an octahedral map of the whole sphere of directions from the frame's camera, up (+y) at the
+// centre: the upper hemisphere is the inner diamond, so the folds lie below the horizon, where clouds are seen
+// only from above.
+vec2 rrpOctEncode(vec3 d) {
+    d /= abs(d.x) + abs(d.y) + abs(d.z);
+    vec2 p = d.xz;
+    if (d.y < 0.0) {
+        p = (1.0 - abs(p.yx)) * vec2(p.x >= 0.0 ? 1.0 : -1.0, p.y >= 0.0 ? 1.0 : -1.0);
+    }
+    return p * 0.5 + 0.5;
+}
+
+vec3 rrpOctDecode(vec2 uv) {
+    vec2 p = uv * 2.0 - 1.0;
+    vec3 d = vec3(p.x, 1.0 - abs(p.x) - abs(p.y), p.y);
+    if (d.y < 0.0) {
+        d.xz = (1.0 - abs(d.zx)) * vec2(d.x >= 0.0 ? 1.0 : -1.0, d.z >= 0.0 ? 1.0 : -1.0);
+    }
+    return normalize(d);
+}
+
+// Blocks the cloud shadow map spans, centred on the frame camera's line toward the light.
+#define RRP_SHADOW_SPAN 32768.0
+#define RRP_SHADOW_SIZE 2048.0
+
+// The shadow map is indexed by where a point's line toward the light crosses the clouds' base: every point on
+// that line below a layer sees the same cloud of it toward the light, which is what shadowOpticalDepths reads.
+// The centre follows the frame camera's line, snapped to whole texels so the map does not crawl.
+float rrpLightSlope() {
+    return max(LightDirection.y, 0.1);
+}
+
+vec2 rrpShadowCentre() {
+    vec2 q = FrameCameraXZ + LightDirection.xz * ((CloudBase - FrameCameraHeight) / rrpLightSlope());
+    float texel = RRP_SHADOW_SPAN / RRP_SHADOW_SIZE;
+    return floor(q / texel) * texel;
+}
+
+vec2 rrpShadowUv(vec2 cloudXZ, float height) {
+    vec2 q = cloudXZ + LightDirection.xz * ((CloudBase - height) / rrpLightSlope());
+    return (q - rrpShadowCentre()) / RRP_SHADOW_SPAN + 0.5;
+}
+
 #endif

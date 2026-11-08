@@ -1,0 +1,82 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+// The layer's own pass (runtime-patch/layer/channel.cpp), run in its command buffer at the head of each frame
+// after the frame block lands: what every patched module then reads with one tap.
+//   Mode 1, the sky cache: the clouds and cirrus the frame's camera sees, over the whole sphere (octahedral),
+//   marched on the mod's cadence, half the texels a march, into a running average, as the dome's panorama was.
+//   Mode 2, the shadow map: each layer's optical depth toward the light, by where a point's light line crosses
+//   the clouds' base, the very terms the clouds' own shadow sums.
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "rrp_frame.glsl"
+
+#define PI 3.14159265358979323846
+#define CIRRUS_MIN_ELEVATION_DEGREES CirrusMinElevation
+#define CLOUD_FIELD_EXTERNAL_SHAPES
+// The dome panorama's step counts: the cache is what reflections and indirect light see.
+#define CLOUD_MIN_STEPS 28
+#define CLOUD_MAX_STEPS 56
+#define texture(s, c) textureLod(s, c, 0.0)
+
+vec2 CameraXZ;
+float CameraHeight;
+
+#include "cloud_field.glsl"
+
+layout(set = 4, binding = 5, rgba16f) uniform image2D RrpSkyCacheStorage;
+layout(set = 4, binding = 6, rgba16f) uniform image2D RrpCloudShadowStorage;
+
+layout(push_constant) uniform PassMode {
+    uint Mode;
+};
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+uvec3 rrpHash(uvec3 v) {
+    v = v * 1664525u + 1013904223u;
+    v.x += v.y * v.z;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    v ^= v >> 16u;
+    v.x += v.y * v.z;
+    v.y += v.z * v.x;
+    v.z += v.x * v.y;
+    return v;
+}
+
+void main() {
+    if (Enabled == 0u) {
+        return;
+    }
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    if (Mode == 1u) {
+        ivec2 size = imageSize(RrpSkyCacheStorage);
+        if (MarchCache == 0u || texel.x >= size.x || texel.y >= size.y) {
+            return;
+        }
+        if (HistoryWeight < 1.0 && ((texel.x + texel.y) & 1) != int(Parity)) {
+            return;
+        }
+        vec3 direction = rrpOctDecode((vec2(texel) + 0.5) / vec2(size));
+        CameraXZ = FrameCameraXZ;
+        CameraHeight = FrameCameraHeight;
+        float jitter = float(rrpHash(uvec3(texel, FrameIndex)).x) * (1.0 / 4294967296.0);
+        float entry;
+        vec4 current = marchCloudsTo(direction, jitter, MAX_DISTANCE, entry);
+        current += (1.0 - current.a) * cirrusLayer(direction);
+        vec4 history = mix(imageLoad(RrpSkyCacheStorage, texel), current, HistoryWeight);
+        imageStore(RrpSkyCacheStorage, texel, vec4(max(history.rgb, vec3(0.0)), clamp(history.a, 0.0, 1.0)));
+    } else if (Mode == 2u) {
+        ivec2 size = imageSize(RrpCloudShadowStorage);
+        if (texel.x >= size.x || texel.y >= size.y) {
+            return;
+        }
+        // The texel's point on the clouds' base, and the point on its light line just under the lowest layer.
+        vec2 q = rrpShadowCentre() + ((vec2(texel) + 0.5) / vec2(size) - 0.5) * RRP_SHADOW_SPAN;
+        float height = CloudBase - 1.0;
+        vec2 xz = q - LightDirection.xz * ((CloudBase - height) / rrpLightSlope());
+        imageStore(RrpCloudShadowStorage, texel, vec4(shadowOpticalDepths(vec3(xz.x, height, xz.y)), 1.0));
+    }
+}

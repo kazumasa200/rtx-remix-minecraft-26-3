@@ -25,6 +25,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import library
 from .passes import PASSES, Pass
 from .spirv import Keyer, Module, apply_delta, embedded_modules
 
@@ -56,6 +57,21 @@ class Variant:
     @property
     def file(self) -> str:
         return f"{self.key}.{'+'.join(self.groups)}.rrpd"
+
+
+@dataclass
+class Built:
+    """A variant once checked: what the manifest and the lock need of it."""
+
+    key: str
+    offset: int
+    size: int
+    groups: tuple[str, ...]
+    name: str
+    file: str
+    delta: list[int]
+    digest: str
+    error: str | None
 
 
 def _spirv_val() -> Path | None:
@@ -134,51 +150,22 @@ def build(
 
     outcomes = {p.id: PassOutcome(p.id) for p in passes}
     failed_groups: dict[str, str] = {}
-    variants: list[Variant] = []
-    for key, (offset, original_bytes) in unique.items():
-        original = Module.from_bytes(original_bytes)
-        alone: dict[str, int] = {}
-        for p in passes:
-            sites = p.apply(Module.from_bytes(original_bytes))
-            if sites:
-                alone[p.id] = sites
-                outcomes[p.id].modules += 1
-                outcomes[p.id].sites.append(sites)
-        groups = sorted({p.group for p in passes if p.id in alone})
-        for size in range(1, len(groups) + 1):
-            for subset in itertools.combinations(groups, size):
-                module = Module.from_bytes(original_bytes)
-                for p in passes:
-                    if p.group not in subset or p.id not in alone:
-                        continue
-                    sites = p.apply(module)
-                    if sites != alone[p.id]:
-                        for g in subset:
-                            failed_groups.setdefault(g, f"{p.id} finds {sites} sites beside {subset}, {alone[p.id]} alone")
-                variants.append(Variant(key, offset, len(original_bytes), subset, module, original))
+    # Each variant is checked and turned into its delta as soon as it is built, and only the delta is kept: the
+    # modules themselves are a megabyte or two each, hundreds of them.
+    built: list[Built] = []
 
-    for p in passes:
-        o = outcomes[p.id]
-        if o.modules not in p.expect.modules:
-            o.ok, o.reason = False, f"{o.modules} modules, expected {p.expect.modules.start}-{p.expect.modules.stop - 1}"
-        elif any(s not in p.expect.sites_per_module for s in o.sites):
-            o.ok, o.reason = False, f"sites per module {o.sites} outside the expected range"
-        if not o.ok:
-            failed_groups.setdefault(p.group, f"{p.id}: {o.reason}")
-
-    lock_out: dict[str, dict] = {}
-    deltas: dict[str, list[int]] = {}
-    for v in variants:
-        if any(g in failed_groups for g in v.groups):
-            continue
+    def finish(v: Variant) -> None:
         new = v.module.to_bytes()
         digest = hashlib.sha256(new).hexdigest()
-        if validator is not None:
+        if known.get(v.name, {}).get("sha256") == digest and known[v.name].get("validated"):
+            error = None  # this very module passed spirv-val before
+        elif validator is not None:
             error = _validate(validator, new)
         elif known.get(v.name, {}).get("sha256") != digest:
             error = "no SPIRV-Tools and the module is not in the lock"
         else:
             error = None
+        delta: list[int] = []
         if error is None:
             try:
                 delta = v.module.delta(v.original)
@@ -189,9 +176,45 @@ def build(
         if error is not None:
             for g in v.groups:
                 failed_groups.setdefault(g, f"module {v.name[:12]}: {error}")
-            continue
-        deltas[v.name] = delta
-        lock_out[v.name] = {"groups": list(v.groups), "sha256": digest, "validated": True}
+        built.append(Built(v.key, v.offset, v.size, v.groups, v.name, v.file, delta, digest, error))
+
+    for key, (offset, original_bytes) in unique.items():
+        original = Module.from_bytes(original_bytes)
+        alone: dict[str, tuple[int, Module]] = {}
+        for p in passes:
+            module = Module.from_bytes(original_bytes)
+            sites = p.apply(module)
+            if sites:
+                alone[p.id] = (sites, module)
+                outcomes[p.id].modules += 1
+                outcomes[p.id].sites.append(sites)
+        groups = sorted({p.group for p in passes if p.id in alone})
+        for size in range(1, len(groups) + 1):
+            for subset in itertools.combinations(groups, size):
+                members = [p for p in passes if p.group in subset and p.id in alone]
+                if len(members) == 1:
+                    module = alone[members[0].id][1]  # one pass alone: the run already made
+                else:
+                    module = Module.from_bytes(original_bytes)
+                    for p in members:
+                        sites = p.apply(module)
+                        if sites != alone[p.id][0]:
+                            for g in subset:
+                                failed_groups.setdefault(
+                                    g, f"{p.id} finds {sites} sites beside {subset}, {alone[p.id][0]} alone")
+                finish(Variant(key, offset, len(original_bytes), subset, module, original))
+
+    for p in passes:
+        o = outcomes[p.id]
+        if o.modules not in p.expect.modules:
+            o.ok, o.reason = False, f"{o.modules} modules, expected {p.expect.modules.start}-{p.expect.modules.stop - 1}"
+        elif any(s not in p.expect.sites_per_module for s in o.sites):
+            o.ok, o.reason = False, f"sites per module {o.sites} outside the expected range"
+        if not o.ok:
+            failed_groups.setdefault(p.group, f"{p.id}: {o.reason}")
+
+    lock_out = {b.name: {"groups": list(b.groups), "sha256": b.digest, "validated": True}
+                for b in built if b.error is None}
 
     for p in passes:
         o = outcomes[p.id]
@@ -207,12 +230,19 @@ def build(
     patches.mkdir(parents=True)
     lines = ["#format 2"]
     lines += [f"#channel {g}" for g in sorted({p.group for p in passes if p.channel})]
-    for v in sorted(variants, key=lambda v: v.name):
-        if v.name not in deltas or any(g in failed_groups for g in v.groups):
+    if any(p.channel and p.group not in failed_groups for p in passes):
+        # The layer's own pass, which fills the sky cache and the shadow map the channel groups read.
+        program = library.cloud_pass()
+        error = _validate(validator, program) if validator is not None else None
+        if error is not None:
+            raise SystemExit(f"spirv-val rejected the layer's cloud pass: {error}")
+        (patches / "rrp_cloud_pass.spv").write_bytes(program)
+        lines.append("#program rrp_cloud_pass.spv")
+    for b in sorted(built, key=lambda b: b.name):
+        if b.error is not None or any(g in failed_groups for g in b.groups):
             continue
-        delta = deltas[v.name]
-        (patches / v.file).write_bytes(b"".join(w.to_bytes(4, "little") for w in delta))
-        lines.append(f"{v.key}\t{v.offset}\t{v.size}\t{','.join(v.groups)}\t{v.file}")
+        (patches / b.file).write_bytes(b"".join(w.to_bytes(4, "little") for w in b.delta))
+        lines.append(f"{b.key}\t{b.offset}\t{b.size}\t{','.join(b.groups)}\t{b.file}")
     (patches / "manifest.tsv").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     if validator is not None:
         kept = {k: e for k, e in lock_out.items() if not any(g in failed_groups for g in e["groups"])}

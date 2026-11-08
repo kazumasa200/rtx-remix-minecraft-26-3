@@ -24,8 +24,8 @@ from .spirv import Module
 ROOT = Path(__file__).resolve().parents[4]
 SHADERS = ROOT / "runtime-patch" / "shaders"
 FIELD = ROOT / "src" / "main" / "resources" / "assets" / "rtx-remix-renderer" / "shaders"
-SOURCES = (SHADERS / "rrp_clouds.comp", SHADERS / "rrp_frame.glsl", FIELD / "cloud_field.glsl")
-COMPILED = SHADERS / "compiled" / "rrp_clouds.spv"
+SOURCES = (SHADERS / "rrp_clouds.comp", SHADERS / "rrp_cloud_pass.comp", SHADERS / "rrp_frame.glsl",
+           FIELD / "cloud_field.glsl")
 DIGEST = SHADERS / "compiled" / "rrp_clouds.sources.sha256"
 LAYOUT = SHADERS / "compiled" / "frame_layout.txt"
 
@@ -65,30 +65,47 @@ def _text(words) -> str:
     return raw.split(b"\0", 1)[0].decode("utf-8")
 
 
+def _compiled(name: str, digest: str) -> bytes:
+    """compiled/<name>.spv from runtime-patch/shaders/<name>.comp, recompiled when glslang is at hand."""
+    target = SHADERS / "compiled" / f"{name}.spv"
+    tool = _glslang()
+    if tool is None:
+        if not target.is_file() or DIGEST.read_text(encoding="utf-8").strip() != digest:
+            raise ValueError("the clouds library's sources changed; rebuild it with the Vulkan SDK's glslang")
+        return target.read_bytes()
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / f"{name}.spv"
+        run = subprocess.run(
+            [str(tool), "-V", "--target-env", "spirv1.5", f"-I{SHADERS}", f"-I{FIELD}",
+             str(SHADERS / f"{name}.comp"), "-o", str(out)],
+            capture_output=True, text=True,
+        )
+        if run.returncode != 0:
+            raise ValueError(f"glslang failed on {name}.comp: {(run.stdout + run.stderr).strip()[-600:]}")
+        data = out.read_bytes()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if not target.is_file() or target.read_bytes() != data:
+        target.write_bytes(data)
+    return data
+
+
+def _write_if_changed(path: Path, text: str) -> None:
+    if not path.is_file() or path.read_text(encoding="utf-8") != text:
+        path.write_text(text, encoding="utf-8", newline="\n")
+
+
 @cache
 def clouds_library() -> Module:
+    """The library the passes merge: rrp_clouds.comp."""
     digest = sources_digest()
-    tool = _glslang()
-    if tool is not None:
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "rrp_clouds.spv"
-            run = subprocess.run(
-                [str(tool), "-V", "--target-env", "spirv1.5", f"-I{SHADERS}", f"-I{FIELD}",
-                 str(SHADERS / "rrp_clouds.comp"), "-o", str(out)],
-                capture_output=True, text=True,
-            )
-            if run.returncode != 0:
-                raise ValueError(f"glslang failed on rrp_clouds.comp: {(run.stdout + run.stderr).strip()[-600:]}")
-            data = out.read_bytes()
-        module = Module.from_bytes(data)
-        layout = "".join(f"{name} {offset}\n" for name, offset in frame_layout(module))
-        COMPILED.parent.mkdir(parents=True, exist_ok=True)
-        if not COMPILED.is_file() or COMPILED.read_bytes() != data:
-            COMPILED.write_bytes(data)
-        for path, text in ((DIGEST, digest + "\n"), (LAYOUT, layout)):
-            if not path.is_file() or path.read_text(encoding="utf-8") != text:
-                path.write_text(text, encoding="utf-8", newline="\n")
-        return module
-    if not COMPILED.is_file() or DIGEST.read_text(encoding="utf-8").strip() != digest:
-        raise ValueError("the clouds library's sources changed; rebuild it with the Vulkan SDK's glslang")
-    return Module.from_bytes(COMPILED.read_bytes())
+    module = Module.from_bytes(_compiled("rrp_clouds", digest))
+    if _glslang() is not None:
+        _write_if_changed(LAYOUT, "".join(f"{name} {offset}\n" for name, offset in frame_layout(module)))
+        _write_if_changed(DIGEST, digest + "\n")
+    return module
+
+
+@cache
+def cloud_pass() -> bytes:
+    """The layer's own pass: rrp_cloud_pass.comp, shipped beside the deltas."""
+    return _compiled("rrp_cloud_pass", sources_digest())

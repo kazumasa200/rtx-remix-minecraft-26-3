@@ -26,6 +26,11 @@ also part of every mod file name.
   exposure, tone mapping and fog like the rest of the sky, so they show their
   shaded sides at full detail rather than as the dome's softened copy. The
   Debug page's Draw Clouds in OpenGL shows the old clouds for comparison.
+- The Unbound clouds show in reflections and through glass and water, light
+  the scene's sky light, and cast their shadows in the path tracer: the sun's
+  light dims under a cloud while torches and lamps stay as bright (#13), and
+  the light shafts in fog follow the gaps. Seen from inside or above the
+  clouds, they lie over the land below.
 
 ### Fixed
 

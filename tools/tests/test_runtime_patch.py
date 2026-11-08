@@ -170,9 +170,9 @@ def test_the_clouds_library_merges_without_touching_the_composites_ids(composite
     assert merge.merge(module, library.clouds_library(), "rrp_cloudsPrimary") == fn
 
 
-def test_clouds_primary_patches_the_composites_primary_miss_once(composite):
+def test_clouds_primary_patches_the_composites_primary_miss_and_its_land(composite):
     from rtx_tools.runtime_patch.passes import CloudsPrimary
 
     module = Module.from_bytes(composite)
-    assert CloudsPrimary().apply(module) == 1
+    assert CloudsPrimary().apply(module) == 2
     module.delta(Module.from_bytes(composite))

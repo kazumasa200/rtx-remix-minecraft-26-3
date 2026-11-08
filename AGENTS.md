@@ -353,7 +353,26 @@ words are ids comes from the grammar table `operands.json`). The march starts at
 the runtime's own camera (`cb.camera.viewToWorld`) moved into the clouds' frame by
 the frame's `SceneToCloud`, and goes over the sky matte premultiplied before the
 sky's brightness and the volume fog's attenuation, in the matte's units as the
-dome's panorama was. `VolumetricClouds.renderInRuntime` then hands over the
+dome's panorama was. Over land the composite marches from the camera to the
+surface (`rrp_cloudsLand`, the fade's `viewDistance`; nothing where the view Z is
+the miss sentinel, which sky seen through glass also carries), so clouds lie over
+the ground seen from in or above them. Every other read of the sky, the probe's
+for reflections, rays through glass or water and indirect rays, and the
+composite's second matte read in the view-distance fade, lays the layer's sky
+cache over it (`clouds-sky`, 243 modules; the sample's result id is taken over, so
+no use is rewritten). Every shadow ray-query loop multiplies its light by
+`rrp_cloudShadow` (`clouds-shadow`, 149 modules, run before shadow-absorption,
+whose edits hide the loop's pattern): 1 unless the ray is a distant light's (at
+least `DistantRayMin` long: the runtime places their samples 1e5 out) within the
+clouds' light's cone, so the sun dims under a cloud and a lamp never does, and the
+froxel volumes' god rays follow. The layer's own pass
+(`runtime-patch/shaders/rrp_cloud_pass.comp`, shipped as `#program` beside the
+deltas) fills both at the head of each frame: the sky cache, an octahedral
+1024-square of what the frame's camera sees, half its texels a march on the
+panorama's cadence (`MarchCache`, `Parity`, `HistoryWeight`), and the shadow map,
+2048 square over 32 km, each layer's optical depth toward the light by where a
+point's light line crosses the clouds' base (`shadowOpticalDepths`), a layer
+counted only below its middle. `VolumetricClouds.renderInRuntime` then hands over the
 field's inputs (`RuntimeFrame`, whose offsets `RuntimeFrameTest` pins to
 `compiled/frame_layout.txt`), the GL noise once and the cirrus, and draws no
 dome, no GL march and no lens clouds (`CloudField` stays withdrawn). The Debug

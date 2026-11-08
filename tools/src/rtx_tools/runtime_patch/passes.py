@@ -128,7 +128,7 @@ class CloudsPrimary(Pass):
 
     id = "clouds-primary"
     version = 1
-    expect = Expect(modules=range(1, 2), sites_per_module=range(1, 2))
+    expect = Expect(modules=range(1, 2), sites_per_module=range(2, 3))
     channel = True
 
     @property
@@ -139,4 +139,41 @@ class CloudsPrimary(Pass):
         return clouds.apply_primary(module)
 
 
-PASSES: list[Pass] = [SkyFade(), ShadowAbsorption(), CloudsPrimary()]
+class CloudsSky(Pass):
+    """The Unbound clouds over every other read of the sky, from the layer's sky cache (`clouds.apply_sky`)."""
+
+    id = "clouds-sky"
+    version = 1
+    # 285 modules name SkyProbe in their interfaces; 243 of them sample it.
+    expect = Expect(modules=range(243, 244), sites_per_module=range(1, 4))
+    channel = True
+
+    @property
+    def group(self) -> str:
+        return "unbound-clouds"
+
+    def apply(self, module: Module) -> int:
+        return clouds.apply_sky(module)
+
+
+class CloudsShadow(Pass):
+    """The Unbound clouds' shadow on the light of their light, from the layer's shadow map, in every shadow
+    ray-query loop (`clouds.apply_shadow`)."""
+
+    id = "clouds-shadow"
+    version = 1
+    expect = Expect(modules=range(149, 150), sites_per_module=range(1, 8))
+    channel = True
+
+    @property
+    def group(self) -> str:
+        return "unbound-clouds"
+
+    def apply(self, module: Module) -> int:
+        return clouds.apply_shadow(module)
+
+
+# Registry order is the order a combination of groups runs in. clouds-shadow goes before shadow-absorption: it only
+# adds code after a loop, which leaves the loop's pattern for shadow-absorption, while shadow-absorption's edits
+# inside the loop hide it from clouds-shadow.
+PASSES: list[Pass] = [SkyFade(), CloudsPrimary(), CloudsSky(), CloudsShadow(), ShadowAbsorption()]

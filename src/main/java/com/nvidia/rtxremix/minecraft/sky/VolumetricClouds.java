@@ -355,10 +355,27 @@ final class VolumetricClouds {
                 runtimeCirrusVersion = skyLayers.cirrusVersion();
             }
         }
+        // The layer's sky cache, which reflections and indirect light see, is marched on the panorama's cadence,
+        // half its texels a march, into a running average.
+        long now = System.nanoTime();
+        boolean moving = cameraPos.distanceToSqr(lastCameraX, lastCameraY, lastCameraZ) > MOVING_BLOCKS * MOVING_BLOCKS;
+        if (SkyTimeJump.generation() != seenTimeJump) {
+            seenTimeJump = SkyTimeJump.generation();
+            restart = true;
+        }
+        long interval = LightningFlash.changing() ? 0L : moving ? MOVING_DISPATCH_INTERVAL_NANOS : DISPATCH_INTERVAL_NANOS;
+        boolean march = restart || now - lastDispatchNanos >= interval;
         fillFrame(world, cameraPos, tickDelta, clouds, base, light, ambientTop, rain);
-        frame.historyWeight = 1.0f;
+        if (march) {
+            lastDispatchNanos = now;
+            dispatches++;
+            restart = false;
+            lastCameraX = cameraPos.x;
+            lastCameraY = cameraPos.y;
+            lastCameraZ = cameraPos.z;
+        }
         RuntimeFrame.clouds(frame, frame.cameraX - SceneSpace.x(cameraPos.x), frame.cameraZ - SceneSpace.z(cameraPos.z),
-                clouds.getUnboundShadow());
+                clouds.getUnboundShadow(), march);
     }
 
     private void publish(RemixAPI api, ByteBuffer pixels) {

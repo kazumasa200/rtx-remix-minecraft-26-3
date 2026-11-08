@@ -32,7 +32,8 @@ constexpr uint32_t kStaleLatches = 30;
     X(CreateCommandPool) X(DestroyCommandPool) X(AllocateCommandBuffers) X(BeginCommandBuffer)                  \
     X(EndCommandBuffer) X(ResetCommandBuffer) X(CmdPipelineBarrier) X(CmdCopyBuffer) X(CmdCopyBufferToImage)   \
     X(CmdFillBuffer) X(CmdClearColorImage) X(CreateFence) X(DestroyFence) X(WaitForFences) X(ResetFences)        \
-    X(GetFenceStatus)
+    X(GetFenceStatus) X(CreateShaderModule) X(DestroyShaderModule) X(CreateComputePipelines) X(DestroyPipeline)    \
+    X(DestroyPipelineLayout) X(CmdBindPipeline) X(CmdPushConstants) X(CmdDispatch)
 
 struct Fns {
 #define RRP_DECLARE(name) PFN_vk##name name = nullptr;
@@ -124,6 +125,10 @@ struct Channel {
     uint32_t cursor = 0;
     int32_t stagingSlot = -1;
     bool initialised = false;
+
+    // The layer's own pass (rrp_cloud_pass.comp): the sky cache (mode 1) and the shadow map (mode 2).
+    VkPipelineLayout passLayout = VK_NULL_HANDLE;
+    VkPipeline pass = VK_NULL_HANDLE;
     uint32_t lastGeneration = 0, staleLatches = 0;
 
     std::atomic<bool> boundary{true};
@@ -360,6 +365,47 @@ bool build(Channel* c, std::string& why) {
     return true;
 }
 
+// The layer's pass pipeline from the program the manifest named; without it the sky cache and the shadow map
+// stay empty (no clouds in reflections, no cloud shadows) and the channel still carries the frame.
+bool buildPass(Channel* c, const std::vector<uint32_t>& program, std::string& report) {
+    if (program.empty()) {
+        report += "; no cloud pass";
+        return false;
+    }
+    VkShaderModuleCreateInfo mi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    mi.codeSize = program.size() * 4;
+    mi.pCode = program.data();
+    VkShaderModule module = VK_NULL_HANDLE;
+    if (c->fn.CreateShaderModule(c->device, &mi, nullptr, &module) != VK_SUCCESS) {
+        report += "; cloud pass refused";
+        return false;
+    }
+    VkDescriptorSetLayout sets[kFrameSet + 1] = {c->emptyLayout, c->emptyLayout, c->emptyLayout, c->emptyLayout,
+                                                 c->setLayout};
+    VkPushConstantRange mode{VK_SHADER_STAGE_COMPUTE_BIT, 0, 4};
+    VkPipelineLayoutCreateInfo li{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+    li.setLayoutCount = kFrameSet + 1;
+    li.pSetLayouts = sets;
+    li.pushConstantRangeCount = 1;
+    li.pPushConstantRanges = &mode;
+    bool ok = c->fn.CreatePipelineLayout(c->device, &li, nullptr, &c->passLayout) == VK_SUCCESS;
+    if (ok) {
+        VkComputePipelineCreateInfo pi{VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO};
+        pi.stage = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_COMPUTE_BIT, module,
+                    "main", nullptr};
+        pi.layout = c->passLayout;
+        ok = c->fn.CreateComputePipelines(c->device, VK_NULL_HANDLE, 1, &pi, nullptr, &c->pass) == VK_SUCCESS;
+    }
+    c->fn.DestroyShaderModule(c->device, module, nullptr);
+    report += ok ? "; cloud pass up" : "; cloud pass failed";
+    return ok;
+}
+
+void dispatchPass(Channel* c, VkCommandBuffer cmd, uint32_t mode, uint32_t size) {
+    c->fn.CmdPushConstants(cmd, c->passLayout, VK_SHADER_STAGE_COMPUTE_BIT, 0, 4, &mode);
+    c->fn.CmdDispatch(cmd, (size + 7) / 8, (size + 7) / 8, 1);
+}
+
 void barrier(Channel* c, VkCommandBuffer cmd, VkPipelineStageFlags src, VkAccessFlags srcAccess,
              VkPipelineStageFlags dst, VkAccessFlags dstAccess) {
     VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER, nullptr, srcAccess, dstAccess};
@@ -373,7 +419,8 @@ void record(Channel* c, uint32_t k, const std::array<int64_t, kBindingCount>& up
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     c->fn.BeginCommandBuffer(cmd, &begin);
     // The previous frames' readers finish before this frame overwrites what they read (write after read).
-    barrier(c, cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, VK_PIPELINE_STAGE_TRANSFER_BIT, 0);
+    barrier(c, cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0,
+            VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0);
     if (!c->initialised) {
         c->fn.CmdFillBuffer(cmd, c->frame, 0, VK_WHOLE_SIZE, 0);
         Image* all[] = {&c->noise, &c->cirrus, &c->skyCache, &c->shadow};
@@ -407,8 +454,19 @@ void record(Channel* c, uint32_t k, const std::array<int64_t, kBindingCount>& up
     }
     VkBufferCopy frameCopy{(VkDeviceSize)k * kMaxFrameBytes, 0, kMaxFrameBytes};
     c->fn.CmdCopyBuffer(cmd, c->ring, c->frame, 1, &frameCopy);
+    if (c->pass != VK_NULL_HANDLE) {
+        barrier(c, cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+        c->fn.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c->pass);
+        c->fn.CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, c->passLayout, kFrameSet, 1, &c->set, 0,
+                                    nullptr);
+        dispatchPass(c, cmd, 1, kSkyCacheSize);
+        dispatchPass(c, cmd, 2, kShadowSize);
+    }
     // Every later command on the queue, the runtime's frame among them, sees this frame's block and images.
-    barrier(c, cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+    barrier(c, cmd, VK_PIPELINE_STAGE_TRANSFER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_ACCESS_TRANSFER_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
             VK_ACCESS_UNIFORM_READ_BIT | VK_ACCESS_SHADER_READ_BIT);
     c->fn.EndCommandBuffer(cmd);
 }
@@ -450,7 +508,8 @@ std::array<int64_t, kBindingCount> takeUploads(Channel* c, uint32_t k) {
 
 Channel* createChannel(VkPhysicalDevice gpu, VkDevice device, const VkDeviceCreateInfo* info,
                        PFN_vkGetDeviceProcAddr gdpa, PFN_vkGetInstanceProcAddr gipa, VkInstance instance,
-                       PFN_vkSetDeviceLoaderData setLoaderData, std::string& report) {
+                       PFN_vkSetDeviceLoaderData setLoaderData, const std::vector<uint32_t>& program,
+                       std::string& report) {
     auto* c = new Channel();
     c->device = device;
     c->setLoaderData = setLoaderData;
@@ -482,6 +541,7 @@ Channel* createChannel(VkPhysicalDevice gpu, VkDevice device, const VkDeviceCrea
             c->state = 1;
             g_live.store(c, std::memory_order_release);
             report += "; channel up";
+            buildPass(c, program, report);
             return c;
         }
     }
@@ -498,6 +558,8 @@ void destroyChannel(Channel* c) {
         if (slot.fence) c->fn.DestroyFence(c->device, slot.fence, nullptr);
     }
     if (c->commandPool) c->fn.DestroyCommandPool(c->device, c->commandPool, nullptr);
+    if (c->pass) c->fn.DestroyPipeline(c->device, c->pass, nullptr);
+    if (c->passLayout) c->fn.DestroyPipelineLayout(c->device, c->passLayout, nullptr);
     if (c->repeatLinear) c->fn.DestroySampler(c->device, c->repeatLinear, nullptr);
     if (c->clampLinear) c->fn.DestroySampler(c->device, c->clampLinear, nullptr);
     for (Image* im : {&c->noise, &c->cirrus, &c->skyCache, &c->shadow}) {

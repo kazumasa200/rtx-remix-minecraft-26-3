@@ -49,7 +49,52 @@ vec4 rrp_cloudsPrimary(vec3 direction, vec3 camera, uvec2 pixel) {
     return clouds + (1.0 - clouds.a) * cirrusLayer(normalize(direction));
 }
 
+// The clouds between the camera and a surface limit blocks along direction, premultiplied, in the sky matte's
+// units: what the composite lays over land seen through or beyond them, as when flying in or above the clouds
+// or looking at distant terrain behind them. Nothing for a limit of 0 (a miss, or sky seen through glass).
+vec4 rrp_cloudsLand(vec3 direction, vec3 camera, uvec2 pixel, float limit) {
+    if (Enabled == 0u || limit <= 0.0) {
+        return vec4(0.0);
+    }
+    CameraXZ = camera.xz + SceneToCloud;
+    CameraHeight = camera.y;
+    float entry;
+    return marchCloudsTo(normalize(direction), rrpJitter(pixel), limit, entry);
+}
+
+// The clouds the frame's camera sees along direction, from the layer's sky cache: what a reflection, a ray
+// through glass or water, or an indirect ray that missed lays over the sky probe, as the dome gave them.
+vec4 rrp_cloudsSky(vec3 direction) {
+    if (Enabled == 0u) {
+        return vec4(0.0);
+    }
+    return textureLod(RrpSkyCache, rrpOctEncode(normalize(direction)), 0.0);
+}
+
+// The share of a shadow ray's light the clouds let through: 1 unless the ray is the clouds' light's, long as a
+// distant light's and within the light's cone, so a lamp's light never dims under a cloud. Each layer counts
+// only for a point below its middle, as the clouds' own shadow reads them.
+float rrp_cloudShadow(vec3 origin, vec3 direction, float tMax) {
+    if (Enabled == 0u || ShadowStrength <= 0.0 || tMax < DistantRayMin
+            || dot(normalize(direction), LightDirection) < LightConeCos) {
+        return 1.0;
+    }
+    vec3 cloud = vec3(origin.x + SceneToCloud.x, origin.y, origin.z + SceneToCloud.y);
+    vec2 uv = rrpShadowUv(cloud.xz, cloud.y);
+    if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) {
+        return 1.0;
+    }
+    vec3 depth = textureLod(RrpCloudShadow, uv, 0.0).xyz;
+    vec3 below = vec3(
+        cloud.y < layerBase(LAYER_SMALL) + layerThickness(LAYER_SMALL) * 0.4 ? 1.0 : 0.0,
+        cloud.y < layerBase(LAYER_LARGE) + layerThickness(LAYER_LARGE) * 0.4 ? 1.0 : 0.0,
+        cloud.y < layerBase(LAYER_ALTO) + layerThickness(LAYER_ALTO) * 0.4 ? 1.0 : 0.0);
+    return mix(1.0, exp(-dot(depth, below)), ShadowStrength);
+}
+
 layout(local_size_x = 1) in;
 void main() {
-    vec4 keep = rrp_cloudsPrimary(vec3(0.0, 1.0, 0.0), vec3(0.0), uvec2(0u));
+    vec4 keep = rrp_cloudsPrimary(vec3(0.0, 1.0, 0.0), vec3(0.0), uvec2(0u))
+        + rrp_cloudsLand(vec3(0.0, 1.0, 0.0), vec3(0.0), uvec2(0u), 1.0)
+        + rrp_cloudsSky(vec3(0.0, 1.0, 0.0)) + vec4(rrp_cloudShadow(vec3(0.0), vec3(0.0, 1.0, 0.0), 1.0));
 }

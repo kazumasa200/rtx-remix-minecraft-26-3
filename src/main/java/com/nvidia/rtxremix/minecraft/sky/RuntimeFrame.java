@@ -79,9 +79,9 @@ public final class RuntimeFrame {
      * from scene space to the clouds' frame at the camera.
      */
     static void clouds(VolumetricCloudGenerator.Frame frame, double sceneToCloudX, double sceneToCloudZ,
-                       float shadowStrength) {
+                       float shadowStrength, boolean marchCache) {
         BLOCK.set(ValueLayout.JAVA_INT, ENABLED, 1);
-        BLOCK.set(ValueLayout.JAVA_INT, MARCH_CACHE, 0);
+        BLOCK.set(ValueLayout.JAVA_INT, MARCH_CACHE, marchCache ? 1 : 0);
         BLOCK.set(ValueLayout.JAVA_INT, PARITY, (int) frame.parity);
         putFloats(FRAME_CAMERA_XZ, frame.cameraX, frame.cameraZ, frame.cameraHeight, frame.historyWeight);
         putFloats(SCENE_TO_CLOUD, (float) sceneToCloudX, (float) sceneToCloudZ, shadowStrength,

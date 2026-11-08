@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace rrp {
 
@@ -39,7 +40,8 @@ struct Channel;
 // (no layout is extended, nothing is bound) and report says why.
 Channel* createChannel(VkPhysicalDevice gpu, VkDevice device, const VkDeviceCreateInfo* info,
                        PFN_vkGetDeviceProcAddr gdpa, PFN_vkGetInstanceProcAddr gipa, VkInstance instance,
-                       PFN_vkSetDeviceLoaderData setLoaderData, std::string& report);
+                       PFN_vkSetDeviceLoaderData setLoaderData, const std::vector<uint32_t>& program,
+                       std::string& report);
 void destroyChannel(Channel* channel);
 bool channelUp(const Channel* channel);
 

@@ -139,6 +139,7 @@ struct PatchSet {
 
 std::atomic<const PatchSet*> g_set{nullptr};
 std::set<std::string> g_channelGroups;  // groups whose code reads set 4 (#channel lines in the manifest)
+std::vector<uint32_t> g_program;        // the layer's own pass (#program line), read at arm time
 std::string g_groupsReport;             // the published set's groups, as rrp_groups returns them
 const PatchSet* publishSet(const std::set<std::string>& vetoed, std::string& report);
 
@@ -284,7 +285,8 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateDevice(VkPhysicalDevice gpu, const VkDevice
                       nullptr};
     std::string report;
     if (instance != VK_NULL_HANDLE) {
-        chain.channel = rrp::createChannel(gpu, *out, info, nextDevice, nextInstance, instance, setLoaderData, report);
+        chain.channel =
+            rrp::createChannel(gpu, *out, info, nextDevice, nextInstance, instance, setLoaderData, g_program, report);
     } else {
         report = "; channel down (no instance)";
     }
@@ -522,6 +524,15 @@ const PatchSet* loadAndVerify(const std::wstring& dir, std::string& report) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line == "#format 2") formatSeen = true;
         if (line.rfind("#channel ", 0) == 0) g_channelGroups.insert(line.substr(9));
+        if (line.rfind("#program ", 0) == 0) {
+            std::vector<uint8_t> bytes;
+            std::wstring path = dir + L"\\patches\\" + widen(line.substr(9));
+            WIN32_FILE_ATTRIBUTE_DATA a;
+            if (GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &a) && a.nFileSizeLow % 4 == 0 &&
+                readFile(path, 0, a.nFileSizeLow, bytes)) {
+                g_program.assign((const uint32_t*)bytes.data(), (const uint32_t*)bytes.data() + bytes.size() / 4);
+            }
+        }
         if (line.empty() || line[0] == '#') continue;
         std::istringstream fields(line);
         std::string key, offset, bytes, groupList, file;
