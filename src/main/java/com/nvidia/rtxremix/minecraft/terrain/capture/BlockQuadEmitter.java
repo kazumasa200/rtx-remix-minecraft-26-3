@@ -7,6 +7,7 @@ package com.nvidia.rtxremix.minecraft.terrain.capture;
 import com.nvidia.rtxremix.RemixAPI;
 import com.nvidia.rtxremix.minecraft.light.BlockLightRuleManager;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
+import com.nvidia.rtxremix.minecraft.texture.RedstoneEmission;
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
@@ -427,6 +428,7 @@ public final class BlockQuadEmitter {
         } finally {
             parts.clear();
         }
+        writer.flushBlock(texManager, RedstoneEmission.of(state), RedstoneEmission.powerOf(state));
     }
 
     /**
@@ -545,8 +547,6 @@ public final class BlockQuadEmitter {
                 stageBakedQuad(unculledQuads.get(q), layerOverride, state, world, lx, ly, lz);
             }
         }
-
-        writer.flushBlock(texManager);
     }
 
     private void stageBakedQuad(BakedQuad bq, @Nullable String layerOverride,
@@ -756,7 +756,6 @@ public final class BlockQuadEmitter {
         random.setSeed(modelRandomSeed);
         model.emitQuads(frapiEmitter, world, mutablePos, state, random, frapiCullTest);
 
-        writer.flushBlock(texManager);
         frapiState = null;
         frapiWorld = null;
     }

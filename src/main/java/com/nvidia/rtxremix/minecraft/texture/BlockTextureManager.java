@@ -64,9 +64,11 @@ public class BlockTextureManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BlockTextureManager.class);
     public static final Identifier BLOCK_ATLAS_ID = Identifier.fromNamespaceAndPath("minecraft", "textures/atlas/blocks.png");
+    /** A cutout texel is drawn when its alpha is greater than this. */
+    private static final int CUTOUT_ALPHA_REFERENCE = 128;
     /** Blend state for draw calls using the atlas cutout material, which sets useDrawCallAlphaState=true. */
     public static final InstanceInfoBlendEXT ATLAS_CUTOUT_BLEND =
-            InstanceInfoBlendEXT.textureTimesVertexColorAlphaTest(128);
+            InstanceInfoBlendEXT.textureTimesVertexColorAlphaTest(CUTOUT_ALPHA_REFERENCE);
     /** Blend state for draw calls using the atlas translucent material, as terrain pairs its translucent pages. */
     public static final InstanceInfoBlendEXT ATLAS_TRANSLUCENT_BLEND =
             InstanceInfoBlendEXT.textureTimesVertexColor();
@@ -81,6 +83,8 @@ public class BlockTextureManager {
     public static final float MAX_TERRAIN_EMISSION_MULTIPLIER = 50.0f;
     private static final float BASE_TERRAIN_EMISSION_INTENSITY = 100.0f;
     public static final int L_SOLID = 0, L_CUTOUT = 1, L_CUTOUT_MIPPED = 2, L_TRANS = 3, L_GLASS = 4, LAYER_COUNT = 5;
+    private static final RedstoneEmission[] REDSTONE_EMISSIONS = RedstoneEmission.values();
+    private static final int PLAIN = 0, SUBSURFACE = 1;
 
     private static BlockTextureManager INSTANCE;
 
@@ -103,15 +107,19 @@ public class BlockTextureManager {
     /** Sprites' colours averaged down for the puddles' copies of the ground; see {@link #spriteSamples}. */
     private final Map<Identifier, int[]> spriteSamples = new HashMap<>();
     private final Map<Long, RemixMaterial> materials = new HashMap<>();
-    private final RemixMaterial[] atlasMaterials = new RemixMaterial[LAYER_COUNT];
     /**
-     * The atlas materials less the emissive atlas, for terrain whose sprite emits nothing. A
-     * face seen edge on samples the atlas at its coarsest mip, where every lamp, torch and
-     * lava texel is averaged in, and glowed yellow along lines through the camera at night.
+     * Atlas materials by {@link RedstoneEmission}, then {@link #PLAIN} or {@link #SUBSURFACE},
+     * then layer type. {@link RedstoneEmission#NONE} without subsurface samples the emissive
+     * atlas and is what a sprite with texels there uses. Subsurface materials, and
+     * {@link RedstoneEmission#UNPOWERED}, sample no emissive atlas: a face seen edge on would
+     * otherwise average every lamp, torch and lava texel into a yellow line at night. An
+     * emitting sprite takes the plain emissive material and loses its subsurface scattering.
+     * {@link RedstoneEmission#POWERED} emits the albedo, which the runtime tints by the dust's
+     * power colour. Unpowered subsurface dust reuses the ordinary subsurface material: with
+     * subsurface on, both sample no emissive atlas. Blended layers have no powered-dust variant.
      */
-    private final RemixMaterial[] atlasMaterialsWithoutEmission = new RemixMaterial[LAYER_COUNT];
-    /** Without emission too: an emitting sprite takes {@link #atlasMaterials} and loses its SSS. */
-    private final RemixMaterial[] atlasMaterialsSSS = new RemixMaterial[LAYER_COUNT];
+    private final RemixMaterial[][][] atlasMaterials =
+            new RemixMaterial[REDSTONE_EMISSIONS.length][2][LAYER_COUNT];
     private final List<RemixTexture> managedTextures = new ArrayList<>();
     private final List<RemixMaterial> managedMaterials = new ArrayList<>();
     private RemixMaterial waterSurfaceMaterial;
@@ -184,6 +192,9 @@ public class BlockTextureManager {
         public final boolean readsAsTranslucent;
         final int pixW, pixH, pixX, pixY;
         private final BitSet transparentPixels;
+        /** Texels the cutout alpha test discards, or null when it keeps them all. */
+        private final BitSet cutoutClearPixels;
+        boolean animated;
         RemixTexture albedo, normal, roughness, metallic, height, emissive, sss, sssAlbedo;
         public boolean hasPBR, hasSSS;
         /** Whether the sprite has texels in the emissive atlas. */
@@ -196,13 +207,15 @@ public class BlockTextureManager {
             pixX = AtlasSprites.contentX(s); pixY = AtlasSprites.contentY(s);
             SpriteContents contents = s.contents();
             pixW = contents.width(); pixH = contents.height();
-            transparentPixels = scanTransparency(contents, pixW, pixH);
-            hasTransparency = transparentPixels != null && !transparentPixels.isEmpty();
-            readsAsTranslucent = scanReadsAsTranslucent(contents, pixW, pixH);
+            NativeImage image = ((SpriteContentsAccessor) contents).getImage();
+            transparentPixels = scanAlphaAtMost(image, pixW, pixH, 254);
+            cutoutClearPixels = scanAlphaAtMost(image, pixW, pixH, CUTOUT_ALPHA_REFERENCE);
+            hasTransparency = transparentPixels != null;
+            readsAsTranslucent = scanReadsAsTranslucent(image, pixW, pixH);
+            animated = ((SpriteContentsAccessor) contents).getAnimatedTexture() != null;
         }
 
-        private static boolean scanReadsAsTranslucent(SpriteContents contents, int w, int h) {
-            NativeImage img = ((SpriteContentsAccessor) contents).getImage();
+        private static boolean scanReadsAsTranslucent(NativeImage img, int w, int h) {
             if (img == null) return true;
             int clear = 0, partial = 0;
             for (int y = 0; y < h; y++)
@@ -242,17 +255,45 @@ public class BlockTextureManager {
             return false;
         }
 
-        private static BitSet scanTransparency(SpriteContents contents, int w, int h) {
-            NativeImage img = ((SpriteContentsAccessor) contents).getImage();
+        /** The sprite's width in texels. */
+        public int texelWidth() {
+            return pixW;
+        }
+
+        /** The sprite's height in texels. */
+        public int texelHeight() {
+            return pixH;
+        }
+
+        /**
+         * Whether the sprite is animated. Its transparency is scanned from one frame only, so
+         * it says nothing about the others.
+         */
+        public boolean isAnimated() {
+            return animated;
+        }
+
+        /** The index of the texel under an atlas-space UV, clamped to the sprite. */
+        public int texelAt(float u, float v) {
+            return uvToMinTexel(v, v0, v1, pixH) * pixW + uvToMinTexel(u, u0, u1, pixW);
+        }
+
+        /** Whether the cutout alpha test keeps a texel, by its {@link #texelAt} index. */
+        public boolean isOpaqueTexel(int texel) {
+            return cutoutClearPixels == null || !cutoutClearPixels.get(texel);
+        }
+
+        /** The texels whose alpha is at most {@code maxAlpha}, or null when there are none. */
+        private static BitSet scanAlphaAtMost(NativeImage img, int w, int h, int maxAlpha) {
             if (img == null) return null;
-            BitSet transparent = null;
+            BitSet matching = null;
             for (int y = 0; y < h; y++)
                 for (int x = 0; x < w; x++)
-                    if (((img.getPixelABGR(x, y) >> 24) & 0xFF) < 255) {
-                        if (transparent == null) transparent = new BitSet(w * h);
-                        transparent.set(y * w + x);
+                    if (((img.getPixelABGR(x, y) >> 24) & 0xFF) <= maxAlpha) {
+                        if (matching == null) matching = new BitSet(w * h);
+                        matching.set(y * w + x);
                     }
-            return transparent;
+            return matching;
         }
 
         private static int uvToMinTexel(float uv, float spriteMin, float spriteMax, int size) {
@@ -593,21 +634,22 @@ public class BlockTextureManager {
         atlasSssTex = sssTex;
         atlasSssAlbedoTex = sssAlbedoTex;
 
-        for (int lt = 0; lt < LAYER_COUNT; lt++) {
-            if (lt == L_TRANS) {
-                atlasMaterials[lt] = createAtlasTransMaterial(emissiveTex, normalTex);
-                atlasMaterialsWithoutEmission[lt] = createAtlasTransMaterial(null, normalTex);
-            } else if (lt == L_GLASS) {
-                atlasMaterials[lt] = createAtlasGlassMaterial(emissiveTex, normalTex);
-                atlasMaterialsWithoutEmission[lt] = createAtlasGlassMaterial(null, normalTex);
-            } else {
-                atlasMaterials[lt] = createAtlasOpaqueMaterial(lt, normalTex, heightTex,
-                        roughnessTex, metallicTex, emissiveTex, null, null);
-                atlasMaterialsWithoutEmission[lt] = createAtlasOpaqueMaterial(lt, normalTex, heightTex,
-                        roughnessTex, metallicTex, null, null, null);
-                atlasMaterialsSSS[lt] = hasAnySSS ? createAtlasOpaqueMaterial(lt, normalTex, heightTex,
-                        roughnessTex, metallicTex, null,
-                        sssTex, sssAlbedoTex) : null;
+        for (RedstoneEmission emission : REDSTONE_EMISSIONS) {
+            for (int lt = 0; lt < LAYER_COUNT; lt++) {
+                boolean blended = isBlendedLayerType(lt);
+                // Powered dust is an alpha-tested surface. A blended layer keeps the ordinary
+                // materials: with the emissive atlas, and without it.
+                if (blended && emission == RedstoneEmission.POWERED) continue;
+                atlasMaterials[emission.ordinal()][PLAIN][lt] =
+                        createMaterialViaStore(atlasMaterialInfo(lt, false, emission));
+                if (hasAnySSS && !blended) {
+                    // Unpowered dust with subsurface matches ordinary subsurface terrain, so it
+                    // shares that material instead of taking a second copy of it.
+                    atlasMaterials[emission.ordinal()][SUBSURFACE][lt] =
+                            emission == RedstoneEmission.UNPOWERED
+                                    ? atlasMaterials[RedstoneEmission.NONE.ordinal()][SUBSURFACE][lt]
+                                    : createMaterialViaStore(atlasMaterialInfo(lt, true, emission));
+                }
             }
         }
         int sssCount = 0;
@@ -629,14 +671,27 @@ public class BlockTextureManager {
                 hasAnyNormal, hasAnyHeight, hasAnyEmissive, hasAnySSS, sssCount, sssSprites);
     }
 
-    private RemixMaterial createAtlasOpaqueMaterial(int lt, RemixTexture normalTex,
-                                               RemixTexture heightTex, RemixTexture roughnessTex,
-                                               RemixTexture metallicTex, RemixTexture emissiveTex,
-                                               RemixTexture sssTex,
-                                               RemixTexture sssAlbedoTex) {
-        return createMaterialViaStore(buildAtlasOpaqueMaterialInfo(
-                lt, normalTex, heightTex, roughnessTex, metallicTex, emissiveTex,
-                sssTex, sssAlbedoTex, terrainEmissionIntensity()));
+    private static boolean isBlendedLayerType(int layerType) {
+        return layerType == L_TRANS || layerType == L_GLASS;
+    }
+
+    /**
+     * Describes one atlas material. Every variant samples the same atlas textures, so an
+     * animated sprite stays in step across all of them; they differ only in layer type,
+     * subsurface scattering, and the emission {@link RedstoneEmission} asks for.
+     */
+    MaterialInfo atlasMaterialInfo(int layerType, boolean subsurface, RedstoneEmission emission) {
+        RemixTexture emissive = switch (emission) {
+            case NONE -> subsurface ? null : atlasEmissive;
+            case UNPOWERED -> null;
+            case POWERED -> atlasAlbedo;
+        };
+        float intensity = terrainEmissionIntensity();
+        if (layerType == L_TRANS) return buildAtlasTransMaterialInfo(emissive, atlasNormalTex, intensity);
+        if (layerType == L_GLASS) return buildAtlasGlassMaterialInfo(emissive, atlasNormalTex, intensity);
+        return buildAtlasOpaqueMaterialInfo(layerType, atlasNormalTex, atlasHeightTex,
+                atlasRoughnessTex, atlasMetallicTex, emissive,
+                subsurface ? atlasSssTex : null, subsurface ? atlasSssAlbedoTex : null, intensity);
     }
 
     private MaterialInfo buildAtlasOpaqueMaterialInfo(int lt, RemixTexture normalTex,
@@ -648,7 +703,7 @@ public class BlockTextureManager {
         MaterialInfoOpaqueEXT.Builder ob = MaterialInfoOpaqueEXT.builder()
                 .albedoConstant(1f, 1f, 1f).roughnessConstant(1f).metallicConstant(1f)
                 .useDrawCallAlphaState(true);
-        if (lt != L_SOLID) ob.alphaTestType(4).alphaReferenceValue(128);
+        if (lt != L_SOLID) ob.alphaTestType(4).alphaReferenceValue(CUTOUT_ALPHA_REFERENCE);
         if (roughnessTex != null) ob.roughnessTexture(roughnessTex.getHandle());
         if (metallicTex != null)  ob.metallicTexture(metallicTex.getHandle());
         if (heightTex != null)    ob.heightTexture(heightTex.getHandle()).displaceIn(POM_DISPLACE_IN);
@@ -726,11 +781,6 @@ public class BlockTextureManager {
     }
 
 
-    private RemixMaterial createAtlasTransMaterial(RemixTexture emissiveTex, RemixTexture normalTex) {
-        return createMaterialViaStore(buildAtlasTransMaterialInfo(
-                emissiveTex, normalTex, terrainEmissionIntensity()));
-    }
-
     private MaterialInfo buildAtlasTransMaterialInfo(
             RemixTexture emissiveTex, RemixTexture normalTex, float emissionIntensity) {
         MaterialInfo.Builder mb = MaterialInfo.builder()
@@ -753,18 +803,19 @@ public class BlockTextureManager {
      * transmission and the albedo rides on top as a diffuse layer blended by its
      * alpha, which draws the frame and streaks opaque and leaves the rest to refract.
      */
-    private RemixMaterial createAtlasGlassMaterial(RemixTexture emissiveTex, RemixTexture normalTex) {
+    private MaterialInfo buildAtlasGlassMaterialInfo(
+            RemixTexture emissiveTex, RemixTexture normalTex, float emissionIntensity) {
         MaterialInfo.Builder mb = MaterialInfo.builder()
                 .albedoTexture(atlasAlbedo.getHandle()).filterMode(0);
         if (normalTex != null) mb.normalTexture(normalTex.getHandle());
         if (emissiveTex != null) {
             mb.emissiveTexture(emissiveTex.getHandle())
-                    .emissiveIntensity(terrainEmissionIntensity());
+                    .emissiveIntensity(emissionIntensity);
         }
-        return createMaterialViaStore(mb.translucentExt(MaterialInfoTranslucentEXT.builder()
+        return mb.translucentExt(MaterialInfoTranslucentEXT.builder()
                 .refractiveIndex(COMMON_GLASS_IOR).transmittanceColor(0.97f, 0.97f, 0.97f)
                 .transmittanceMeasurementDistance(0.35f)
-                .useDiffuseLayer(true).build()).build());
+                .useDiffuseLayer(true).build()).build();
     }
 
     // ====================================================================
@@ -966,7 +1017,7 @@ public class BlockTextureManager {
     public boolean isCutoutSssAlbedoTextureEnabled() { return cutoutSssAlbedoTextureEnabled; }
     public float getTerrainEmissionMultiplier() { return terrainEmissionMultiplier; }
     public boolean hasCutoutSssAtlasMaterial() {
-        return atlasMaterialsSSS[L_CUTOUT] != null || atlasMaterialsSSS[L_CUTOUT_MIPPED] != null;
+        return getAtlasMaterialSSS(L_CUTOUT) != null || getAtlasMaterialSSS(L_CUTOUT_MIPPED) != null;
     }
 
     public void setTerrainEmissionMultiplier(float multiplier) {
@@ -1066,10 +1117,14 @@ public class BlockTextureManager {
     }
 
     private void rebuildAtlasSssMaterial(int layerType) {
-        destroyManagedMaterial(atlasMaterialsSSS[layerType]);
-        atlasMaterialsSSS[layerType] = createAtlasOpaqueMaterial(layerType, atlasNormalTex,
-                atlasHeightTex, atlasRoughnessTex, atlasMetallicTex, null, atlasSssTex,
-                atlasSssAlbedoTex);
+        for (RedstoneEmission emission : REDSTONE_EMISSIONS) {
+            if (emission == RedstoneEmission.UNPOWERED) continue;
+            RemixMaterial[] subsurface = atlasMaterials[emission.ordinal()][SUBSURFACE];
+            destroyManagedMaterial(subsurface[layerType]);
+            subsurface[layerType] = createMaterialViaStore(atlasMaterialInfo(layerType, true, emission));
+        }
+        atlasMaterials[RedstoneEmission.UNPOWERED.ordinal()][SUBSURFACE][layerType] =
+                atlasMaterials[RedstoneEmission.NONE.ordinal()][SUBSURFACE][layerType];
     }
 
     private void forgetCachedCutoutSpriteMaterials() {
@@ -1094,19 +1149,32 @@ public class BlockTextureManager {
         return waterSurfaceMaterial != null && waterCameraMediumMaterial != null;
     }
 
-    /** Returns the atlas-based material (no SSS) for the given layer type. */
+    /** The atlas material that samples the emissive atlas, for a sprite that has texels there. */
     public RemixMaterial getAtlasMaterial(int layerType) {
-        return atlasMaterials[layerType];
+        return getAtlasMaterial(layerType, false, RedstoneEmission.NONE);
     }
 
-    /** Returns the atlas-based material without the emissive atlas for the given layer type. */
+    /**
+     * The atlas material without the emissive atlas. Non-emitting terrain shares it with
+     * unpowered dust: both must stay dark when a coarse mip would otherwise average in
+     * every lamp in the atlas.
+     */
     public RemixMaterial getAtlasMaterialWithoutEmission(int layerType) {
-        return atlasMaterialsWithoutEmission[layerType];
+        return getAtlasMaterial(layerType, false, RedstoneEmission.UNPOWERED);
     }
 
     /** Returns the atlas-based SSS material for the given layer type, or null if none. */
     public RemixMaterial getAtlasMaterialSSS(int layerType) {
-        return atlasMaterialsSSS[layerType];
+        return getAtlasMaterial(layerType, true, RedstoneEmission.NONE);
+    }
+
+    /**
+     * Returns the atlas material for a terrain surface, or null when the atlas has no such
+     * variant: subsurface scattering without SSS in the atlas, or dust in a blended layer.
+     * Materials are created during render-thread atlas setup, so capture workers may read them.
+     */
+    public RemixMaterial getAtlasMaterial(int layerType, boolean subsurface, RedstoneEmission emission) {
+        return atlasMaterials[emission.ordinal()][subsurface ? SUBSURFACE : PLAIN][layerType];
     }
 
     /** Maps sprite identifiers (e.g. "minecraft:block/glowstone") to max block luminance. */
@@ -1242,7 +1310,7 @@ public class BlockTextureManager {
 
         MaterialInfoOpaqueEXT.Builder ob = MaterialInfoOpaqueEXT.builder()
                 .albedoConstant(1f, 1f, 1f).useDrawCallAlphaState(true);
-        if (lt != L_SOLID) ob.alphaTestType(4).alphaReferenceValue(128);
+        if (lt != L_SOLID) ob.alphaTestType(4).alphaReferenceValue(CUTOUT_ALPHA_REFERENCE);
 
         MaterialInfo.Builder mb = MaterialInfo.builder()
                 .albedoTexture(se.albedo.getHandle()).filterMode(0);
@@ -1274,7 +1342,7 @@ public class BlockTextureManager {
                 .useDiffuseLayer(false).build()).build());
     }
 
-    /** Per-sprite form of {@link #createAtlasGlassMaterial}: clear transmission with the sprite as a diffuse layer. */
+    /** Per-sprite form of {@link #buildAtlasGlassMaterialInfo}: clear transmission with the sprite as a diffuse layer. */
     private RemixMaterial createGlassMaterial(SpriteEntry se) {
         MaterialInfo.Builder mb = MaterialInfo.builder()
                 .albedoTexture(se.albedo.getHandle()).filterMode(0);
@@ -1461,9 +1529,9 @@ public class BlockTextureManager {
             if (!tex.isDeleted()) tex.destroy();
         managedTextures.clear();
         materials.clear(); sprites.clear(); spriteById.clear(); spriteLightColors.clear(); spriteSamples.clear();
-        Arrays.fill(atlasMaterials, null);
-        Arrays.fill(atlasMaterialsWithoutEmission, null);
-        Arrays.fill(atlasMaterialsSSS, null);
+        for (RemixMaterial[][] byEmission : atlasMaterials) {
+            for (RemixMaterial[] byLayer : byEmission) Arrays.fill(byLayer, null);
+        }
         atlasNormalTex = null;
         atlasHeightTex = null;
         atlasRoughnessTex = null;
