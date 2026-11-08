@@ -5,23 +5,34 @@
 // loader then loads this same DLL into the runtime's instance. The layer sees every
 // vkCreateShaderModule the runtime makes.
 //
-// This first version only passes calls through and counts them, so the mod can confirm that the
-// loader loaded the layer (instanceHooked) and see the modules that reach it. With
-// RTXREMIX_PATCH_DUMP set to a directory, every module of a size listed in RTXREMIX_PATCH_DUMP_SIZES
-// (comma-separated byte counts) is written there, for comparing incoming code with the modules
-// embedded in d3d9.dll.
+// The layer does no pattern matching and no SPIR-V editing. The build tool (tools/src/rtx_tools/
+// runtime_patch) writes finished, validated replacement modules into patches/ beside this DLL with a
+// manifest. rrp_arm reads the manifest and checks every entry against the bytes of the d3d9.dll that
+// sits beside it; a patch group applies only when every one of its modules matched, so a group is
+// never half applied. The layer then replaces a module whose key is in the published set.
+//
+// Keys are SHA-256 over the module with every OpDecorate Binding and DescriptorSet literal zeroed:
+// dxvk rewrites binding literals before vkCreateShaderModule (17 in the composite module), so the
+// module that arrives differs from the embedded one there and only there. The replacement takes the
+// incoming literals by decoration target, which works because passes keep every original result id.
 #include <vulkan/vk_layer.h>
 #include <vulkan/vulkan.h>
 #include <windows.h>
+#include <bcrypt.h>
+
+#pragma comment(lib, "bcrypt.lib")
 
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
+#include <map>
 #include <set>
+#include <sstream>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #define RRP_EXPORT extern "C" __declspec(dllexport)
 
@@ -31,7 +42,7 @@ constexpr const char* LAYER_NAME = "VK_LAYER_RTXREMIX_spirv_patch";
 constexpr const wchar_t* LAYER_NAME_W = L"VK_LAYER_RTXREMIX_spirv_patch";
 constexpr const wchar_t* MANIFEST_NAME = L"VkLayer_rtxremix_spirv_patch.json";
 
-std::atomic<uint32_t> g_armed{0}, g_hooked{0}, g_devices{0}, g_seen{0}, g_dumped{0};
+std::atomic<uint32_t> g_armed{0}, g_hooked{0}, g_devices{0}, g_seen{0}, g_replaced{0}, g_fellBack{0};
 
 struct InstanceChain {
     PFN_vkGetInstanceProcAddr next;
@@ -49,34 +60,77 @@ std::unordered_map<void*, DeviceChain> g_deviceChains;
 
 void* dispatchKey(const void* handle) { return *(void* const*)handle; }
 
-// ---- module dumps (diagnostic) ----------------------------------------------------------------
+// ---- keys -----------------------------------------------------------------------------------
 
-std::once_flag g_dumpOnce;
-std::wstring g_dumpDir;
-std::set<size_t> g_dumpSizes;
+constexpr uint32_t OP_DECORATE = 71;
+constexpr uint32_t DECORATION_BINDING = 33;
+constexpr uint32_t DECORATION_DESCRIPTOR_SET = 34;
 
-void readDumpSettings() {
-    wchar_t dir[MAX_PATH];
-    if (GetEnvironmentVariableW(L"RTXREMIX_PATCH_DUMP", dir, MAX_PATH) == 0) return;
-    char sizes[1024];
-    if (GetEnvironmentVariableA("RTXREMIX_PATCH_DUMP_SIZES", sizes, sizeof sizes) == 0) return;
-    g_dumpDir = dir;
-    for (char* token = strtok(sizes, ","); token; token = strtok(nullptr, ",")) {
-        g_dumpSizes.insert((size_t)_strtoui64(token, nullptr, 10));
+struct Key {
+    uint8_t bytes[32];
+    bool operator==(const Key& other) const { return memcmp(bytes, other.bytes, 32) == 0; }
+};
+struct KeyHash {
+    size_t operator()(const Key& k) const {
+        size_t h;
+        memcpy(&h, k.bytes, sizeof h);
+        return h;
     }
+};
+
+bool sha256(const void* data, size_t bytes, uint8_t out[32]) {
+    return BCryptHash(BCRYPT_SHA256_ALG_HANDLE, nullptr, 0, (PUCHAR)data, (ULONG)bytes, out, 32) == 0;
 }
 
-void maybeDump(const VkShaderModuleCreateInfo* info) {
-    std::call_once(g_dumpOnce, readDumpSettings);
-    if (g_dumpDir.empty() || !g_dumpSizes.count(info->codeSize)) return;
-    uint32_t n = g_dumped.fetch_add(1);
-    wchar_t path[MAX_PATH + 64];
-    swprintf(path, MAX_PATH + 64, L"%s\\incoming_%zu_%u.spv", g_dumpDir.c_str(), info->codeSize, n);
-    HANDLE f = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (f == INVALID_HANDLE_VALUE) return;
-    DWORD written = 0;
-    WriteFile(f, info->pCode, (DWORD)info->codeSize, &written, nullptr);
-    CloseHandle(f);
+// Calls visit(wordIndex) for the literal word of every OpDecorate Binding/DescriptorSet. False when
+// the module is not well formed.
+template <typename Visit>
+bool forEachBindingLiteral(const uint32_t* code, size_t words, Visit visit) {
+    if (words < 5 || code[0] != 0x07230203) return false;
+    for (size_t i = 5; i < words;) {
+        uint32_t count = code[i] >> 16, op = code[i] & 0xffff;
+        if (count == 0 || i + count > words) return false;
+        if (op == OP_DECORATE && count >= 4 &&
+            (code[i + 2] == DECORATION_BINDING || code[i + 2] == DECORATION_DESCRIPTOR_SET)) {
+            visit(i);
+        }
+        i += count;
+    }
+    return true;
+}
+
+// The one key rule; rrp_key gives the build tool the same function.
+bool moduleKey(const uint32_t* code, size_t words, Key& out) {
+    std::vector<uint32_t> scratch(code, code + words);
+    if (!forEachBindingLiteral(scratch.data(), words, [&](size_t i) { scratch[i + 3] = 0; })) return false;
+    return sha256(scratch.data(), words * 4, out.bytes);
+}
+
+// ---- the published patch set ------------------------------------------------------------------
+
+struct Replacement {
+    std::wstring file;
+    std::vector<uint32_t> code;  // loaded at arm time
+};
+
+// Immutable once published: vkCreateShaderModule reads it from the runtime's compile threads.
+struct PatchSet {
+    std::unordered_map<Key, Replacement, KeyHash> byKey;
+    std::set<size_t> sizes;  // a module of another size is never hashed
+};
+
+std::atomic<const PatchSet*> g_set{nullptr};
+
+// The replacement with the incoming module's binding literals copied over by decoration target.
+std::vector<uint32_t> withIncomingBindings(const uint32_t* incoming, size_t words, const std::vector<uint32_t>& code) {
+    std::map<std::pair<uint32_t, uint32_t>, uint32_t> literal;
+    forEachBindingLiteral(incoming, words, [&](size_t i) { literal[{incoming[i + 1], incoming[i + 2]}] = incoming[i + 3]; });
+    std::vector<uint32_t> out = code;
+    forEachBindingLiteral(out.data(), out.size(), [&](size_t i) {
+        auto it = literal.find({out[i + 1], out[i + 2]});
+        if (it != literal.end()) out[i + 3] = it->second;
+    });
+    return out;
 }
 
 // ---- layer entry points -----------------------------------------------------------------------
@@ -89,7 +143,23 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateShaderModule(VkDevice device, const VkShade
         next = g_deviceChains.at(dispatchKey(device)).createShaderModule;
     }
     g_seen++;
-    maybeDump(info);
+    const PatchSet* set = g_set.load(std::memory_order_acquire);
+    if (set == nullptr || !set->sizes.count(info->codeSize)) return next(device, info, alloc, out);
+    Key key;
+    if (!moduleKey(info->pCode, info->codeSize / 4, key)) return next(device, info, alloc, out);
+    auto hit = set->byKey.find(key);
+    if (hit == set->byKey.end()) return next(device, info, alloc, out);
+    std::vector<uint32_t> code = withIncomingBindings(info->pCode, info->codeSize / 4, hit->second.code);
+    VkShaderModuleCreateInfo patched = *info;
+    patched.pCode = code.data();
+    patched.codeSize = code.size() * 4;
+    VkResult result = next(device, &patched, alloc, out);
+    if (result == VK_SUCCESS) {
+        g_replaced++;
+        return result;
+    }
+    // The driver refused the replacement: keep the runtime working, unpatched.
+    g_fellBack++;
     return next(device, info, alloc, out);
 }
 
@@ -209,6 +279,107 @@ std::wstring thisDirectory() {
     return dir.substr(0, dir.find_last_of(L"\\/"));
 }
 
+bool readFile(const std::wstring& path, uint64_t offset, size_t bytes, std::vector<uint8_t>& out) {
+    HANDLE f = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (f == INVALID_HANDLE_VALUE) return false;
+    LARGE_INTEGER at;
+    at.QuadPart = (LONGLONG)offset;
+    out.resize(bytes);
+    DWORD got = 0;
+    bool ok = SetFilePointerEx(f, at, nullptr, FILE_BEGIN) && ReadFile(f, out.data(), (DWORD)bytes, &got, nullptr) && got == bytes;
+    CloseHandle(f);
+    return ok;
+}
+
+bool parseKey(const std::string& hex, Key& out) {
+    if (hex.size() != 64) return false;
+    for (int i = 0; i < 32; i++) out.bytes[i] = (uint8_t)strtoul(hex.substr(i * 2, 2).c_str(), nullptr, 16);
+    return true;
+}
+
+std::wstring widen(const std::string& s) { return std::wstring(s.begin(), s.end()); }
+
+// manifest.tsv, written by the build tool:
+//   #format 1
+//   <key hex64> \t <file offset in d3d9.dll> \t <original bytes> \t <group> \t <replacement file>
+// A group is active when every entry of it matched the runtime file and its replacement loaded.
+// Returns the published set (or nullptr) and appends one report line per group.
+const PatchSet* loadAndVerify(const std::wstring& dir, std::string& report) {
+    std::vector<uint8_t> manifestBytes;
+    std::wstring manifestPath = dir + L"\\patches\\manifest.tsv";
+    WIN32_FILE_ATTRIBUTE_DATA attrs;
+    if (!GetFileAttributesExW(manifestPath.c_str(), GetFileExInfoStandard, &attrs) ||
+        !readFile(manifestPath, 0, attrs.nFileSizeLow, manifestBytes)) {
+        report += "; no patch set";
+        return nullptr;
+    }
+    struct Entry { Key key; uint64_t offset; size_t bytes; std::string group, file; };
+    std::vector<Entry> entries;
+    std::map<std::string, bool> groups;  // group -> every entry verified
+    std::istringstream lines(std::string(manifestBytes.begin(), manifestBytes.end()));
+    std::string line;
+    while (std::getline(lines, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream fields(line);
+        std::string key, offset, bytes, group, file;
+        if (!std::getline(fields, key, '\t') || !std::getline(fields, offset, '\t') || !std::getline(fields, bytes, '\t') ||
+            !std::getline(fields, group, '\t') || !std::getline(fields, file, '\t')) {
+            report += "; malformed manifest line";
+            return nullptr;
+        }
+        Entry e;
+        if (!parseKey(key, e.key)) {
+            report += "; malformed key";
+            return nullptr;
+        }
+        e.offset = _strtoui64(offset.c_str(), nullptr, 10);
+        e.bytes = (size_t)_strtoui64(bytes.c_str(), nullptr, 10);
+        e.group = group;
+        e.file = file;
+        groups.emplace(group, true);
+        entries.push_back(e);
+    }
+    auto* set = new PatchSet();
+    std::wstring runtime = dir + L"\\d3d9.dll";
+    std::map<std::string, int> counts;
+    for (auto& e : entries) {
+        std::vector<uint8_t> original;
+        Key found;
+        bool ok = e.bytes % 4 == 0 && readFile(runtime, e.offset, e.bytes, original) &&
+                  moduleKey((const uint32_t*)original.data(), e.bytes / 4, found) && found == e.key;
+        Replacement r{widen(e.file), {}};
+        std::vector<uint8_t> code;
+        std::wstring path = dir + L"\\patches\\" + r.file;
+        WIN32_FILE_ATTRIBUTE_DATA a;
+        ok = ok && GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &a) && a.nFileSizeLow % 4 == 0 &&
+             readFile(path, 0, a.nFileSizeLow, code);
+        if (!ok) {
+            groups[e.group] = false;
+            continue;
+        }
+        r.code.assign((const uint32_t*)code.data(), (const uint32_t*)code.data() + code.size() / 4);
+        set->byKey.emplace(e.key, std::move(r));
+        set->sizes.insert(e.bytes);
+        counts[e.group]++;
+    }
+    // Drop every entry of a group that did not verify whole. (One module per group so far; a module
+    // shared by two groups is built as one entry per combination by the tool.)
+    for (auto& e : entries) {
+        if (!groups[e.group]) set->byKey.erase(e.key);
+    }
+    int active = 0;
+    for (auto& [group, ok] : groups) {
+        report += "; " + group + (ok ? " ACTIVE (" + std::to_string(counts[group]) + " modules)" : " MISMATCH");
+        active += ok ? 1 : 0;
+    }
+    if (active == 0) {
+        delete set;
+        return nullptr;
+    }
+    return set;
+}
+
 // Appends value to the semicolon-separated variable unless it is already listed.
 void appendEnv(const wchar_t* name, const std::wstring& value) {
     wchar_t current[8192];
@@ -248,19 +419,29 @@ RRP_EXPORT int32_t rrp_arm(char* report, int32_t capacity) {
         snprintf(report, capacity, "already armed");
         return 0;
     }
+    std::string text = std::string("armed ") + LAYER_NAME;
+    const PatchSet* set = loadAndVerify(dir, text);
+    g_set.store(set, std::memory_order_release);
     appendEnv(L"VK_ADD_LAYER_PATH", dir);
     appendEnv(L"VK_INSTANCE_LAYERS", LAYER_NAME_W);
-    bool loaderLoaded = GetModuleHandleW(L"vulkan-1.dll") != nullptr;
-    snprintf(report, capacity, "armed %s%s", LAYER_NAME,
-             loaderLoaded ? "; vulkan-1.dll was already loaded before arming" : "");
+    snprintf(report, capacity, "%s", text.c_str());
     return 1;
 }
 
-// Counters since load: [armed, instanceHooked, devices, modulesSeen, modulesDumped].
+// Counters since load: [armed, instanceHooked, devices, modulesSeen, modulesReplaced, replacementsRefused].
 RRP_EXPORT void rrp_status(uint32_t* out) {
     out[0] = g_armed.load();
     out[1] = g_hooked.load();
     out[2] = g_devices.load();
     out[3] = g_seen.load();
-    out[4] = g_dumped.load();
+    out[4] = g_replaced.load();
+    out[5] = g_fellBack.load();
+}
+
+// The layer's key of a module (32 bytes into out); 0 on success. The build tool keys with this.
+RRP_EXPORT int32_t rrp_key(const uint32_t* code, size_t words, uint8_t* out) {
+    Key key;
+    if (!moduleKey(code, words, key)) return -1;
+    memcpy(out, key.bytes, 32);
+    return 0;
 }

@@ -1,3 +1,7 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 package com.nvidia.rtxremix.minecraft;
 
 import org.slf4j.Logger;
@@ -16,9 +20,12 @@ import java.nio.file.Path;
 
 /**
  * The mod's Vulkan layer for the runtime ({@code runtime-patch/layer}): armed before the runtime
- * loads, so the Vulkan loader loads it into the runtime's instance and it sees every shader module
- * the runtime creates. Render thread, once per process. Never throws; a failure leaves the runtime
- * as shipped and says why in the log. {@code -Drtxremix.runtimePatches=false} skips it.
+ * starts, so the Vulkan loader loads it into the runtime's instance, where it replaces the shader
+ * modules the patch set in {@code remix-sdk/patches/} lists (built by {@code tools\rtx.bat patches
+ * build}). The runtime file is never written. Arming logs each patch group as ACTIVE or MISMATCH; a
+ * group applies only when every one of its modules matched the shipped runtime. Render thread, once
+ * per process. Never throws; a failure leaves the runtime as shipped and says why in the log.
+ * {@code -Drtxremix.runtimePatches=false} runs the runtime unpatched.
  */
 final class RuntimePatchLayer {
 
@@ -44,7 +51,6 @@ final class RuntimePatchLayer {
         try {
             Linker linker = Linker.nativeLinker();
             SymbolLookup layer = SymbolLookup.libraryLookup(library, Arena.global());
-            setDumpEnvironment(linker);
             MethodHandle arm = linker.downcallHandle(layer.find("rrp_arm").orElseThrow(),
                     FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
             status = linker.downcallHandle(layer.find("rrp_status").orElseThrow(),
@@ -72,12 +78,13 @@ final class RuntimePatchLayer {
             return;
         }
         try (Arena arena = Arena.ofConfined()) {
-            MemorySegment out = arena.allocate(ValueLayout.JAVA_INT, 5);
+            MemorySegment out = arena.allocate(ValueLayout.JAVA_INT, 6);
             status.invokeExact(out);
             int hooked = out.getAtIndex(ValueLayout.JAVA_INT, 1);
             String line = "instanceHooked=" + hooked + " devices=" + out.getAtIndex(ValueLayout.JAVA_INT, 2)
                     + " modulesSeen=" + out.getAtIndex(ValueLayout.JAVA_INT, 3)
-                    + " modulesDumped=" + out.getAtIndex(ValueLayout.JAVA_INT, 4);
+                    + " modulesReplaced=" + out.getAtIndex(ValueLayout.JAVA_INT, 4)
+                    + " replacementsRefused=" + out.getAtIndex(ValueLayout.JAVA_INT, 5);
             if (hooked == 0) {
                 LOGGER.warn("Runtime patch layer armed but the Vulkan loader did not load it ({}): {}", when, line);
             } else {
@@ -85,24 +92,6 @@ final class RuntimePatchLayer {
             }
         } catch (Throwable t) {
             LOGGER.warn("Runtime patch layer status unavailable: {}", t.toString());
-        }
-    }
-
-    // shortcut: diagnostic dump switch for the first spike; remove once modules are keyed.
-    private static void setDumpEnvironment(Linker linker) throws Throwable {
-        String dir = System.getProperty("rtxremix.runtimePatch.dump");
-        String sizes = System.getProperty("rtxremix.runtimePatch.dumpSizes");
-        if (dir == null || sizes == null) {
-            return;
-        }
-        MethodHandle set = linker.downcallHandle(
-                SymbolLookup.libraryLookup("kernel32", Arena.global()).find("SetEnvironmentVariableW").orElseThrow(),
-                FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.ADDRESS));
-        try (Arena arena = Arena.ofConfined()) {
-            int a = (int) set.invokeExact(arena.allocateFrom("RTXREMIX_PATCH_DUMP", StandardCharsets.UTF_16LE),
-                    arena.allocateFrom(dir, StandardCharsets.UTF_16LE));
-            int b = (int) set.invokeExact(arena.allocateFrom("RTXREMIX_PATCH_DUMP_SIZES", StandardCharsets.UTF_16LE),
-                    arena.allocateFrom(sizes, StandardCharsets.UTF_16LE));
         }
     }
 }

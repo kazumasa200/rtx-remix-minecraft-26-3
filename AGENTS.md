@@ -123,15 +123,27 @@ next launch. A missing or unacquirable `water.conf` prevents renderer
 initialization and the error names the file; any other conf that fails to
 acquire is skipped with a warning naming it, and `/rtx conf reload` retries it.
 
-`RuntimePatches` rewrites the runtime file before it loads, for runtime faults
-the fork cannot fix in the runtime's source (it is MIT-licensed). The composite
-faded every pixel that was not a primary miss into the sky, and a primary ray
-that crossed glass or water into the sky is not a miss but stores the miss view
-Z, so the sky seen through them lost its tint: one word of the embedded composite
-shader points the fade's guard at the view-Z test instead. The patch matches
-result ids of the minecraft-rtx2 runtimes whose shaders it was checked on, writes
-nothing to any other build and logs that it did not apply, and never touches a
-Packman-managed file: it runs on the game directory's `remix-sdk/d3d9.dll`.
+**Runtime patches** (this branch). The runtime is MIT-licensed, and the mod patches
+its shaders for what the fork cannot fix in its source. The runtime file is never
+written. `tools\rtx.bat patches build` (`tools/src/rtx_tools/runtime_patch`, run by
+`buildRuntimePatchesWin64`) finds each pass's sites by pattern in the very
+`d3d9.dll` that ships, checks each pass's expected module and site counts,
+validates every output with `spirv-val` (or, without SPIRV-Tools, against
+`runtime-patch/patches.lock`) and writes `patches/manifest.tsv` plus one module
+per entry; `remix-sdk/` carries them beside `rtxremix_patch_layer.dll`, the mod's
+Vulkan layer (`runtime-patch/layer`). `RuntimePatchLayer` arms it through the FFM
+before the runtime starts: the layer checks every manifest entry against the
+shipped runtime's bytes (a group applies only when all its modules matched),
+puts itself on `VK_ADD_LAYER_PATH` and `VK_INSTANCE_LAYERS`, and the loader then
+loads it into the runtime's instance, where it replaces a module whose key is in
+the set. Keys hash the module with every Binding and DescriptorSet literal zeroed,
+because dxvk rewrites those before `vkCreateShaderModule`; the replacement takes
+the incoming literals by decoration target, so a pass must never renumber an
+existing id. `-Drtxremix.runtimePatches=false` runs the runtime as shipped. The
+first pass, `sky-fade`: the composite faded every pixel that was not a primary
+miss into the sky, and a primary ray that crossed glass or water into the sky is
+not a miss but stores the miss view Z, so the sky seen through them lost its
+tint; the fade's guard reads the view-Z test instead.
 
 Baseline LabPBR textures live in `src/main/resources/assets/` and load as the
 mod's own resource pack, `rtx-remix-renderer`, below user packs: Fabric API for

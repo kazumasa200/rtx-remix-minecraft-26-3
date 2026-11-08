@@ -42,6 +42,18 @@ def _stage_runtime(source: Path, bridge: Path, destination: Path, arch: str) -> 
     shutil.copy2(bridge, destination / "remixbridge.dll")
 
 
+def _stage_runtime_patches(project_dir: Path, arch: str, destination: Path) -> None:
+    """Copies the runtime patch layer and its patch set beside the runtime, when they were built."""
+    built = project_dir / "build" / "native" / arch
+    for name in ("rtxremix_patch_layer.dll", "VkLayer_rtxremix_spirv_patch.json"):
+        if (built / name).is_file():
+            shutil.copy2(built / name, destination / name)
+    patches = project_dir / "build" / "runtime-patches" / arch / "patches"
+    if patches.is_dir():
+        if (destination / "patches").exists():
+            shutil.rmtree(destination / "patches")
+        shutil.copytree(patches, destination / "patches")
+
 def install_development_build(project_dir: Path, *, game_dir: Path | None = None, arch: str | None = None) -> int:
     """Stage built artifacts, returning 1 on missing prerequisites or a failed migration.
 
@@ -111,6 +123,7 @@ def install_development_build(project_dir: Path, *, game_dir: Path | None = None
         print("         The mod requires fabric-api >=0.165.0+26.3 (https://modrinth.com/mod/fabric-api).")
 
     _stage_runtime(source, bridge, game_dir / "remix-sdk", selected_arch)
+    _stage_runtime_patches(project_dir, selected_arch, game_dir / "remix-sdk")
     packaging = project_dir / "packaging"
     shutil.copy2(packaging / "rtx.conf", game_dir / "rtx.conf")
     # Shipped profiles are refreshed; extra author-created files stay intact.

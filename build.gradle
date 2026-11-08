@@ -304,9 +304,35 @@ def fetchRuntimeSdkTasks = ['win64', 'arm64'].collectEntries { arch ->
 // a locally-built (possibly debug-flavor) dxvk can resolve symbols. packageJar
 // still strips SDK PDBs for distribution. Bridge copies inside the SDK directory
 // stay excluded so the freshly-built build/native/{arch} copy wins.
+// The mod's Vulkan layer (runtime-patch/layer) and the shader patch set it loads into the runtime.
+// x64 only until the layer has run elsewhere. The set is built from the very d3d9.dll staged here, so
+// its offsets and keys are right by construction; runtime-patch/patches.lock lets a machine without
+// SPIRV-Tools rebuild it (tools/src/rtx_tools/runtime_patch/build.py).
+def runtimePatchFiles = ['rtxremix_patch_layer.dll', 'VkLayer_rtxremix_spirv_patch.json']
+tasks.register('compilePatchLayerWin64', Exec) {
+    description = 'Compiles rtxremix_patch_layer.dll, the runtime patch layer, for x64'
+    group = 'build'
+    workingDir file('runtime-patch/layer')
+    commandLine 'cmd', '/c', file('runtime-patch/layer/build_layer.bat').absolutePath, 'x64'
+    inputs.files fileTree('runtime-patch/layer')
+    outputs.files runtimePatchFiles.collect { file("build/native/win64/${it}") }
+}
+tasks.register('buildRuntimePatchesWin64', Exec) {
+    description = 'Builds the runtime shader patch set from remix-runtime/win64/d3d9.dll'
+    group = 'build'
+    dependsOn 'compilePatchLayerWin64', fetchRuntimeSdkTasks['win64']
+    commandLine 'cmd', '/c', file('tools/rtx.bat').absolutePath, 'patches', 'build', '--arch', 'win64', '--strict'
+    inputs.files fileTree('tools/src/rtx_tools/runtime_patch'), file('runtime-patch/patches.lock'),
+                 file('build/native/win64/rtxremix_patch_layer.dll')
+    outputs.dir 'build/runtime-patches/win64'
+}
+
 def syncRuntimeSdkTask = tasks.register('syncRuntimeSdk', Sync) {
     dependsOn fetchRuntimeSdkTasks[runtimeArch]
     dependsOn runtimeArch == "arm64" ? 'compileNativeArm64' : 'compileNativeWin64'
+    if (runtimeArch == 'win64') {
+        dependsOn 'buildRuntimePatchesWin64'
+    }
     doFirst {
         // Sync treats a missing `from` dir as empty and would silently strip
         // run/remix-sdk down to just the bridge DLL. Fail with the fix instead.
@@ -322,6 +348,12 @@ def syncRuntimeSdkTask = tasks.register('syncRuntimeSdk', Sync) {
     }
     from(runtimeBridgeDir) {
         include 'remixbridge.dll', 'remixbridge.pdb'
+        include runtimePatchFiles
+    }
+    if (runtimeArch == 'win64') {
+        from('build/runtime-patches/win64') {
+            include 'patches/**'
+        }
     }
     into 'run/remix-sdk'
 }
@@ -498,7 +530,7 @@ def packageJarTask = tasks.register('packageJar', Zip) {
     group = 'build'
     dependsOn modJarTask
     dependsOn buildArches.collect { fetchRuntimeSdkTasks[it] }
-    if (buildArches.contains('win64')) dependsOn 'compileNativeWin64'
+    if (buildArches.contains('win64')) dependsOn 'compileNativeWin64', 'buildRuntimePatchesWin64'
     if (buildArches.contains('arm64')) dependsOn 'compileNativeArm64'
 
     archiveBaseName.set(projectArchiveName)
@@ -528,6 +560,11 @@ def packageJarTask = tasks.register('packageJar', Zip) {
         from("build/native/win64") {
             into("native/remix-sdk-win64")
             include "remixbridge.dll", "remixbridge.pdb"
+            include runtimePatchFiles
+        }
+        from("build/runtime-patches/win64") {
+            into("native/remix-sdk-win64")
+            include 'patches/**'
         }
     }
     if (buildArches.contains('arm64')) {

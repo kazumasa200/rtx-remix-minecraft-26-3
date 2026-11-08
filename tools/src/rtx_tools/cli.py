@@ -489,6 +489,23 @@ def cmd_textures_water_normals(args) -> int:
     return 0
 
 
+def cmd_patches_build(args) -> int:
+    from .runtime_patch.build import build
+
+    project = util.project_path(".")
+    arch = args.arch
+    outcomes = build(
+        project / "remix-runtime" / arch / "d3d9.dll",
+        project / "build" / "native" / arch / "rtxremix_patch_layer.dll",
+        project / "build" / "runtime-patches" / arch,
+        project / "runtime-patch" / "patches.lock",
+        strict=args.strict,
+    )
+    for outcome in outcomes:
+        state = "ok" if outcome.ok else f"left out: {outcome.reason}"
+        print(f"{outcome.id}: {outcome.modules} modules, sites {outcome.sites}; {state}")
+    return 0 if all(o.ok for o in outcomes) or not args.strict else 1
+
 def cmd_world_import(args) -> int:
     client.active()
     target = runner.import_world(args.source, name=args.name, replace=args.replace)
@@ -830,6 +847,21 @@ def build_parser() -> argparse.ArgumentParser:
     tp.add_argument("--seed", type=int, default=None, metavar="N", help="surface seed (default: the shipped surface's)")
     tp.set_defaults(func=cmd_textures_water_normals)
 
+    p = sub.add_parser(
+        "patches",
+        help="build the runtime shader patch set",
+        description="Builds the patch set the mod's Vulkan layer loads into the runtime (runtime-patch/).",
+        formatter_class=HelpFormatter,
+    )
+    patches_sub = p.add_subparsers(dest="patches_command", required=True, metavar="patches-command")
+    pp = patches_sub.add_parser(
+        "build",
+        help="build build/runtime-patches/<arch>/patches from remix-runtime/<arch>/d3d9.dll",
+        formatter_class=HelpFormatter,
+    )
+    pp.add_argument("--arch", default="win64", choices=["win64"], help="runtime architecture (default: %(default)s)")
+    pp.add_argument("--strict", action="store_true", help="fail when a pass is left out of the set")
+    pp.set_defaults(func=cmd_patches_build)
     p = sub.add_parser(
         "preset",
         help="list the quality presets",

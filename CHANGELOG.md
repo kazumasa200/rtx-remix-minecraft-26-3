@@ -21,8 +21,8 @@ also part of every mod file name.
 ### Fixed
 
 - The sky seen through stained glass or water keeps its tint instead of
-  showing through untinted, by a one-word patch to the runtime's composite
-  shader applied before it loads.
+  showing through untinted, by a patch to the runtime's composite shader that
+  the mod's Vulkan layer applies as the runtime loads it.
 - The Unbound clouds seen through stained glass, ice or water show as the
   runtime draws them, tinted with the sky behind, instead of white over it.
 - Under water, the caustics on a pool's walls no longer break into fine vertical
