@@ -98,21 +98,18 @@ class ShadowAbsorption(Pass):
     """Shadow rays through a thick translucent surface (glass, water) were dimmed by its transmittance once
     per surface crossed, whatever the distance travelled inside, so a lake floor ten blocks down was lit like
     a puddle's. Each shadow ray-query loop now absorbs by the distance between entries and exits
-    (`shadow.apply`). A surface whose measurement distance is at least CLOUD_DISTANCE is a cloud and absorbs at
-    CLOUD_SCALE (1 - g of a forward-scattering cloud); everything else absorbs physically, as the eye sees
-    through it.
+    (`shadow.apply`), physically, as the eye sees through it. The same loop draws the water's caustics, water
+    being the surface whose measurement distance is caustics.WATER_MARKER_DISTANCE.
     """
 
     id = "shadow-absorption"
-    version = 1
+    version = 2
     expect = Expect(modules=range(149, 150), sites_per_module=range(1, 8))
 
     GLASS_SCALE = 1.0
-    CLOUD_SCALE = 0.15
-    CLOUD_DISTANCE = 32.0
 
     def apply(self, module: Module) -> int:
-        return shadow.apply(module, self.GLASS_SCALE, self.CLOUD_SCALE, self.CLOUD_DISTANCE, caustics=True)
+        return shadow.apply(module, self.GLASS_SCALE, caustics=True)
 
 
 PASSES: list[Pass] = [SkyFade(), ShadowAbsorption()]

@@ -32,7 +32,8 @@ also part of every mod file name.
   under water being lit alike. Adapted from PurrsianMilkman's runtime patch.
 - Caustics are part of the sunlight under water rather than drawn over the
   image, so their web falls into shadow with the rest of the light and shows
-  in reflections. They show on floors; walls under water do not show them yet.
+  in reflections, on a pool's floor and walls alike, whatever water distance
+  `/rtx water distance` sets.
 - Clear glass shows its frame and streaks again: the runtime took a glass
   diffuse layer only from the transmittance texture.
 - The Unbound clouds seen through stained glass, ice or water show as the

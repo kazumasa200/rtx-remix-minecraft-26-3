@@ -156,11 +156,9 @@ from outside, the runtime's front face, and its ray queries report a candidate
 seen from inside as front facing, so a front-facing hit is an exit. Water's top
 is emitted once while the group is active (`RuntimePatchLayer.shadowAbsorption`,
 `BlockQuadEmitter`): its reversed copy in the same plane cancelled every
-crossing, so water absorbed nothing and its caustics were applied twice. Glass and water absorb as the eye sees
-through them; a surface whose measurement distance is 32 or more is a cloud and
-absorbs at 0.15 of that, the 1 - g of forward-scattering cloud. The same loop
-draws the caustics (`caustics.py`): a crossing of a surface whose measurement
-distance is from 1.5 to 32, which is the mod's water, multiplies the light by
+crossing, so water absorbed nothing and its caustics were applied twice. Glass and
+water absorb as the eye sees through them. The same loop draws the caustics
+(`caustics.py`): a crossing of water multiplies the light by
 what the waves gather where the ray started, so the web lies in the sun's light
 itself, shadowed, reflected and bounced like the rest of it. The waves are a
 fixed sum of 32 sines over a 64-block period, which divides the scene origin's
@@ -173,7 +171,12 @@ that gathered it. While the group is active the lens draws no caustics
 (`LensEffects.lensCaustics`). The web lies on a pool's quartz walls as on its
 floor: solid blocks take thin-opaque subsurface scattering, since the diffusion
 profile they had replaced the diffuse light that carries the web with light
-gathered over a disk (`BlockTextureManager`). A translucent material's
+gathered over a disk (`BlockTextureManager`). The patch tells water by its
+measurement distance, `BlockTextureManager.WATER_MARKER_DISTANCE`, which no other
+material uses (`caustics.WATER_MARKER_DISTANCE`, the same number, pinned by
+`test_runtime_patch.py`); the player's water distance d goes into the colour as
+c^(marker / d), which absorbs alike. A band of distances, 1.5 to 32, lost the
+caustics once `/rtx water distance` left it. A translucent material's
 diffuse layer is read from its transmittance texture slot, which the two share,
 not from the albedo texture, so the glass materials pass their albedo there. A pass that inserts code takes new ids above the
 module's bound and queues its instructions through `Module.insert_after` and

@@ -27,7 +27,7 @@ _EXT_INST_IMPORT, _EXT_INST = 11, 12
 _TYPE_BOOL, _TYPE_INT, _TYPE_FLOAT, _TYPE_VECTOR, _TYPE_POINTER = 20, 21, 22, 23, 32
 _CONSTANT_COMPOSITE, _CONSTANT_NULL = 44, 46
 _COMPOSITE_CONSTRUCT, _FNEGATE, _FADD, _FMUL, _FDIV, _VECTOR_TIMES_SCALAR = 80, 127, 129, 133, 136, 142
-_SELECT, _FORD_LESS_THAN, _FORD_GREATER_THAN_EQUAL = 169, 184, 190
+_SELECT, _FORD_LESS_THAN = 169, 184
 _PHI, _LOOP_MERGE, _BRANCH = 245, 246, 249
 _RQ_INITIALIZE, _RQ_PROCEED, _RQ_INTERSECTION_TYPE = 4473, 4477, 4479
 _RQ_INTERSECTION_T, _RQ_INTERSECTION_FRONT_FACE = 6018, 6025
@@ -111,7 +111,7 @@ def find_sites(module: Module) -> list[Site]:
     return sites
 
 
-def apply(module: Module, glass_scale: float, cloud_scale: float, cloud_distance: float, caustics: bool = False) -> int:
+def apply(module: Module, glass_scale: float, caustics: bool = False) -> int:
     """Each shadow ray-query loop adds up the optical depth between entries and exits, signed by facing so
     the candidates' order does not matter, closes an entry still open at the ray's end, and multiplies the
     ray's light by exp(-depth) once the loop is done. Returns the number of sites patched."""
@@ -139,8 +139,7 @@ def apply(module: Module, glass_scale: float, cloud_scale: float, cloud_distance
         uint0 = module.new_id()
         g.append(op(OP_CONSTANT, t_uint, uint0, 0))
     k_glass, k_glass_in = const(glass_scale), const(-glass_scale)
-    k_cloud, k_cloud_in = const(cloud_scale), const(-cloud_scale)
-    cloud_at, one, far, eps = const(cloud_distance), const(1.0), const(1024.0), const(1.0 / 1024.0)
+    one, far, eps = const(1.0), const(1024.0), const(1.0 / 1024.0)
     v0, v1, v_eps = module.new_id(), module.new_id(), module.new_id()
     g += [
         op(_CONSTANT_NULL, t_v3, v0),
@@ -206,12 +205,9 @@ def apply(module: Module, glass_scale: float, cloud_scale: float, cloud_distance
             module.replace(s.log_at, floor_op, [*log[:5], floor])
             t, t_op = typed(_RQ_INTERSECTION_T, t_float, rq, uint0)
             ff, ff_op = typed(_RQ_INTERSECTION_FRONT_FACE, t_bool, rq, uint0)
-            cloud, cloud_op = typed(_FORD_GREATER_THAN_EQUAL, t_bool, s.dist, cloud_at)
-            k_out, k_out_op = typed(_SELECT, t_float, cloud, k_cloud, k_glass)
-            k_in, k_in_op = typed(_SELECT, t_float, cloud, k_cloud_in, k_glass_in)
             # The mod's meshes run clockwise seen from outside, and the runtime's ray queries report a
             # candidate seen counter-clockwise as front facing: a front-facing hit leaves the volume.
-            sign, sign_op = typed(_SELECT, t_float, ff, k_out, k_in)
+            sign, sign_op = typed(_SELECT, t_float, ff, k_glass, k_glass_in)
             st, st_op = typed(_FMUL, t_float, sign, t)
             a0, a0_load = typed(OP_LOAD, t_v3, depth)
             a1, a1_op = typed(_VECTOR_TIMES_SCALAR, t_v3, s.sig, st)
@@ -221,14 +217,11 @@ def apply(module: Module, glass_scale: float, cloud_scale: float, cloud_distance
             c2, c2_op = typed(_FADD, t_v3, c0, c1)
             per_hit, web_code = v1, []
             if web is not None and web.available:
-                per_hit, web_code = web.emit(rq, t, s.dist, cloud_at)
+                per_hit, web_code = web.emit(rq, t, s.dist)
             module.insert_after(
                 s.sig_at,
                 t_op,
                 ff_op,
-                cloud_op,
-                k_out_op,
-                k_in_op,
                 sign_op,
                 st_op,
                 a0_load,

@@ -33,6 +33,10 @@ BRIGHTEST = 8.0
 TABLE_DEPTHS = 10
 GREY_FROM, GREY_TO = 5.0, 9.0
 STEPS, STEP = 4, 0.6
+# The water surface material's measurement distance, which no other material the mod makes uses; the player's
+# water distance goes into its colour instead (BlockTextureManager.WATER_MARKER_DISTANCE, the same number).
+WATER_MARKER_DISTANCE = 8.0
+WATER_MARKER_TOLERANCE = WATER_MARKER_DISTANCE / 64.0
 # shortcut: a diagnostic, light through water turns black; set RTXREMIX_CAUSTIC_TELLTALE=1 to build it, never ship it.
 TELLTALE = __import__("os").environ.get("RTXREMIX_CAUSTIC_TELLTALE", "")
 
@@ -162,12 +166,13 @@ class Caustics:
         g.append(op(46, self.t_v2, self.zero_v2))
         self.bend, self.step = const(c), const(STEP)
         self.one, self.floor, self.brightest = const(1.0), const(1.0 / BRIGHTEST), const(BRIGHTEST)
-        self.water_from = const(1.5)
+        self.water_from = const(WATER_MARKER_DISTANCE - WATER_MARKER_TOLERANCE)
+        self.water_to = const(WATER_MARKER_DISTANCE + WATER_MARKER_TOLERANCE)
         self.zero, self.last_depth = const(0.0), const(TABLE_DEPTHS - 1.0)
         self.table = [(const(float(j)), const(1.0 / m)) for j, m in enumerate(mean_light())]
         self.grey_from, self.grey_to = const(GREY_FROM), const(GREY_TO)
 
-    def emit(self, rq: int, t: int, dist: int, cloud_distance: int) -> tuple[int, list[list[int]]]:
+    def emit(self, rq: int, t: int, dist: int) -> tuple[int, list[list[int]]]:
         """The caustic factor for a crossing at t of ray query rq (1 for anything but water), and its code."""
         module, code = self.module, []
 
@@ -223,7 +228,7 @@ class Caustics:
             _LOGICAL_AND,
             b,
             typed(_FORD_GREATER_THAN_EQUAL, b, dist, self.water_from),
-            typed(_FORD_LESS_THAN, b, dist, cloud_distance),
+            typed(_FORD_LESS_THAN, b, dist, self.water_to),
         )
         if TELLTALE == "1":
             gathered = self.zero

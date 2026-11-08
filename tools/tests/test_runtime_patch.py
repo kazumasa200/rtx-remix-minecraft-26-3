@@ -50,6 +50,23 @@ def test_sky_fade_leaves_a_module_without_its_pattern_alone():
 SHADOW_OFFSET = 0x008B70C0
 
 
+def test_the_caustics_water_marker_is_the_water_materials_distance():
+    import re
+
+    from rtx_tools.runtime_patch import caustics
+
+    java = (
+        Path(__file__).resolve().parents[2]
+        / "src/main/java/com/nvidia/rtxremix/minecraft/texture/BlockTextureManager.java"
+    ).read_text(encoding="utf-8")
+    found = re.search(r"static final float WATER_MARKER_DISTANCE = ([0-9.]+)f;", java)
+    assert found, "BlockTextureManager.WATER_MARKER_DISTANCE not found"
+    assert float(found.group(1)) == caustics.WATER_MARKER_DISTANCE
+    # No other translucent distance the mod sets falls inside the marker's band.
+    for other in (0.012, 0.05, 0.35, 1.0):
+        assert abs(other - caustics.WATER_MARKER_DISTANCE) > caustics.WATER_MARKER_TOLERANCE
+
+
 def _module_at(offset: int) -> bytes:
     if not RUNTIME.is_file():
         pytest.skip("no runtime staged")
