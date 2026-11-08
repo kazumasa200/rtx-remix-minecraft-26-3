@@ -8,3 +8,6 @@
 # scripts, so batch entry points such as Packman's packman.cmd check out CRLF.
 *.bat text eol=crlf
 *.cmd text eol=crlf
+
+# Written by the runtime patch build with LF, whatever the checkout.
+runtime-patch/patches.lock text eol=lf
