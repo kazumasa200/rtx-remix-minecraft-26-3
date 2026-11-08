@@ -87,6 +87,7 @@ import org.lwjgl.sdl.SDLVideo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -291,6 +292,16 @@ public class RemixRenderer {
             if (!Files.isRegularFile(dll)) {
                 throw new IllegalStateException("RTX Remix runtime not found at " + dll
                         + "; reinstall the mod or run gradlew setupRuntime");
+            }
+            try {
+                RuntimePatches.Outcome skyFade = RuntimePatches.patchSkyFade(dll);
+                if (skyFade == RuntimePatches.Outcome.UNRECOGNISED) {
+                    LOGGER.warn("Runtime build not recognised; the sky seen through glass and water fades untinted");
+                } else {
+                    LOGGER.info("Runtime sky fade through glass and water: {}", skyFade);
+                }
+            } catch (IOException e) {
+                LOGGER.warn("Could not patch the runtime's sky fade: {}", e.toString());
             }
             LOGGER.info("Loading Remix from: {}", dll);
 

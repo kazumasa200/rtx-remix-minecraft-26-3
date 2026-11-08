@@ -123,6 +123,16 @@ next launch. A missing or unacquirable `water.conf` prevents renderer
 initialization and the error names the file; any other conf that fails to
 acquire is skipped with a warning naming it, and `/rtx conf reload` retries it.
 
+`RuntimePatches` rewrites the runtime file before it loads, for runtime faults
+the fork cannot fix in the runtime's source (it is MIT-licensed). The composite
+faded every pixel that was not a primary miss into the sky, and a primary ray
+that crossed glass or water into the sky is not a miss but stores the miss view
+Z, so the sky seen through them lost its tint: one word of the embedded composite
+shader points the fade's guard at the view-Z test instead. The patch matches
+result ids of the minecraft-rtx2 runtimes whose shaders it was checked on, writes
+nothing to any other build and logs that it did not apply, and never touches a
+Packman-managed file: it runs on the game directory's `remix-sdk/d3d9.dll`.
+
 Baseline LabPBR textures live in `src/main/resources/assets/` and load as the
 mod's own resource pack, `rtx-remix-renderer`, below user packs: Fabric API for
 26.3 lists each mod's resources as a pack of its own, and the `fabric` id the
@@ -239,9 +249,8 @@ own frame index. Still shots for the screenshot tool use their own codec
 `docs/CAMERA_PATHS.md` is the canonical guide.
 
 **Gameplay-driven conf layers.** `ConfLayerDriver` fades a fixed table of mod
-layers (water, view distance, its LOD extension and the fade mode that goes
-with it, volumetric settling, rain, thunder, a lightning flash, and four times
-of day) by gameplay state. The
+layers (water, view distance and its LOD extension, volumetric settling, rain,
+thunder, a lightning flash, and four times of day) by gameplay state. The
 lightning layer slows the auto exposure while a bolt flashes and for a moment
 after, or the exposure undid the flash within a fifth of a second. Option layers come from a mod
 root shipping archetypes, acquired at init, and a world root inside a save
@@ -250,11 +259,7 @@ above its mod counterpart, so a map overrides per option rather than replacing
 an archetype, and it needs the integrated server, so it is single-player only.
 Profiles resolve above `rtx.conf` and below user settings and quality presets.
 `ViewDistanceFade` sets the view-distance fade from Minecraft's render distance,
-or from the LOD radius while LOD terrain draws. While it draws, the fade also
-switches from the smooth mode to the noise mode (`view_distance_lod_mode.conf`):
-the smooth mode blended a ray that crossed glass or water and then met the sky
-into the untinted sky, and at Minecraft's own render distance the noise mode
-would cut away the last blocks the smooth mode fades.
+or from the LOD radius while LOD terrain draws.
 
 **Clouds.** Four styles (`CloudStyle`). Classic (the default) voxelizes
 vanilla's cloud texture with vanilla's world-time period and phase. Procedural

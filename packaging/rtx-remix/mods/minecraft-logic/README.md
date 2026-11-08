@@ -253,7 +253,6 @@ from several places with a shared channel.
 | `confs/time/day.conf` | Fixed Overworld schedule | 4001 | 0.50 | The clock curve below |
 | `confs/time/dawn.conf` | Fixed Overworld schedule | 4000 | 0.50 | The clock curve below |
 | `confs/volumetrics/settling.conf` | A weather gradient moving, or a smoothed profile still easing: 0 or 1 | 3100 | 0.01 | Immediate, held 0.75 s after the last movement |
-| `confs/view_distance_lod_mode.conf` | The same as `view_distance_lod.conf` | 3002 | 0.0001 | Immediate on each change |
 | `confs/view_distance_lod.conf` | LOD radius beyond the render distance, up to 4096 chunks: 0 to 1 | 3001 | 0.01 | Immediate on each change |
 | `confs/view_distance.conf` | Render distance, 2 to 32 chunks | 3000 | 0.01 | Immediate on each change |
 
@@ -413,14 +412,6 @@ With Distant Horizons installed and LOD terrain on, `confs/view_distance_lod.con
 pushes the same band out to the LOD radius. Its endpoint is the 4096-chunk band,
 and the mod sets its strength to the fraction of the way from the render
 distance's band to that endpoint.
-
-`confs/view_distance_lod_mode.conf` takes the same strength and switches the fade
-mode once any LOD terrain draws past the render distance. The smooth mode blends a
-surface past the band into the sky, and a ray that crossed glass or water before it
-reached the sky counts as past every band, so the sky behind them lost its tint. The
-noise mode keeps it. At the LOD radius the two look alike; at Minecraft's own render
-distance the smooth mode keeps the last blocks fading into the sky, which the noise
-mode cuts away, so the switch waits for LOD terrain.
 
 Both sit below every situational profile on purpose, so a zone, biome, weather,
 or time profile can override the fade keys deliberately.

@@ -13,8 +13,9 @@ also part of every mod file name.
 
 ### Fixed
 
-- With Distant Horizons' LOD terrain, the sky seen through stained glass or
-  water keeps its tint instead of showing through untinted.
+- The sky seen through stained glass or water keeps its tint instead of
+  showing through untinted, by a one-word patch to the runtime's composite
+  shader applied before it loads.
 
 ### Added
 
