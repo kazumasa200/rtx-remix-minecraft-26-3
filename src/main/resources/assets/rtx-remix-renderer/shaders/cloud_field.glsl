@@ -30,11 +30,14 @@
 // Shaped clouds (CloudShapes), each inside a bounding sphere of ShapeBounds (centre in the
 // clouds' frame, radius). ShapeForm: x the kind (1 a creeper's head), w the height of its
 // base. ShapeSize: x its height, y a head's half size, z its facing in radians, w the shape's
-// strength, 0 to 1, as it forms and fades.
+// strength, 0 to 1, as it forms and fades. An includer that keeps them in a block of its own
+// (Vulkan GLSL has no loose uniforms) defines CLOUD_FIELD_EXTERNAL_SHAPES.
+#ifndef CLOUD_FIELD_EXTERNAL_SHAPES
 uniform int ShapeCount;
 uniform vec4 ShapeBounds[CLOUD_MAX_SHAPES];
 uniform vec4 ShapeForm[CLOUD_MAX_SHAPES];
 uniform vec4 ShapeSize[CLOUD_MAX_SHAPES];
+#endif
 
 // Extinction per block at full density.
 const float EXTINCTION = 0.08;
@@ -412,14 +415,15 @@ float domeColumn(float cover) {
 // The share of the light the clouds above a point let through toward it, each layer read once
 // where the line toward the light crosses its middle: a cumulus layer by the column of its
 // dome there, so a shadow has its cloud's outline, and the altostratus by its sheet crossed
-// on the slant.
-float shadowTransmittance(vec3 world) {
-    float depth = domeColumn(domeCover(coverAbove(LAYER_SMALL, world, LightDirection)))
-            * layerThickness(LAYER_SMALL) * SMALL_DENSITY
-        + domeColumn(domeCover(coverAbove(LAYER_LARGE, world, LightDirection)))
-            * layerThickness(LAYER_LARGE) * LARGE_DENSITY
-        + coverAbove(LAYER_ALTO, world, LightDirection) * LARGE_DENSITY * ALTO_THICKNESS
-            / max(LightDirection.y, 0.1);
+// on the slant. shadowOpticalDepths gives the optical depth of each part: the small cumulus,
+// the large cumulus with the shaped clouds, and the altostratus.
+vec3 shadowOpticalDepths(vec3 world) {
+    float small = domeColumn(domeCover(coverAbove(LAYER_SMALL, world, LightDirection)))
+        * layerThickness(LAYER_SMALL) * SMALL_DENSITY;
+    float large = domeColumn(domeCover(coverAbove(LAYER_LARGE, world, LightDirection)))
+        * layerThickness(LAYER_LARGE) * LARGE_DENSITY;
+    float alto = coverAbove(LAYER_ALTO, world, LightDirection) * LARGE_DENSITY * ALTO_THICKNESS
+        / max(LightDirection.y, 0.1);
     float shapes = 0.0;
     for (int shape = 0; shape < CLOUD_MAX_SHAPES; shape++) {
         if (shape >= ShapeCount) {
@@ -427,7 +431,12 @@ float shadowTransmittance(vec3 world) {
         }
         shapes += shapeShadowDepth(shape, world);
     }
-    return exp(-(depth * Density + shapes) * EXTINCTION);
+    return vec3(small * Density, large * Density + shapes, alto * Density) * EXTINCTION;
+}
+
+float shadowTransmittance(vec3 world) {
+    vec3 depth = shadowOpticalDepths(world);
+    return exp(-(depth.x + depth.y + depth.z));
 }
 
 // Thin edges scatter forward in a narrow lobe, the silver lining against the sun, while the
