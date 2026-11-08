@@ -170,8 +170,10 @@ start, and the factor is 1 / |det J| of that mapping, clamped, divided by its me
 at that depth and greyed out from five to nine blocks of path. Taken where the
 light leaves the surface instead, every bright patch drew as wide as the surface
 that gathered it. While the group is active the lens draws no caustics
-(`LensEffects.lensCaustics`). The web shows on floors but not yet on walls under
-water, which the sun lights directly; the cause is open. A translucent material's
+(`LensEffects.lensCaustics`). The web lies on a pool's quartz walls as on its
+floor: solid blocks take thin-opaque subsurface scattering, since the diffusion
+profile they had replaced the diffuse light that carries the web with light
+gathered over a disk (`BlockTextureManager`). A translucent material's
 diffuse layer is read from its transmittance texture slot, which the two share,
 not from the albedo texture, so the glass materials pass their albedo there. A pass that inserts code takes new ids above the
 module's bound and queues its instructions through `Module.insert_after` and
