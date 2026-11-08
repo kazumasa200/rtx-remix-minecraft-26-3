@@ -2218,6 +2218,9 @@ public final class LensEffects {
             // Nearer than this is the hand, drawn a tenth of its size in front of the eye. The
             // depth of field's distance, a block and a half, also took the floor at a wader's feet.
             const float CAUSTIC_HAND_DISTANCE = 0.25;
+            // How far above its column's floor a point still counts as the floor: the depth is
+            // jittered from frame to frame, and a slab or carpet stands on the floor's block.
+            const float CAUSTIC_FLOOR_TOLERANCE = 0.2;
 
             vec3 caustics(vec2 uv, vec3 colour, float axial) {
                 if (isSky(axial) || axial < CAUSTIC_HAND_DISTANCE) {
@@ -2277,9 +2280,10 @@ public final class LensEffects {
                             break;
                         }
                         float top = here.r < NO_WATER_BELOW ? here.b : here.g;
+                        // The side of a column that stands higher takes no web: the web is the
+                        // floor's, and read on a wall it ran down it in stripes.
                         if (top - float(CameraBlock.y) > crossing.y + bent.y * leaves) {
-                            t = leaves;
-                            break;
+                            return colour;
                         }
                     }
                     if (t < 0.0) {
@@ -2289,6 +2293,12 @@ public final class LensEffects {
                     column = entered;
                     height = float(CameraBlock.y) + point.y;
                     arriving = bent;
+                }
+                // Only the floor takes the web. Seen from under water, a point on a pool's wall at
+                // the edge of a water column read as that column's and drew the floor's web down
+                // the wall as fine vertical lines.
+                if (cameraHeight <= column.r && height > column.g + CAUSTIC_FLOOR_TOLERANCE) {
+                    return colour;
                 }
                 float depth = column.r - height;
                 float edge = max(abs(point.x), abs(point.z));
@@ -2962,13 +2972,15 @@ public final class LensEffects {
             compositeProgram.set("Caustics", caustics);
             if (caustics > 0.0f) {
                 setWater(compositeProgram);
-            setGlass(compositeProgram, overClouds);
                 compositeProgram.set("CausticOrigin", (float) Math.floorMod((int) Math.floor(cameraX), CAUSTIC_PERIOD),
                         (float) Math.floorMod((int) Math.floor(cameraZ), CAUSTIC_PERIOD));
                 compositeProgram.set("CameraFraction", (float) (cameraX - Math.floor(cameraX)),
                         (float) (cameraY - Math.floor(cameraY)), (float) (cameraZ - Math.floor(cameraZ)));
             }
             compositeProgram.setSources(sources, lampCount);
+            // Outside the caustics' branch: set only there, the glass went unseen whenever the
+            // sun was down.
+            setGlass(compositeProgram, overClouds);
             setMoon(compositeProgram);
             compositeProgram.set("CloudsShown", Math.clamp(
                     (System.nanoTime() - skySettledNanos) / (float) SKY_FADE_NANOS, 0.0f, 1.0f));

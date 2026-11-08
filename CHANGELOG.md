@@ -17,6 +17,8 @@ also part of every mod file name.
   water keeps its tint instead of showing through untinted.
 - The Unbound clouds seen through stained glass, ice or water show as the
   runtime draws them, tinted with the sky behind, instead of white over it.
+- Under water, the walls of a pool no longer show fine vertical lines from the
+  caustics, which belong on the floor.
 
 ### Added
 

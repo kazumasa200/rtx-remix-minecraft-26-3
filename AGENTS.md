@@ -648,7 +648,9 @@ After the composite, the sun mirrored on level water glows and its glints
 streak: quarter-resolution passes keep the near-saturated pixels whose view ray,
 turned back up off the horizontal, nears the sun, and streak only those that
 stand out from their neighbours, in the starburst's six directions.
-The floors of sunlit water get caustics as far as the water is measured.
+The floors of sunlit water get caustics as far as the water is measured. Only
+a floor takes them: seen from under water, a point on a pool's wall read as the
+water column beside it and drew the web down the wall in fine vertical lines.
 `WaterColumns` keeps, in a ring texture 512 columns across around the camera,
 refreshed a row a frame and a row within 32 blocks of it, each column's water
 surface, floor (searched 32 blocks down) and the top that shades it. The 32
