@@ -188,8 +188,6 @@
   "rtxremix.setting.materials.puddlesWhenDry.tip": "雨が降っていないときも地面を濡れたままにし、水たまりを残します。雨の降るバイオームだけです。雨がなければ雨粒の波紋はなく、水面は静かです。オフでは、雨が止んでから 2 分ほどで乾きます。",
   "rtxremix.setting.debug.puddleMask": "水たまりのマスクを表示",
   "rtxremix.setting.debug.puddleMask.tip": "雨の水たまりを、水の多さに応じて赤く塗ります。どこに水たまりがあり、フチがどう薄れていくかを確かめるための表示で、問題を調べるとき以外は使いません。",
-  "rtxremix.setting.debug.cloudMaterialSpike": "雲マテリアル比較",
-  "rtxremix.setting.debug.cloudMaterialSpike.tip": "テストサイトの上空（x 20〜160、z 110、地面から 30 ブロック上）に、同じ形の雲を 5 つ並べます。雲をワールドの物体にするときのマテリアルの候補で、A は拡散層（不透明度 60%）つきの透過、B は透過だけ、C は A の殻の中に表面下散乱の芯、D は Procedural の雲と同じ表面下散乱、E は拡散層の不透明度を 90% にした A です。runtime-patch の実験のための表示です。",
   "rtxremix.setting.debug.domeClouds": "ドームの雲だけを表示",
   "rtxremix.setting.debug.domeClouds.tip": "Unbound の雲を、画面の画素ごとに描き直さず、RTX Remix が空のドームに描いたままにします。雲の影も描きません。雲のおかしな見え方が、画素ごとに描き直した雲から来ているかを確かめるための表示で、問題を調べるとき以外は使いません。",
   "rtxremix.setting.debug.sceneOriginOffset": "シーンの原点をずらす",

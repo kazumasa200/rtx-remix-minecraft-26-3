@@ -157,7 +157,6 @@ public final class CloudRenderer {
 
     public void render(ClientLevel world, Vec3 cameraPos, float tickDelta) {
         resetFrameStats();
-        CloudMaterialSpike.draw(renderer.getRemixApi());
         if (world != currentWorld) {
             clearScene();
             currentWorld = world;
@@ -755,7 +754,6 @@ public final class CloudRenderer {
     }
 
     public void cleanup() {
-        CloudMaterialSpike.release();
         try {
             releaseResources();
         } finally {
@@ -764,7 +762,6 @@ public final class CloudRenderer {
     }
 
     public void disable() {
-        CloudMaterialSpike.release();
         try {
             releaseResources();
         } finally {

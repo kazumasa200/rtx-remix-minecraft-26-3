@@ -13,7 +13,6 @@ import com.nvidia.rtxremix.minecraft.terrain.ChunkManager;
 import com.nvidia.rtxremix.minecraft.light.LightManager;
 import com.nvidia.rtxremix.minecraft.lod.LodTerrain;
 import com.nvidia.rtxremix.minecraft.RemixRenderer;
-import com.nvidia.rtxremix.minecraft.cloud.CloudMaterialSpike;
 import com.nvidia.rtxremix.minecraft.cloud.CloudRenderer;
 import com.nvidia.rtxremix.minecraft.cloud.CloudStyle;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
@@ -322,9 +321,6 @@ public final class RtxSettingsFactory {
         list.add(RtxSetting.ofBool("debug.sceneOriginOffset", SettingGroup.DEBUG_VIEWS,
                 "rtxremix.setting.debug.sceneOriginOffset", "rtxremix.setting.debug.sceneOriginOffset.tip",
                 false, SceneSpace::debugOffset, SceneSpace::setDebugOffset));
-        list.add(RtxSetting.ofBool("debug.cloudMaterialSpike", SettingGroup.DEBUG_VIEWS,
-                "rtxremix.setting.debug.cloudMaterialSpike", "rtxremix.setting.debug.cloudMaterialSpike.tip",
-                false, CloudMaterialSpike::isEnabled, CloudMaterialSpike::setEnabled));
 
         // --- Tonemapping ---
         list.add(floatSetting("post.exposure", SettingGroup.TONEMAPPING,
