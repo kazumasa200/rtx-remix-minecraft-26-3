@@ -29,6 +29,8 @@ also part of every mod file name.
   runtime draws them, tinted with the sky behind, instead of white over it.
 - Under water, the caustics on a pool's walls no longer break into fine vertical
   stripes.
+- A world entered with the camera under water (with Sodium), in lava or in
+  powder snow no longer draws the whole view black until the camera leaves it.
 
 ### Added
 

@@ -38,7 +38,9 @@ import net.minecraft.client.Options;
 import net.minecraft.client.SectionUpdateTracker;
 import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.SkyRenderer;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.ViewArea;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart;
@@ -55,6 +57,8 @@ import net.minecraft.client.renderer.state.level.LevelRenderState;
 import net.minecraft.client.renderer.state.level.ParticlesRenderState;
 import net.minecraft.client.renderer.state.level.WeatherRenderState;
 import net.minecraft.client.renderer.WeatherEffectRenderer;
+import net.minecraft.client.renderer.texture.TextureManager;
+import net.minecraft.client.resources.model.sprite.AtlasManager;
 import net.minecraft.client.renderer.CloudRenderer;
 import net.minecraft.client.CloudStatus;
 import net.minecraft.client.renderer.oit.OitRenderPassProvider;
@@ -101,6 +105,21 @@ public abstract class WorldRendererMixin
     @Shadow
     @Final
     private ObjectArrayList<SectionRenderDispatcher.RenderSection> visibleSections;
+
+    @Shadow
+    private @Nullable SkyRenderer skyRenderer;
+
+    @Shadow
+    @Final
+    private TextureManager textureManager;
+
+    @Shadow
+    @Final
+    private AtlasManager atlasManager;
+
+    @Shadow
+    @Final
+    private GameRenderer gameRenderer;
 
     private ProfileScope rtxremix$profilerPhaseScope;
     private String rtxremix$profilerPhaseName;
@@ -263,6 +282,13 @@ public abstract class WorldRendererMixin
         rtxremix$frameBlockEntityCount = levelRenderState.blockEntityRenderStates.size();
         rtxremix$frameBlockBreakingCount = levelRenderState.blockBreakingRenderStates.size();
         rtxremix$transitionProfilerPhase("preamble");
+        // Vanilla makes its sky renderer in the sky pass, after the pass has returned for
+        // lava, powder snow and blindness (Sodium adds any fluid), and extracts the sky's
+        // state only through it: a session that began under water never had a sun or sky
+        // for Remix, and the whole view drew black.
+        if (skyRenderer == null) {
+            skyRenderer = new SkyRenderer(textureManager, atlasManager, gameRenderer.mainRenderTarget());
+        }
         RtxRemixMod.onLevelRenderStart();
         RtxRemixMod mod = RtxRemixMod.getInstance();
         if (mod != null && mod.getRenderer() != null) {
