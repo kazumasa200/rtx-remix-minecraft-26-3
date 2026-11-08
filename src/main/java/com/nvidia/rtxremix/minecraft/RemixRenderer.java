@@ -309,6 +309,7 @@ public class RemixRenderer {
             int blankedValues = RemixAPI.redactCommandLineOptions(dllPath, ACCOUNT_OPTIONS);
             LOGGER.info("Blanked {} account values in the process command line", blankedValues);
 
+            RuntimePatchLayer.arm(dll.getParent());
             remixApi = RemixAPI.load(dllPath);
             LOGGER.info("RTX Remix API loaded successfully");
             if (!FORWARD_REMIX_FAULTS) {
@@ -379,6 +380,7 @@ public class RemixRenderer {
                     .interopImage(true)
                     .build();
                 remixApi.startup(startupInfo);
+            RuntimePatchLayer.logStatus("after startup");
                 LOGGER.info("RTX Remix API started");
 
             }
@@ -1490,6 +1492,9 @@ public class RemixRenderer {
             }
             if (presentationWindow != null) presentationWindow.show();
             presentedFrames++;
+            if (presentedFrames == 1200) {
+                RuntimePatchLayer.logStatus("1200 frames");
+            }
             submitFrameCalled = false;
         } catch (Exception e) {
             failed = true;

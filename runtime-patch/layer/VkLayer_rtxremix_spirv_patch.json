@@ -1,0 +1,11 @@
+{
+    "file_format_version": "1.2.0",
+    "layer": {
+        "name": "VK_LAYER_RTXREMIX_spirv_patch",
+        "type": "GLOBAL",
+        "library_path": ".\\rtxremix_patch_layer.dll",
+        "api_version": "1.3.0",
+        "implementation_version": "1",
+        "description": "RTX Remix for Minecraft: replaces the runtime's patched shader modules at load"
+    }
+}
