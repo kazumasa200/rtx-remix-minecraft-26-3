@@ -707,8 +707,7 @@ public class BlockTextureManager {
         if (roughnessTex != null) ob.roughnessTexture(roughnessTex.getHandle());
         if (metallicTex != null)  ob.metallicTexture(metallicTex.getHandle());
         if (heightTex != null)    ob.heightTexture(heightTex.getHandle()).displaceIn(POM_DISPLACE_IN);
-        if (sssTex != null)       ob.subsurfaceExt(buildAtlasSSS(
-                lt == L_SOLID, sssTex, sssAlbedoTex));
+        if (sssTex != null)       ob.subsurfaceExt(buildAtlasSSS(sssTex, sssAlbedoTex));
 
         MaterialInfo.Builder mb = MaterialInfo.builder()
                 .albedoTexture(atlasAlbedo.getHandle()).filterMode(0);
@@ -759,23 +758,25 @@ public class BlockTextureManager {
         return baseEmissionIntensity * Math.max(0.0f, emissionMultiplier);
     }
 
-    private MaterialInfoOpaqueSubsurfaceEXT buildAtlasSSS(boolean solid, RemixTexture sssTex,
-                                                          RemixTexture sssAlbedoTex) {
+    /**
+     * Thin-opaque subsurface scattering for every block, solid ones included. The runtime's
+     * diffusion profile replaces a surface's own diffuse lobe with light gathered over a disk
+     * around it, so on a solid block (SPBR's quartz is subsurface throughout) shadows came out
+     * soft and the caustics under water vanished. The disk's size and the light let through from
+     * behind share one scale: at the old 100 a torch behind a quartz wall lit it to almost three
+     * times its brightness, and every scale small enough for sharp shadows let through none.
+     * Thin opaque keeps the diffuse lobe, so shadows and caustics stay sharp, and costs no disk
+     * of extra rays; it too lets almost nothing through a whole block.
+     */
+    private MaterialInfoOpaqueSubsurfaceEXT buildAtlasSSS(RemixTexture sssTex, RemixTexture sssAlbedoTex) {
         MaterialInfoOpaqueSubsurfaceEXT.Builder sb = MaterialInfoOpaqueSubsurfaceEXT.builder()
-                .transmittanceTexture(atlasAlbedo.getHandle());
-        if (solid) {
-            RemixTexture radiusTexture = (sssAlbedoTex != null) ? sssAlbedoTex : atlasAlbedo;
-            sb.diffusionProfile(true).radiusTexture(radiusTexture.getHandle())
-              .radiusScale(LabPBRConverter.DIFFUSION_SSS_RADIUS_SCALE)
-              .maxSampleRadius(LabPBRConverter.DIFFUSION_SSS_MAX_SAMPLE_RADIUS);
-        } else {
-            sb.diffusionProfile(false).thicknessTexture(sssTex.getHandle())
-              .singleScatteringAlbedo(cutoutSssAlbedoR, cutoutSssAlbedoG, cutoutSssAlbedoB)
-              .measurementDistance(cutoutSssTransmissionDistance)
-              .volumetricAnisotropy(cutoutSssAnisotropy);
-            if (cutoutSssAlbedoTextureEnabled && sssAlbedoTex != null) {
-                sb.singleScatteringAlbedoTexture(sssAlbedoTex.getHandle());
-            }
+                .transmittanceTexture(atlasAlbedo.getHandle())
+                .diffusionProfile(false).thicknessTexture(sssTex.getHandle())
+                .singleScatteringAlbedo(cutoutSssAlbedoR, cutoutSssAlbedoG, cutoutSssAlbedoB)
+                .measurementDistance(cutoutSssTransmissionDistance)
+                .volumetricAnisotropy(cutoutSssAnisotropy);
+        if (cutoutSssAlbedoTextureEnabled && sssAlbedoTex != null) {
+            sb.singleScatteringAlbedoTexture(sssAlbedoTex.getHandle());
         }
         return sb.build();
     }
@@ -1324,7 +1325,7 @@ public class BlockTextureManager {
         } else {
             ob.roughnessConstant(0.7f).metallicConstant(0f);
         }
-        if (se.hasSSS) ob.subsurfaceExt(buildSSS(se, lt == L_SOLID));
+        if (se.hasSSS) ob.subsurfaceExt(buildSSS(se));
         if (se.emissive != null)
             mb.emissiveTexture(se.emissive.getHandle()).emissiveIntensity(100.0f);
 
@@ -1354,25 +1355,19 @@ public class BlockTextureManager {
                 .useDiffuseLayer(true).build()).build());
     }
 
-    private MaterialInfoOpaqueSubsurfaceEXT buildSSS(SpriteEntry se, boolean solid) {
+    /** Per-sprite form of {@link #buildAtlasSSS}: thin opaque for every block, solid ones included. */
+    private MaterialInfoOpaqueSubsurfaceEXT buildSSS(SpriteEntry se) {
         MaterialInfoOpaqueSubsurfaceEXT.Builder sb = MaterialInfoOpaqueSubsurfaceEXT.builder()
-                .transmittanceTexture(se.albedo.getHandle());
-        if (solid) {
-            RemixTexture radiusTexture = (se.sssAlbedo != null) ? se.sssAlbedo : se.albedo;
-            sb.diffusionProfile(true).radiusTexture(radiusTexture.getHandle())
-              .radiusScale(LabPBRConverter.DIFFUSION_SSS_RADIUS_SCALE)
-              .maxSampleRadius(LabPBRConverter.DIFFUSION_SSS_MAX_SAMPLE_RADIUS);
-        } else {
-            sb.diffusionProfile(false)
-              .singleScatteringAlbedo(cutoutSssAlbedoR, cutoutSssAlbedoG, cutoutSssAlbedoB)
-              .measurementDistance(cutoutSssTransmissionDistance)
-              .volumetricAnisotropy(cutoutSssAnisotropy);
-            if (se.sss != null) {
-                sb.thicknessTexture(se.sss.getHandle());
-            }
-            if (cutoutSssAlbedoTextureEnabled && se.sssAlbedo != null) {
-                sb.singleScatteringAlbedoTexture(se.sssAlbedo.getHandle());
-            }
+                .transmittanceTexture(se.albedo.getHandle())
+                .diffusionProfile(false)
+                .singleScatteringAlbedo(cutoutSssAlbedoR, cutoutSssAlbedoG, cutoutSssAlbedoB)
+                .measurementDistance(cutoutSssTransmissionDistance)
+                .volumetricAnisotropy(cutoutSssAnisotropy);
+        if (se.sss != null) {
+            sb.thicknessTexture(se.sss.getHandle());
+        }
+        if (cutoutSssAlbedoTextureEnabled && se.sssAlbedo != null) {
+            sb.singleScatteringAlbedoTexture(se.sssAlbedo.getHandle());
         }
         return sb.build();
     }

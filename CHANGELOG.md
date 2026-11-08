@@ -17,6 +17,9 @@ also part of every mod file name.
   front, with compact object headers and string deduplication. Over a 4K city
   flight on an RTX 5090 the slowest frame fell from 77 ms to 51 ms and the 99th
   percentile from 31.7 ms to 29.2 ms; G1 had paused up to 82 ms.
+- Solid blocks that a pack gives subsurface scattering, such as quartz, take
+  sharp shadows and the water's caustics, as other blocks do. They used to
+  blur every shadow on them, and a torch behind a wall of them made it glow.
 
 ### Fixed
 
@@ -36,6 +39,8 @@ also part of every mod file name.
   runtime draws them, tinted with the sky behind, instead of white over it.
 - Under water, the caustics on a pool's walls no longer break into fine vertical
   stripes.
+- A world entered with the camera under water (with Sodium), in lava or in
+  powder snow no longer draws the whole view black until the camera leaves it.
 
 ### Added
 

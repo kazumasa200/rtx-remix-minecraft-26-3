@@ -256,7 +256,11 @@ disc is painted in as a spread splat with a wide, faint skirt
 texture, glint; the distant sun light gives up the same share. `SkyLayers`
 draws cirrus and aurora, `SkyRenderer` the stars and celestial bodies, in the
 sky matte, which `rtx.skyForceHDR` keeps scene-linear; `SkyLook` holds the sky
-appearance settings.
+appearance settings. `SkyFrame` reads the sky state vanilla extracts, which it
+extracts only through its own `SkyRenderer`; vanilla makes that renderer in a
+sky pass that lava, powder snow, blindness and, with Sodium, any fluid skip, so
+`WorldRendererMixin` makes it at the head of the level render, or a session
+begun under water had no sun or sky for Remix.
 
 **Overlay input.** `RemixInputGate` owns the Minecraft-side capture session for
 the Remix overlays; `KeyboardMixin` and `MouseMixin` route SDL input events
