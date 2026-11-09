@@ -31,6 +31,11 @@ also part of every mod file name.
   stripes.
 - A world entered with the camera under water (with Sodium), in lava or in
   powder snow no longer draws the whole view black until the camera leaves it.
+- Looking through glass that touches water, or through two kinds of glass side
+  by side, shows what lies behind: the faces they share no longer cross, so the
+  view through a glass tank of water no longer breaks into dark patches and
+  folded sky, and a stack of different colours tints with every one of them.
+  After PurrsianMilkman's Glass Layer Gap.
 
 ### Added
 
