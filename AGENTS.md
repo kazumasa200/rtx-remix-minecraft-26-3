@@ -196,8 +196,9 @@ material uses (`caustics.WATER_MARKER_DISTANCE`, the same number, pinned by
 `test_runtime_patch.py`); the player's water distance d goes into the colour as
 c^(marker / d), which absorbs alike. A band of distances, 1.5 to 32, lost the
 caustics once `/rtx water distance` left it. A translucent material's
-diffuse layer is read from its transmittance texture slot, which the two share,
-not from the albedo texture, so the glass materials pass their albedo there. A pass that inserts code takes new ids above the
+diffuse layer is read from its transmittance texture slot, not from the albedo
+texture; clear glass leaves that slot unset, as upstream ships it, so it draws
+without its frame and streaks. A pass that inserts code takes new ids above the
 module's bound and queues its instructions through `Module.insert_after` and
 `replace`.
 
