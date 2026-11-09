@@ -856,13 +856,6 @@ public class BlockTextureManager {
     private static final float DEFAULT_WATER_TRANSMITTANCE_B = 0.89f;
     /** The colour above is what three blocks of water let through, so a riverbed shows several blocks down. */
     private static final float DEFAULT_WATER_TRANSMITTANCE_DISTANCE = 3f;
-    /**
-     * The water surface's measurement distance, which no other material uses: the runtime patch's caustics
-     * tell water by it (caustics.py WATER_MARKER_DISTANCE, the same number). The player's water distance d goes
-     * into the colour instead, c^(marker / d), which absorbs alike, since c^(x / d) = (c^(marker / d))^(x / marker);
-     * the band 1.5 to 32 it replaced lost the caustics once the distance was set outside it.
-     */
-    static final float WATER_MARKER_DISTANCE = 8f;
     private static final float WATER_CAMERA_MEDIUM_TRANSMITTANCE = 0.98f;
     private static final float WATER_CAMERA_MEDIUM_TRANSMITTANCE_DISTANCE = 1f;
     private static final String WATER_WHITE_TEXTURE_NAME = "water_white";
@@ -939,10 +932,8 @@ public class BlockTextureManager {
                     .filterMode(1)
                     .translucentExt(MaterialInfoTranslucentEXT.builder()
                             .refractiveIndex(waterIor)
-                            .transmittanceColor(markedWaterTransmittance(waterTransmittanceR),
-                                    markedWaterTransmittance(waterTransmittanceG),
-                                    markedWaterTransmittance(waterTransmittanceB))
-                            .transmittanceMeasurementDistance(WATER_MARKER_DISTANCE)
+                            .transmittanceColor(waterTransmittanceR, waterTransmittanceG, waterTransmittanceB)
+                            .transmittanceMeasurementDistance(waterTransmittanceDistance)
                             .useDiffuseLayer(false)
                             .build())
                     .build());
@@ -977,15 +968,6 @@ public class BlockTextureManager {
                 destroyWaterResources(api);
             }
         }
-    }
-
-    /** A transmittance colour channel at the player's distance, given at {@link #WATER_MARKER_DISTANCE}. */
-    private float markedWaterTransmittance(float channel) {
-        return markedTransmittance(channel, waterTransmittanceDistance);
-    }
-
-    static float markedTransmittance(float channel, float distance) {
-        return (float) Math.pow(channel, WATER_MARKER_DISTANCE / Math.max(distance, 1.0e-3f));
     }
 
     public RemixMaterial getWaterSurfaceMaterial() { return waterSurfaceMaterial; }

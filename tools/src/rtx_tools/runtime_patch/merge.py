@@ -106,8 +106,13 @@ def merge(target: Module, library: Module, export: str) -> int:
         start, end = functions[f]
         work += [lib[k].words[3] for k in range(start, end) if lib[k].op == _FUNCTION_CALL]
     needed: set[int] = set()
-    pending = [w for f in reached for k in range(*functions[f]) for p in grammar.id_positions(lib[k].words)
-               if (w := lib[k].words[p]) in defs]
+    pending = [
+        w
+        for f in reached
+        for k in range(*functions[f])
+        for p in grammar.id_positions(lib[k].words)
+        if (w := lib[k].words[p]) in defs
+    ]
     while pending:
         g = pending.pop()
         if g in needed:
@@ -185,12 +190,15 @@ def merge(target: Module, library: Module, export: str) -> int:
         elif kinds[n] == "name" and copied:
             new_names.append(renumber(ins.words))
     have_caps = {i.words for i in t if i.op == _CAPABILITY}
-    new_caps = [list(i.words) for i in lib if i.op == _CAPABILITY and i.words not in have_caps
-                and i.words[1] != 5]  # Linkage is never needed: the call goes straight to the function
+    new_caps = [
+        list(i.words) for i in lib if i.op == _CAPABILITY and i.words not in have_caps and i.words[1] != 5
+    ]  # Linkage is never needed: the call goes straight to the function
 
-    def last(kind_names: tuple[str, ...]) -> int | None:
+    def last(kind_names: tuple[str, ...]) -> int:
         found = [n for n in range(t_first) if t_kinds[n] in kind_names]
-        return found[-1] if found else None
+        if not found:
+            raise ValueError(f"the module has no {kind_names[0]} section")
+        return found[-1]
 
     target.insert_after(last(("capability",)), *new_caps)
     if new_imports:

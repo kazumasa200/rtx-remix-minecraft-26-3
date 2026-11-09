@@ -37,8 +37,9 @@ class RuntimeFrameTest {
             Field field = RuntimeFrame.class.getDeclaredField(constant);
             assertEquals(offset, field.getInt(null), member);
         }
-        // The shape arrays end the block: one vec4 per shape.
-        assertEquals(RuntimeFrame.SHAPE_SIZE, last);
-        assertEquals(RuntimeFrame.SHAPE_SIZE + CloudShapes.MAX_SHAPES * RuntimeFrame.SHAPE_STRIDE, RuntimeFrame.BYTES);
+        // The shape arrays, one vec4 per shape, run up to the glass floats, which end the block.
+        assertEquals(RuntimeFrame.SHAPE_SIZE + CloudShapes.MAX_SHAPES * RuntimeFrame.SHAPE_STRIDE,
+                RuntimeFrame.GLASS_SATURATION);
+        assertEquals(last + 4, RuntimeFrame.BYTES);
     }
 }

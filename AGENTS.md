@@ -194,16 +194,32 @@ that gathered it. While the group is active the lens draws no caustics
 floor: solid blocks take thin-opaque subsurface scattering, since the diffusion
 profile they had replaced the diffuse light that carries the web with light
 gathered over a disk (`BlockTextureManager`). The patch tells water by its
-measurement distance, `BlockTextureManager.WATER_MARKER_DISTANCE`, which no other
-material uses (`caustics.WATER_MARKER_DISTANCE`, the same number, pinned by
-`test_runtime_patch.py`); the player's water distance d goes into the colour as
-c^(marker / d), which absorbs alike. A band of distances, 1.5 to 32, lost the
-caustics once `/rtx water distance` left it. A translucent material's
+measurement distance, the player's water distance, which the mod writes into the
+frame block every frame (`RuntimeFrame`, `rrp_waterDistance` in
+`runtime-patch/shaders/rrp_media.comp`). A fixed band, 1.5 to 32, lost the
+caustics once `/rtx water distance` left it, and a fixed marker distance with the
+player's distance folded into the colour darkened the light through water on
+indirect rays, which the runtime's approximation multiplies by the colour once
+per surface. A translucent material's
 diffuse layer is read from its transmittance texture slot, not from the albedo
 texture; clear glass leaves that slot unset, as upstream ships it, so it draws
-without its frame and streaks. A pass that inserts code takes new ids above the
-module's bound and queues its instructions through `Module.insert_after` and
-`replace`.
+without its frame and streaks. The same group lights stained glass (`glass.py`,
+the media library `runtime-patch/shaders/rrp_media.comp`, after PurrsianMilkman's
+later patches): a stained glass's colour is a hue, not a transmittance, so the
+light through a block of it, absorbed by distance, came out a dark patch.
+`glass-light` raises the colour a shadow or bounce ray takes from glass toward 0.9
+per measurement distance, weighted by how saturated it is, so black and grey glass
+stay dark; where the runtime's approximation for indirect rays multiplies a ray by
+a surface's colour once, no distance is in reach and every material's colour goes
+through the lift, water's too. `pane-depth` makes the gbuffer's primary rays
+absorb through glass as if at least Glass Pane Depth measurement distances thick,
+so a pane seen directly shows its colour. Both read their settings from the frame
+block every frame (`RuntimeFrame`), so the group needs the channel; glass is a
+measurement distance under half a block, which Glass Block Depth keeps.
+`glass-light` runs before `shadow-absorption`: it takes over the colour's result
+id, which leaves the loop's pattern as it was. A pass that inserts code takes new
+ids above the module's bound and queues its instructions through
+`Module.insert_after` and `replace`.
 
 Baseline LabPBR textures live in `src/main/resources/assets/` and load as the
 mod's own resource pack, `rtx-remix-renderer`, below user packs: Fabric API for

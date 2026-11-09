@@ -13,6 +13,9 @@ came from instead, every bright patch drew as wide as the surface that gathered 
 lands in. The factor is clamped, since a fold of light would be infinite, divided by its mean at that depth so
 the waves move light about and add none, and greyed out deeper down, where the steps no longer settle and the
 folds of many waves cross.
+
+Water is the surface whose measurement distance is the player's water distance, which the frame carries
+(rrp_media.comp's rrp_waterDistance), within a sixty-fourth of it.
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ from __future__ import annotations
 import math
 import random
 
+from . import merge
 from .spirv import OP_CONSTANT, Module, op
 
 PERIOD = 64.0
@@ -33,10 +37,8 @@ BRIGHTEST = 8.0
 TABLE_DEPTHS = 10
 GREY_FROM, GREY_TO = 5.0, 9.0
 STEPS, STEP = 4, 0.6
-# The water surface material's measurement distance, which no other material the mod makes uses; the player's
-# water distance goes into its colour instead (BlockTextureManager.WATER_MARKER_DISTANCE, the same number).
-WATER_MARKER_DISTANCE = 8.0
-WATER_MARKER_TOLERANCE = WATER_MARKER_DISTANCE / 64.0
+# How far a surface's measurement distance may be from the water distance and still be water's, as a share of it.
+WATER_TOLERANCE = 1.0 / 64.0
 # shortcut: a diagnostic, light through water turns black; set RTXREMIX_CAUSTIC_TELLTALE=1 to build it, never ship it.
 TELLTALE = __import__("os").environ.get("RTXREMIX_CAUSTIC_TELLTALE", "")
 
@@ -107,9 +109,13 @@ def _string(words) -> str:
 class Caustics:
     """Declares what the caustic code needs once per module, then emits it per site."""
 
-    def __init__(self, module: Module, glsl: int, t_float: int, t_bool: int, t_v3: int, g: list, const):
+    def __init__(
+        self, module: Module, glsl: int, t_float: int, t_bool: int, t_v3: int, g: list, const, water_distance: int
+    ):
+        """water_distance is the id of the merged rrp_waterDistance."""
         ins = module.instructions
         self.module, self.glsl, self.t_float, self.t_bool, self.t_v3 = module, glsl, t_float, t_bool, t_v3
+        self.water_distance = water_distance
         self.t_v2 = next((i.words[1] for i in ins if i.op == _TYPE_VECTOR and i.words[2:] == (t_float, 2)), None)
         if self.t_v2 is None:
             self.t_v2 = module.new_id()
@@ -128,7 +134,7 @@ class Caustics:
         variables = {i.words[2]: i.words[1] for i in ins if i.op == _VARIABLE}
         self.cb = next((v for v in cb if v in variables and pointers.get(variables[v]) == (member or (None,))[0]), None)
         self.available = member is not None and self.cb is not None
-        if not self.available:
+        if member is None or not self.available:
             return
         self.member = member[1]
         self.t_pf = next((p for p, pointee in pointers.items() if pointee == t_float), None)
@@ -166,14 +172,15 @@ class Caustics:
         g.append(op(46, self.t_v2, self.zero_v2))
         self.bend, self.step = const(c), const(STEP)
         self.one, self.floor, self.brightest = const(1.0), const(1.0 / BRIGHTEST), const(BRIGHTEST)
-        self.water_from = const(WATER_MARKER_DISTANCE - WATER_MARKER_TOLERANCE)
-        self.water_to = const(WATER_MARKER_DISTANCE + WATER_MARKER_TOLERANCE)
+        self.water_from = const(1.0 - WATER_TOLERANCE)
+        self.water_to = const(1.0 + WATER_TOLERANCE)
         self.zero, self.last_depth = const(0.0), const(TABLE_DEPTHS - 1.0)
         self.table = [(const(float(j)), const(1.0 / m)) for j, m in enumerate(mean_light())]
         self.grey_from, self.grey_to = const(GREY_FROM), const(GREY_TO)
 
-    def emit(self, rq: int, t: int, dist: int) -> tuple[int, list[list[int]]]:
-        """The caustic factor for a crossing at t of ray query rq (1 for anything but water), and its code."""
+    def emit(self, rq: int, t: int, dist: int, site: int) -> tuple[int, list[list[int]]]:
+        """The caustic factor for a crossing at t of ray query rq (1 for anything but water), and its code, which
+        goes after instruction index site."""
         module, code = self.module, []
 
         def typed(opcode, result_type, *operands):
@@ -224,11 +231,13 @@ class Caustics:
         balanced = typed(_FMUL, f, gathered, norm)
         grey = ext(f, _GLSL_SMOOTHSTEP, self.grey_from, self.grey_to, t)
         gathered = ext(f, _GLSL_FMIX, balanced, self.one, grey)
+        water_distance, call = merge.call(module, site, self.water_distance, [], f)
+        code += call
         water = typed(
             _LOGICAL_AND,
             b,
-            typed(_FORD_GREATER_THAN_EQUAL, b, dist, self.water_from),
-            typed(_FORD_LESS_THAN, b, dist, self.water_to),
+            typed(_FORD_GREATER_THAN_EQUAL, b, dist, typed(_FMUL, f, water_distance, self.water_from)),
+            typed(_FORD_LESS_THAN, b, dist, typed(_FMUL, f, water_distance, self.water_to)),
         )
         if TELLTALE == "1":
             gathered = self.zero

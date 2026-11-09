@@ -46,6 +46,12 @@ layout(set = 4, binding = 0, std140) uniform RrpFrame {
     vec4 ShapeBounds[CLOUD_MAX_SHAPES];
     vec4 ShapeForm[CLOUD_MAX_SHAPES];
     vec4 ShapeSize[CLOUD_MAX_SHAPES];
+    // Glass and water (rrp_media.comp), written every frame whatever the clouds: 0 until the mod writes them,
+    // which leaves glass as the runtime ships it and matches no surface as water.
+    float GlassSaturation;   // the Glass Light Saturation setting, 0.25 to 2
+    float GlassLift;         // what a stained glass's brightest channel is raised to, per measurement distance
+    float PaneDepth;         // the Glass Pane Depth setting: glass seen directly absorbs as if at least this many measurement distances thick
+    float WaterDistance;     // the water surface's measurement distance, the player's water distance
 };
 
 layout(set = 4, binding = 1) uniform sampler3D Noise;           // repeat, linear, no mips, as the GL clouds'

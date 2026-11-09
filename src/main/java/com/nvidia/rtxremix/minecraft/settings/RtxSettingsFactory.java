@@ -300,6 +300,17 @@ public final class RtxSettingsFactory {
                 BlockTextureManager.MIN_GLASS_DEPTH, BlockTextureManager.MAX_GLASS_DEPTH,
                 BlockTextureManager.DEFAULT_GLASS_DEPTH,
                 () -> (double) textures.getGlassDepth(), v -> textures.setGlassDepth(v.floatValue())));
+        // Read by the patched runtime from the frame each frame, so both apply as they move.
+        list.add(RtxSetting.ofFloat("materials.glassLightSaturation", SettingGroup.MATERIALS,
+                "rtxremix.setting.materials.glassLightSaturation",
+                "rtxremix.setting.materials.glassLightSaturation.tip",
+                RuntimeFrame.MIN_GLASS_SATURATION, RuntimeFrame.MAX_GLASS_SATURATION,
+                RuntimeFrame.DEFAULT_GLASS_SATURATION,
+                () -> (double) RuntimeFrame.getGlassSaturation(), v -> RuntimeFrame.setGlassSaturation(v.floatValue())));
+        list.add(RtxSetting.ofFloat("materials.glassPaneDepth", SettingGroup.MATERIALS,
+                "rtxremix.setting.materials.glassPaneDepth", "rtxremix.setting.materials.glassPaneDepth.tip",
+                0.0, RuntimeFrame.MAX_PANE_DEPTH, RuntimeFrame.DEFAULT_PANE_DEPTH,
+                () -> (double) RuntimeFrame.getPaneDepth(), v -> RuntimeFrame.setPaneDepth(v.floatValue())));
         RemixAPI remix = renderer.getRemixApi();
         remixBool("materials.smoothReliefMaps", SettingGroup.MATERIALS,
                 "rtxremix.setting.materials.smoothReliefMaps",

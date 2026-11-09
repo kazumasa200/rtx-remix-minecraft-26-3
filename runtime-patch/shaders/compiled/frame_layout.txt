@@ -31,3 +31,7 @@ ShapeCount 176
 ShapeBounds 192
 ShapeForm 208
 ShapeSize 224
+GlassSaturation 240
+GlassLift 244
+PaneDepth 248
+WaterDistance 252

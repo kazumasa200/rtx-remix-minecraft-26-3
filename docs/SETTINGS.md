@@ -145,6 +145,14 @@ it, as a multiple of the default; clear and stained glass alike. Like Block Glow
 Intensity it rebuilds the terrain's materials, so it applies when you leave the
 page.
 
+Two controls work only with the patched runtime this branch ships, and apply as
+you move them. **Glass Light Saturation** sets how deeply coloured the light
+through stained glass is: coloured glass lets bright coloured light through, and
+black or grey glass stays dark. **Glass Pane Depth** sets how strongly a pane
+seen directly shows its colour, as if the glass were at least that many of its
+measurement distances thick; 0 draws panes as before, and a whole block deepens
+only past 2.8.
+
 **Smooth Relief Maps** samples normal and height maps smoothly while block
 textures keep their pixelated look, which removes banding from surface bumps
 and parallax depth. It is a Remix option, so its default is the value Remix

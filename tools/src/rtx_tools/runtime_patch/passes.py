@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from . import clouds, shadow
+from . import clouds, glass, shadow
 from .spirv import (
     OP_BRANCH_CONDITIONAL,
     OP_CONSTANT,
@@ -108,17 +108,55 @@ class ShadowAbsorption(Pass):
     per surface crossed, whatever the distance travelled inside, so a lake floor ten blocks down was lit like
     a puddle's. Each shadow ray-query loop now absorbs by the distance between entries and exits
     (`shadow.apply`), physically, as the eye sees through it. The same loop draws the water's caustics, water
-    being the surface whose measurement distance is caustics.WATER_MARKER_DISTANCE.
+    being the surface whose measurement distance is the water distance the frame at set 4 carries, so the group
+    applies only where the layer's channel is up.
     """
 
     id = "shadow-absorption"
-    version = 2
+    version = 3
     expect = Expect(modules=range(149, 150), sites_per_module=range(1, 8))
+    channel = True
 
     GLASS_SCALE = 1.0
 
     def apply(self, module: Module) -> int:
         return shadow.apply(module, self.GLASS_SCALE, caustics=True)
+
+
+class GlassLight(Pass):
+    """Light through stained glass took its colour, a hue, as a transmittance and came out a dark patch: the colour
+    a shadow or bounce ray takes from glass is raised toward GlassLift by its saturation, so neutral glass stays
+    dark (`glass.apply_light`). Reads the frame at set 4 for the settings, so it joins shadow-absorption's group,
+    which then applies only where the layer's channel is up."""
+
+    id = "glass-light"
+    version = 1
+    expect = Expect(modules=range(161, 162), sites_per_module=range(1, 17))
+    channel = True
+
+    @property
+    def group(self) -> str:
+        return "shadow-absorption"
+
+    def apply(self, module: Module) -> int:
+        return glass.apply_light(module)
+
+
+class PaneDepth(Pass):
+    """A pane, 2/16 of a block thick, seen directly showed only a trace of its colour: the gbuffer's primary rays
+    absorb through glass as if at least Glass Pane Depth measurement distances thick (`glass.apply_pane_depth`)."""
+
+    id = "pane-depth"
+    version = 1
+    expect = Expect(modules=range(174, 175), sites_per_module=range(1, 2))
+    channel = True
+
+    @property
+    def group(self) -> str:
+        return "shadow-absorption"
+
+    def apply(self, module: Module) -> int:
+        return glass.apply_pane_depth(module)
 
 
 class CloudsPrimary(Pass):
@@ -175,5 +213,14 @@ class CloudsShadow(Pass):
 
 # Registry order is the order a combination of groups runs in. clouds-shadow goes before shadow-absorption: it only
 # adds code after a loop, which leaves the loop's pattern for shadow-absorption, while shadow-absorption's edits
-# inside the loop hide it from clouds-shadow.
-PASSES: list[Pass] = [SkyFade(), CloudsPrimary(), CloudsSky(), CloudsShadow(), ShadowAbsorption()]
+# inside the loop hide it from clouds-shadow. glass-light goes before shadow-absorption for the same reason: it takes
+# over the result id of the colour the loop's logarithm reads, which leaves the loop's pattern as it was.
+PASSES: list[Pass] = [
+    SkyFade(),
+    CloudsPrimary(),
+    CloudsSky(),
+    CloudsShadow(),
+    GlassLight(),
+    ShadowAbsorption(),
+    PaneDepth(),
+]

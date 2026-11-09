@@ -137,8 +137,14 @@ def build(
     data = dll.read_bytes()
     keyer = Keyer(layer_dll)
     layer = ctypes.CDLL(str(layer_dll))
-    layer.rrp_apply.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_void_p, ctypes.c_size_t,
-                                ctypes.c_void_p, ctypes.c_size_t]
+    layer.rrp_apply.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+    ]
     layer.rrp_apply.restype = ctypes.c_int64
     validator = _spirv_val()
     known = json.loads(lock.read_text(encoding="utf-8")) if lock.is_file() else {}
@@ -201,20 +207,25 @@ def build(
                         if sites != alone[p.id][0]:
                             for g in subset:
                                 failed_groups.setdefault(
-                                    g, f"{p.id} finds {sites} sites beside {subset}, {alone[p.id][0]} alone")
+                                    g, f"{p.id} finds {sites} sites beside {subset}, {alone[p.id][0]} alone"
+                                )
                 finish(Variant(key, offset, len(original_bytes), subset, module, original))
 
     for p in passes:
         o = outcomes[p.id]
         if o.modules not in p.expect.modules:
-            o.ok, o.reason = False, f"{o.modules} modules, expected {p.expect.modules.start}-{p.expect.modules.stop - 1}"
+            o.ok, o.reason = (
+                False,
+                f"{o.modules} modules, expected {p.expect.modules.start}-{p.expect.modules.stop - 1}",
+            )
         elif any(s not in p.expect.sites_per_module for s in o.sites):
             o.ok, o.reason = False, f"sites per module {o.sites} outside the expected range"
         if not o.ok:
             failed_groups.setdefault(p.group, f"{p.id}: {o.reason}")
 
-    lock_out = {b.name: {"groups": list(b.groups), "sha256": b.digest, "validated": True}
-                for b in built if b.error is None}
+    lock_out = {
+        b.name: {"groups": list(b.groups), "sha256": b.digest, "validated": True} for b in built if b.error is None
+    }
 
     for p in passes:
         o = outcomes[p.id]
@@ -245,7 +256,8 @@ def build(
         lines.append(f"{b.key}\t{b.offset}\t{b.size}\t{','.join(b.groups)}\t{b.file}")
     (patches / "manifest.tsv").write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     if validator is not None:
-        kept = {k: e for k, e in lock_out.items() if not any(g in failed_groups for g in e["groups"])}
+        built_groups = {b.name: b.groups for b in built}
+        kept = {k: e for k, e in lock_out.items() if not any(g in failed_groups for g in built_groups[k])}
         lock.parent.mkdir(parents=True, exist_ok=True)
         lock.write_text(json.dumps(kept, indent=1, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
     return list(outcomes.values())

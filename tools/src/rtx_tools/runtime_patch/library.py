@@ -1,12 +1,13 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-"""The clouds library the passes merge into the runtime's modules: runtime-patch/shaders/rrp_clouds.comp, which
-includes the mod's own cloud_field.glsl, compiled by glslang.
+"""The libraries the passes merge into the runtime's modules, compiled by glslang: the clouds,
+runtime-patch/shaders/rrp_clouds.comp, which includes the mod's own cloud_field.glsl, and glass and water as the
+shadow-absorption group sees them, rrp_media.comp.
 
-The compiled module is kept under runtime-patch/shaders/compiled/ with a digest of its sources, so building the
-mod needs no Vulkan SDK; with the SDK the build recompiles and rewrites the three files there when they differ,
-as it rewrites patches.lock. frame_layout.txt lists the frame block's members and offsets as the compiled
-module lays them out, which RuntimeFrame writes and RuntimeFrameTest checks.
+The compiled modules are kept under runtime-patch/shaders/compiled/ with one digest of all their sources, so
+building the mod needs no Vulkan SDK; with the SDK the build recompiles and rewrites the files there when they
+differ, as it rewrites patches.lock. frame_layout.txt lists the frame block's members and offsets as the compiled
+clouds library lays them out, which RuntimeFrame writes and RuntimeFrameTest checks.
 """
 
 from __future__ import annotations
@@ -24,8 +25,13 @@ from .spirv import Module
 ROOT = Path(__file__).resolve().parents[4]
 SHADERS = ROOT / "runtime-patch" / "shaders"
 FIELD = ROOT / "src" / "main" / "resources" / "assets" / "rtx-remix-renderer" / "shaders"
-SOURCES = (SHADERS / "rrp_clouds.comp", SHADERS / "rrp_cloud_pass.comp", SHADERS / "rrp_frame.glsl",
-           FIELD / "cloud_field.glsl")
+SOURCES = (
+    SHADERS / "rrp_clouds.comp",
+    SHADERS / "rrp_cloud_pass.comp",
+    SHADERS / "rrp_media.comp",
+    SHADERS / "rrp_frame.glsl",
+    FIELD / "cloud_field.glsl",
+)
 DIGEST = SHADERS / "compiled" / "rrp_clouds.sources.sha256"
 LAYOUT = SHADERS / "compiled" / "frame_layout.txt"
 
@@ -54,9 +60,14 @@ def frame_layout(module: Module) -> list[tuple[str, int]]:
     """The frame block's members and their byte offsets, in order."""
     words = {i.words[1]: i for i in module.instructions if i.op == _NAME}
     block = next(k for k, i in words.items() if _text(i.words[2:]) == "RrpFrame")
-    names = {i.words[2]: _text(i.words[3:]) for i in module.instructions if i.op == _MEMBER_NAME and i.words[1] == block}
-    offsets = {i.words[2]: i.words[4] for i in module.instructions
-               if i.op == _MEMBER_DECORATE and i.words[1] == block and i.words[3] == _OFFSET}
+    names = {
+        i.words[2]: _text(i.words[3:]) for i in module.instructions if i.op == _MEMBER_NAME and i.words[1] == block
+    }
+    offsets = {
+        i.words[2]: i.words[4]
+        for i in module.instructions
+        if i.op == _MEMBER_DECORATE and i.words[1] == block and i.words[3] == _OFFSET
+    }
     return [(names[m], offsets[m]) for m in sorted(names)]
 
 
@@ -71,14 +82,24 @@ def _compiled(name: str, digest: str) -> bytes:
     tool = _glslang()
     if tool is None:
         if not target.is_file() or DIGEST.read_text(encoding="utf-8").strip() != digest:
-            raise ValueError("the clouds library's sources changed; rebuild it with the Vulkan SDK's glslang")
+            raise ValueError("the runtime patch shaders' sources changed; rebuild them with the Vulkan SDK's glslang")
         return target.read_bytes()
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / f"{name}.spv"
         run = subprocess.run(
-            [str(tool), "-V", "--target-env", "spirv1.5", f"-I{SHADERS}", f"-I{FIELD}",
-             str(SHADERS / f"{name}.comp"), "-o", str(out)],
-            capture_output=True, text=True,
+            [
+                str(tool),
+                "-V",
+                "--target-env",
+                "spirv1.5",
+                f"-I{SHADERS}",
+                f"-I{FIELD}",
+                str(SHADERS / f"{name}.comp"),
+                "-o",
+                str(out),
+            ],
+            capture_output=True,
+            text=True,
         )
         if run.returncode != 0:
             raise ValueError(f"glslang failed on {name}.comp: {(run.stdout + run.stderr).strip()[-600:]}")
@@ -103,6 +124,12 @@ def clouds_library() -> Module:
         _write_if_changed(LAYOUT, "".join(f"{name} {offset}\n" for name, offset in frame_layout(module)))
         _write_if_changed(DIGEST, digest + "\n")
     return module
+
+
+@cache
+def media_library() -> Module:
+    """The library the shadow-absorption group merges: rrp_media.comp."""
+    return Module.from_bytes(_compiled("rrp_media", sources_digest()))
 
 
 @cache

@@ -1,0 +1,65 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+// Glass and water as the shadow-absorption group sees them, as a library for the runtime's own shaders: which
+// medium a surface is, and the light through glass, after PurrsianMilkman's runtime patches (Apache-2.0, notice
+// under packaging/licenses/runtime-patches/). The settings come in the frame at set 4 (rrp_frame.glsl); a frame of
+// zeros leaves every surface as the runtime ships it. main only calls the exports so glslang keeps them; the patch
+// build merges an export, and what it reaches, into each module that calls it (runtime_patch/merge.py, glass.py,
+// shadow.py).
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "rrp_frame.glsl"
+
+// Every glass material measures its transmittance over less than half a block (BlockTextureManager's Glass Block
+// Depth keeps it so); water's and every other medium's distance is longer.
+#define RRP_GLASS_MAX_DISTANCE 0.5
+
+// The water surface's measurement distance, the player's water distance, which the frame carries: a surface whose
+// distance is within a sixty-fourth of it is water (the caustics, caustics.py). 0 without a frame, which no
+// surface matches.
+float rrp_waterDistance() {
+    return WaterDistance;
+}
+
+// A stained glass's material colour is a hue, not a transmittance: after the runtime's gamma a red pane is about
+// (0.33, 0.006, 0.006) per measurement distance, so a block of it, absorbing by distance, cast a dark shadow
+// rather than red light. Its saturation is scaled by Glass Light Saturation about its luminance, and its brightest
+// channel raised to GlassLift with the others in proportion, weighted by how saturated it is (1 - min / max), so
+// neutral glass, black and grey, is not lightened and goes on blocking light.
+vec3 rrpGlassColour(vec3 t) {
+    float luminance = dot(t, vec3(0.2126, 0.7152, 0.0722));
+    vec3 s = clamp(vec3(luminance) + (t - vec3(luminance)) * GlassSaturation, vec3(1.0 / 1024.0), vec3(1.0));
+    float hi = max(s.r, max(s.g, s.b));
+    float lo = min(s.r, min(s.g, s.b));
+    float lift = max(GlassLift / hi, 1.0);
+    return min(s * (1.0 + (lift - 1.0) * (1.0 - lo / hi)), vec3(1.0));
+}
+
+// A shadow ray's or a bounce ray's transmittance of a surface it crossed, per measurement distance dist, before
+// the runtime takes its logarithm for the absorption by distance: glass's as rrpGlassColour gives it.
+vec3 rrp_glassLight(vec3 t, float dist) {
+    return GlassSaturation > 0.0 && dist < RRP_GLASS_MAX_DISTANCE ? rrpGlassColour(t) : t;
+}
+
+// A bounce ray's colour of a translucent surface it crossed, which the runtime's approximation for indirect rays
+// applies once per surface whatever its depth. The material's distance is not in reach there, so every surface's
+// colour goes through rrpGlassColour, water's too.
+vec3 rrp_glassBounce(vec3 colour) {
+    return GlassSaturation > 0.0 ? rrpGlassColour(colour) : colour;
+}
+
+// The distance a primary ray travelled inside a medium, for its absorption: a pane is 2/16 of a block, so seen
+// head on it showed only the 0.36th power of its colour, where a block shows the 2.86th. Glass absorbs as if at
+// least PaneDepth measurement distances thick; a block, thicker than that, is left alone, and the change is
+// continuous with the angle.
+float rrp_paneDepth(float travelled, float dist) {
+    return GlassSaturation > 0.0 && dist < RRP_GLASS_MAX_DISTANCE ? max(travelled, PaneDepth * dist) : travelled;
+}
+
+layout(local_size_x = 1) in;
+void main() {
+    vec3 keep = rrp_glassLight(vec3(1.0), 1.0) + rrp_glassBounce(vec3(1.0))
+        + vec3(rrp_paneDepth(1.0, 1.0) + rrp_waterDistance());
+}

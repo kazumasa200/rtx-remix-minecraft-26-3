@@ -116,6 +116,8 @@ class SettingsRowWidthTest {
             entry("rtxremix.setting.sky.nightAmbient", "10.00"),
             entry("rtxremix.setting.materials.terrainEmission", "50.00×"),
             entry("rtxremix.setting.materials.glassDepth", "4.00"),
+            entry("rtxremix.setting.materials.glassLightSaturation", "2.00"),
+            entry("rtxremix.setting.materials.glassPaneDepth", "2.80"),
             entry("rtxremix.setting.materials.smoothReliefMaps", "OFF"),
             entry("rtxremix.setting.materials.puddleAmount", "0.00"),
             entry("rtxremix.setting.materials.puddleReflection", "0.00"),

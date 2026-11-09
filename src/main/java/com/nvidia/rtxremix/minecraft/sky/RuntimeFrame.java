@@ -5,6 +5,7 @@
 package com.nvidia.rtxremix.minecraft.sky;
 
 import com.nvidia.rtxremix.minecraft.RuntimePatchLayer;
+import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
@@ -18,7 +19,7 @@ import java.lang.foreign.ValueLayout;
  */
 public final class RuntimeFrame {
 
-    static final int BYTES = 240;
+    static final int BYTES = 256;
     static final int ENABLED = 0;
     static final int FRAME_INDEX = 4;
     static final int MARCH_CACHE = 8;
@@ -53,6 +54,24 @@ public final class RuntimeFrame {
     static final int SHAPE_SIZE = 224;
     /** Bytes between the elements of a shape array (std140 vec4). */
     static final int SHAPE_STRIDE = 16;
+    static final int GLASS_SATURATION = 240;
+    static final int GLASS_LIFT = 244;
+    static final int PANE_DEPTH = 248;
+    static final int WATER_DISTANCE = 252;
+
+    /**
+     * Glass Light Saturation: how saturated the light through stained glass is, as a multiple of the glass's own
+     * colour (runtime-patch/shaders/rrp_glass.comp).
+     */
+    public static final float MIN_GLASS_SATURATION = 0.25f, DEFAULT_GLASS_SATURATION = 1.0f,
+            MAX_GLASS_SATURATION = 2.0f;
+    /**
+     * Glass Pane Depth: glass seen directly absorbs as if at least this many of its measurement distances thick,
+     * so a pane shows its colour; 0 leaves panes as the runtime draws them. Past 2.8 a whole block deepens too.
+     */
+    public static final float DEFAULT_PANE_DEPTH = 1.5f, MAX_PANE_DEPTH = 2.8f;
+    /** What a stained glass's brightest channel is raised to, per measurement distance, by its saturation. */
+    private static final float GLASS_LIFT_VALUE = 0.9f;
 
     /** The cone, about the clouds' light, within which a long shadow ray counts as its ray. */
     private static final float LIGHT_CONE_DEGREES = 2.5f;
@@ -61,6 +80,8 @@ public final class RuntimeFrame {
 
     private static final MemorySegment BLOCK = Arena.global().allocate(BYTES, 16);
     private static int frameIndex;
+    private static volatile float glassSaturation = DEFAULT_GLASS_SATURATION;
+    private static volatile float paneDepth = DEFAULT_PANE_DEPTH;
     /** The Debug page's switch: the Unbound clouds drawn in GL (dome and lens) even where the runtime can. */
     private static volatile boolean drawnInGl;
 
@@ -87,6 +108,22 @@ public final class RuntimeFrame {
 
     public static void setShadowTelltale(boolean on) {
         shadowTelltale = on;
+    }
+
+    public static float getGlassSaturation() {
+        return glassSaturation;
+    }
+
+    public static void setGlassSaturation(float value) {
+        glassSaturation = Math.max(MIN_GLASS_SATURATION, Math.min(MAX_GLASS_SATURATION, value));
+    }
+
+    public static float getPaneDepth() {
+        return paneDepth;
+    }
+
+    public static void setPaneDepth(float value) {
+        paneDepth = Math.max(0.0f, Math.min(MAX_PANE_DEPTH, value));
     }
 
     /**
@@ -124,10 +161,16 @@ public final class RuntimeFrame {
 
     /**
      * Hands this frame's block to the layer, then clears it, so a frame in which nothing writes the clouds
-     * draws none. Call once a frame, just before the runtime presents.
+     * draws none. The glass settings and the water's measurement distance, by which the caustics tell water, go
+     * in every frame. Call once a frame, just before the runtime presents.
      */
     public static void send() {
         BLOCK.set(ValueLayout.JAVA_INT, FRAME_INDEX, frameIndex++);
+        BLOCK.set(ValueLayout.JAVA_FLOAT, GLASS_SATURATION, glassSaturation);
+        BLOCK.set(ValueLayout.JAVA_FLOAT, GLASS_LIFT, GLASS_LIFT_VALUE);
+        BLOCK.set(ValueLayout.JAVA_FLOAT, PANE_DEPTH, paneDepth);
+        BlockTextureManager textures = BlockTextureManager.get();
+        BLOCK.set(ValueLayout.JAVA_FLOAT, WATER_DISTANCE, textures != null ? textures.getWaterTransmittanceDistance() : 0.0f);
         RuntimePatchLayer.publishFrame(BLOCK, BYTES);
         BLOCK.fill((byte) 0);
     }

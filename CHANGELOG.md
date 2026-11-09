@@ -31,6 +31,12 @@ also part of every mod file name.
   light dims under a cloud while torches and lamps stay as bright (#13), and
   the light shafts in fog follow the gaps. Seen from inside or above the
   clouds, they lie over the land below.
+- Light through stained glass, from the sun or a lamp, comes out brightly in
+  the glass's colour instead of as a dark patch, while black and grey glass
+  stay dark; light bounced through it follows. A stained glass pane seen
+  directly shows its colour as a thicker glass would. Glass Light Saturation
+  and Glass Pane Depth (Materials) set both. After PurrsianMilkman's runtime
+  patches.
 
 ### Fixed
 

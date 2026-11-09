@@ -32,8 +32,12 @@ _RQ_WORLD_DIRECTION, _RQ_WORLD_ORIGIN = 6029, 6030
 _STORAGE_UNIFORM = 2
 
 
-def _first_of(module: Module, opcode: int, words: tuple) -> int | None:
-    return next((i.words[1] for i in module.instructions if i.op == opcode and i.words[2:] == words), None)
+def _first_of(module: Module, opcode: int, words: tuple) -> int:
+    """The result of the first instruction with this opcode and these operands, a type every caller needs."""
+    found = next((i.words[1] for i in module.instructions if i.op == opcode and i.words[2:] == words), None)
+    if found is None:
+        raise ValueError(f"the module has no instruction {opcode} {words}")
+    return found
 
 
 class MatteSite:
@@ -50,8 +54,12 @@ class MatteSite:
         if not loads:
             return
         n = loads[0]
-        if not (ins[n + 1].op == _IMAGE_SAMPLE_EXPLICIT_LOD and ins[n + 2].op == _VECTOR_SHUFFLE
-                and ins[n + 3].op == _VECTOR_TIMES_SCALAR and ins[n + 3].words[3] == ins[n + 2].words[2]):
+        if not (
+            ins[n + 1].op == _IMAGE_SAMPLE_EXPLICIT_LOD
+            and ins[n + 2].op == _VECTOR_SHUFFLE
+            and ins[n + 3].op == _VECTOR_TIMES_SCALAR
+            and ins[n + 3].words[3] == ins[n + 2].words[2]
+        ):
             return
         self.shuffle, self.scale = n + 2, n + 3
         self.matte = ins[n + 2].words[2]
@@ -83,15 +91,28 @@ class LandSite:
                 continue
             scaled, blend = defs.get(i.words[3]), defs.get(i.words[4])
             after = ins[n + 1] if n + 1 < len(ins) else None
-            if (scaled is not None and scaled.op == _VECTOR_TIMES_SCALAR and blend is not None and blend.op == OP_LOAD
-                    and after is not None and after.op == _COMPOSITE_CONSTRUCT and after.words[3] == i.words[2]
-                    and len(after.words) == 5):
+            if (
+                scaled is not None
+                and scaled.op == _VECTOR_TIMES_SCALAR
+                and blend is not None
+                and blend.op == OP_LOAD
+                and after is not None
+                and after.op == _COMPOSITE_CONSTRUCT
+                and after.words[3] == i.words[2]
+                and len(after.words) == 5
+            ):
                 radiance = defs.get(scaled.words[3])
                 if radiance is not None and radiance.op == OP_LOAD:
                     finals.append((n, scaled, radiance))
-        lengths = [i.words[4] for i in ins if i.op == _VECTOR_TIMES_SCALAR and i.words[3] == direction
-                   and defs.get(i.words[4]) is not None and defs[i.words[4]].op == 12
-                   and defs[i.words[4]].words[4] == _GLSL_LENGTH]
+        lengths = [
+            i.words[4]
+            for i in ins
+            if i.op == _VECTOR_TIMES_SCALAR
+            and i.words[3] == direction
+            and defs.get(i.words[4]) is not None
+            and defs[i.words[4]].op == 12
+            and defs[i.words[4]].words[4] == _GLSL_LENGTH
+        ]
         view_z = module.named("PrimaryLinearViewZ")
         if len(finals) != 1 or len(lengths) != 1 or len(view_z) != 1:
             return
@@ -150,8 +171,11 @@ def _camera_position(module: Module, code: list[list[int]]) -> int | None:
         if index is None or index.op != OP_CONSTANT or index.words[3] != view_to_world:
             continue
         load = next((j for j in ins[n + 1 : n + 3] if j.op == OP_LOAD and j.words[3] == i.words[2]), None)
-        extract = next((j for j in ins[n + 1 : n + 4] if j.op == _COMPOSITE_EXTRACT and j.words[3] == load.words[2]),
-                       None) if load else None
+        if load is None:
+            return None
+        extract = next(
+            (j for j in ins[n + 1 : n + 4] if j.op == _COMPOSITE_EXTRACT and j.words[3] == load.words[2]), None
+        )
         if extract is None:
             return None
         t_float = _first_of(module, _TYPE_FLOAT, (32,))
@@ -187,7 +211,9 @@ def apply_primary(module: Module) -> int:
     t_v4 = _first_of(module, _TYPE_VECTOR, (t_float, 4))
 
     def constant(value: float) -> int:
-        return next(i.words[2] for i in ins if i.op == OP_CONSTANT and i.words[1] == t_float and i.words[3] == f32(value))
+        return next(
+            i.words[2] for i in ins if i.op == OP_CONSTANT and i.words[1] == t_float and i.words[3] == f32(value)
+        )
 
     one, zero = constant(1.0), constant(0.0)
 
@@ -225,8 +251,8 @@ def apply_primary(module: Module) -> int:
     code = []
     camera = _camera_position(module, code)
     brightness = _sky_brightness(module, code)
-    if brightness is None:
-        raise ValueError("the composite's sky brightness was not found")
+    if camera is None or brightness is None:
+        raise ValueError("the composite's camera position or sky brightness was not found")
     limit = module.new_id()
     code.append(op(_SELECT, t_float, limit, land.missed, zero, land.view_distance))
     clouds, call = merge.call(module, land.scaled, fn_land, [site.direction, camera, site.pixel, limit], t_v4)
@@ -250,10 +276,14 @@ def _sky_reads(module: Module) -> list[tuple[int, int]]:
     if len(probe) != 1:
         return []
     probe_loads = {i.words[2] for i in ins if i.op == OP_LOAD and i.words[3] == probe[0]}
-    sites = [(n, i.words[4]) for n, i in enumerate(ins) if i.op == _IMAGE_SAMPLE_EXPLICIT_LOD and i.words[3] in probe_loads]
+    sites = [
+        (n, i.words[4]) for n, i in enumerate(ins) if i.op == _IMAGE_SAMPLE_EXPLICIT_LOD and i.words[3] in probe_loads
+    ]
     if len(matte) == 1:
         matte_loads = {i.words[2] for i in ins if i.op == OP_LOAD and i.words[3] == matte[0]}
-        matte_samples = [n for n, i in enumerate(ins) if i.op == _IMAGE_SAMPLE_EXPLICIT_LOD and i.words[3] in matte_loads]
+        matte_samples = [
+            n for n, i in enumerate(ins) if i.op == _IMAGE_SAMPLE_EXPLICIT_LOD and i.words[3] in matte_loads
+        ]
         for n in matte_samples[1:]:
             beside = [d for m, d in sites if n < m < n + 40]
             if len(beside) == 1:
@@ -270,8 +300,11 @@ def apply_sky(module: Module) -> int:
     t_float = _first_of(module, _TYPE_FLOAT, (32,))
     t_v3 = _first_of(module, _TYPE_VECTOR, (t_float, 3))
     t_v4 = _first_of(module, _TYPE_VECTOR, (t_float, 4))
-    one = next(i.words[2] for i in module.instructions
-               if i.op == OP_CONSTANT and i.words[1] == t_float and i.words[3] == f32(1.0))
+    one = next(
+        i.words[2]
+        for i in module.instructions
+        if i.op == OP_CONSTANT and i.words[1] == t_float and i.words[3] == f32(1.0)
+    )
     for n, direction in sites:
         sample = list(module.instructions[n].words)
         if sample[1] != t_v4:
@@ -308,11 +341,13 @@ def apply_shadow(module: Module) -> int:
     t_float = _first_of(module, _TYPE_FLOAT, (32,))
     t_v3 = _first_of(module, _TYPE_VECTOR, (t_float, 3))
     far = module.new_id()
-    module.insert_after(next(n for n, i in enumerate(ins) if i.op == 54) - 1, op(OP_CONSTANT, t_float, far, f32(1.0e30)))
+    module.insert_after(
+        next(n for n, i in enumerate(ins) if i.op == 54) - 1, op(OP_CONSTANT, t_float, far, f32(1.0e30))
+    )
     loops = {}
     for site in sites:
         loops.setdefault(site.loop[0], site)
-    for header, site in loops.items():
+    for site in loops.values():
         _, merge_label, rq = site.loop
         at = merge_label
         while at + 1 < len(ins) and ins[at + 1].op == _PHI:

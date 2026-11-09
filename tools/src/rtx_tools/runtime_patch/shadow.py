@@ -8,6 +8,8 @@ over the word-level IR so building the patch set needs no SPIRV-Tools.
 
 from __future__ import annotations
 
+from . import library
+from . import merge as merging
 from .caustics import Caustics
 from .spirv import (
     OP_BRANCH_CONDITIONAL,
@@ -118,6 +120,11 @@ def apply(module: Module, glass_scale: float, caustics: bool = False) -> int:
     sites = find_sites(module)
     if not sites:
         return 0
+    water_distance = None
+    if caustics:
+        # Merged before any edit is queued: a merge commits the module.
+        water_distance = merging.merge(module, library.media_library(), "rrp_waterDistance")
+        sites = find_sites(module)
     ins = module.instructions
     glsl, t_float, t_bool, t_uint, t_v3 = _types(module)
     t_pv3 = next((i.words[1] for i in ins if i.op == _TYPE_POINTER and i.words[2:] == (_STORAGE_FUNCTION, t_v3)), None)
@@ -146,7 +153,9 @@ def apply(module: Module, glass_scale: float, caustics: bool = False) -> int:
         op(_CONSTANT_COMPOSITE, t_v3, v1, one, one, one),
         op(_CONSTANT_COMPOSITE, t_v3, v_eps, eps, eps, eps),
     ]
-    web = Caustics(module, glsl, t_float, t_bool, t_v3, g, const) if caustics else None
+    web = (
+        Caustics(module, glsl, t_float, t_bool, t_v3, g, const, water_distance) if water_distance is not None else None
+    )
     first_function = next(n for n, i in enumerate(ins) if i.op == OP_FUNCTION)
     module.insert_after(first_function - 1, *g)
 
@@ -217,7 +226,7 @@ def apply(module: Module, glass_scale: float, caustics: bool = False) -> int:
             c2, c2_op = typed(_FADD, t_v3, c0, c1)
             per_hit, web_code = v1, []
             if web is not None and web.available:
-                per_hit, web_code = web.emit(rq, t, s.dist)
+                per_hit, web_code = web.emit(rq, t, s.dist, s.sig_at)
             module.insert_after(
                 s.sig_at,
                 t_op,
