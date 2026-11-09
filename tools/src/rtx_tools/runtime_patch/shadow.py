@@ -205,9 +205,9 @@ def apply(module: Module, glass_scale: float, caustics: bool = False) -> int:
             module.replace(s.log_at, floor_op, [*log[:5], floor])
             t, t_op = typed(_RQ_INTERSECTION_T, t_float, rq, uint0)
             ff, ff_op = typed(_RQ_INTERSECTION_FRONT_FACE, t_bool, rq, uint0)
-            # The mod's meshes run clockwise seen from outside, and the runtime's ray queries report a
-            # candidate seen counter-clockwise as front facing: a front-facing hit leaves the volume.
-            sign, sign_op = typed(_SELECT, t_float, ff, k_glass, k_glass_in)
+            # The mod winds every face as vanilla's models do, which the runtime's ray queries report as
+            # front facing seen from outside: a front-facing hit enters the volume.
+            sign, sign_op = typed(_SELECT, t_float, ff, k_glass_in, k_glass)
             st, st_op = typed(_FMUL, t_float, sign, t)
             a0, a0_load = typed(OP_LOAD, t_v3, depth)
             a1, a1_op = typed(_VECTOR_TIMES_SCALAR, t_v3, s.sig, st)

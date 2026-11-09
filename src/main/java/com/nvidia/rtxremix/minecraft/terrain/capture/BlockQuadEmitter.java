@@ -915,15 +915,22 @@ public final class BlockQuadEmitter {
             if (isWater) {
                 float u0 = waterTileCoordinate(wx, tileSize), v0 = waterTileCoordinate(wz, tileSize);
                 float u1 = u0 + 1 / tileSize, v1 = v0 + 1 / tileSize;
-                setUv4(tempUvs, u0, v0, u1, v0, u1, v1, u0, v1);
+                // Vanilla's up-face corner order, as every block face has it and the water's sides do:
+                // the shadow-absorption patch tells an entry from an exit by which side of a face a ray
+                // meets, so every surface is wound alike. The top in the other order turned glass,
+                // which takes its faces from the model, inside out to the sun.
+                setPos4(tempPositions, lx, ly + h00, lz, lx, ly + h01, lz + 1,
+                        lx + 1, ly + h11, lz + 1, lx + 1, ly + h10, lz);
+                setUv4(tempUvs, u0, v0, u0, v1, u1, v1, u1, v0);
                 writer.writeFluidQuad(tempPositions, tempUvs, 0, 1, 0, color,
                         null, 0, 0, 1, 1, layer, texManager);
                 // The shadow-absorption patch counts entries and exits by facing, and a reversed copy
                 // in the same plane cancelled every crossing of the surface: no water absorbed light
                 // and its caustics were applied twice.
                 if (!RuntimePatchLayer.shadowAbsorption()) {
-                    setPos4(tempPositions, lx, ly + h01, lz + 1, lx + 1, ly + h11, lz + 1,
-                            lx + 1, ly + h10, lz, lx, ly + h00, lz);
+                    setPos4(tempPositions, lx, ly + h00, lz, lx + 1, ly + h10, lz,
+                            lx + 1, ly + h11, lz + 1, lx, ly + h01, lz + 1);
+                    setUv4(tempUvs, u0, v0, u1, v0, u1, v1, u0, v1);
                     writer.writeFluidQuad(tempPositions, tempUvs, 0, -1, 0, color,
                             null, 0, 0, 1, 1, layer, texManager);
                 }
@@ -976,7 +983,10 @@ public final class BlockQuadEmitter {
             if (isWater) {
                 float u0 = waterTileCoordinate(wx, tileSize), v0 = waterTileCoordinate(wz, tileSize);
                 float u1 = u0 + 1 / tileSize, v1 = v0 + 1 / tileSize;
-                setUv4(tempUvs, u0, v1, u1, v1, u1, v0, u0, v0);
+                // Vanilla's down-face corner order, wound as the top is (see there).
+                setPos4(tempPositions, lx, bottom, lz + 1, lx, bottom, lz,
+                        lx + 1, bottom, lz, lx + 1, bottom, lz + 1);
+                setUv4(tempUvs, u0, v1, u0, v0, u1, v0, u1, v1);
                 writer.writeFluidQuad(tempPositions, tempUvs, 0, -1, 0, color,
                         null, 0, 0, 1, 1, layer, texManager);
             } else {

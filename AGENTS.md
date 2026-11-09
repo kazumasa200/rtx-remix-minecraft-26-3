@@ -170,9 +170,12 @@ surface's transmittance once per crossing, whatever the distance inside, so a
 lake floor ten blocks down was lit like a puddle's. The loop now adds up the
 optical depth between entries and exits, signed by facing so the order of the
 candidates does not matter, closes an entry still open at the ray's end, and
-multiplies the light by exp(-depth) once. The mod's meshes run clockwise seen
-from outside, the runtime's front face, and its ray queries report a candidate
-seen from inside as front facing, so a front-facing hit is an exit. Water's top
+multiplies the light by exp(-depth) once. The mod winds every face as vanilla's models
+do, and the runtime's ray queries report a candidate met from outside as front
+facing, so a front-facing hit is an entry. The fluid emitter had wound water's
+top and bottom the other way, and a sign that suited them turned glass inside
+out: it cast no shadow in sunlight at all. Water's top and bottom take
+vanilla's corner order now. Water's top
 is emitted once while the group is active (`RuntimePatchLayer.shadowAbsorption`,
 `BlockQuadEmitter`): its reversed copy in the same plane cancelled every
 crossing, so water absorbed nothing and its caustics were applied twice. Glass and
