@@ -2,9 +2,10 @@
 
 The mod adds its own settings screen to the game. Open **Options**, then **RTX
 Remix Settings...**. It is available from the title screen and from the pause
-menu. Most controls apply as you move them. Block Lights and Block Glow
-Intensity apply when you leave their page: Block Glow Intensity rebuilds
-terrain, and Block Lights updates every loaded light.
+menu. Most controls apply as you move them. Block Lights, Block Glow
+Intensity and Glass Block Depth apply when you leave their page: Block Glow
+Intensity and Glass Block Depth rebuild terrain, and Block Lights updates every
+loaded light.
 
 Tooltips explain each control and mark a value you have changed as
 `(overridden)`.
@@ -59,6 +60,12 @@ where it is cold enough to snow. Aerial Haze fades distant land into the
 colour of the sky at the horizon, thickest in low valleys and thinnest on high
 ground, and thicker in the rain, when distant land melts into the overcast's
 grey; the mod draws it over the image.
+
+**Sun Size** widens the light of the sun and the moon, so the edges of their
+shadows soften: the real sun blurs a shadow by about a centimetre a metre,
+which looks razor sharp at block scale. The runtime spreads the same light over
+the wider disc, so nothing grows brighter, and the sun and moon drawn in the sky
+keep their size. 1 is their real width.
 
 **Cloud Style** picks one of four looks. Classic voxelizes Minecraft's own
 clouds, Procedural draws puffy meshes, and Reimagined draws large rounded
@@ -132,6 +139,11 @@ runtime, and 0 turns any of them off.
 rather than the separate sources in Block Lights. Applying it recreates shared
 terrain materials and rebuilds the loaded terrain, so edits wait until you
 leave the page.
+
+**Glass Block Depth** sets how strongly a block of glass tints what lies behind
+it, as a multiple of the default; clear and stained glass alike. Like Block Glow
+Intensity it rebuilds the terrain's materials, so it applies when you leave the
+page.
 
 **Smooth Relief Maps** samples normal and height maps smoothly while block
 textures keep their pixelated look, which removes banding from surface bumps
@@ -246,9 +258,9 @@ apply it. The category's `close()` also calls
 
 An expensive applier can therefore run once per long pause during a drag, not
 only once at its end. `clouds.vanillaEdgeSmoothness` and `clouds.size` accept
-that debounce. Block Glow Intensity does not use `deferSliderApply`: movement
-only stores the pending multiplier. On close,
-`BlockTextureManager.commitTerrainEmissionMultiplier()` reports whether it
+that debounce. Block Glow Intensity and Glass Block Depth do not use
+`deferSliderApply`: movement only stores the pending value. On close,
+`BlockTextureManager.commitMaterialSettings()` reports whether either
 changed; only then does `RtxRemixMod.rebuildTerrainForMaterialSettings()`
 recreate shared materials and recapture terrain. Keep this separate from the
 Block Lights transaction.

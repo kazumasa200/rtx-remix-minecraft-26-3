@@ -158,6 +158,8 @@
   "rtxremix.setting.clouds.height.tip": "Moves clouds higher or lower in the sky.",
   "rtxremix.setting.sky.sunIntensity": "Sun Intensity",
   "rtxremix.setting.sky.sunIntensity.tip": "Controls the brightness of direct sunlight. 1.00 uses the intended balance.",
+  "rtxremix.setting.sky.sunSize": "Sun Size",
+  "rtxremix.setting.sky.sunSize.tip": "Widens the light of the sun and the moon, which softens the edges of their shadows without lighting more. 1.00 is their real width. The discs drawn in the sky keep their size.",
   "rtxremix.setting.sky.moonIntensity": "Moon Intensity",
   "rtxremix.setting.sky.moonIntensity.tip": "Controls the brightness of moonlight. 1.00 uses the intended balance.",
   "rtxremix.setting.sky.dayAmbient": "Day Ambient Boost",
@@ -178,6 +180,8 @@
 
   "rtxremix.setting.materials.terrainEmission": "Block Glow Intensity",
   "rtxremix.setting.materials.terrainEmission.tip": "Multiplies the light emitted by glowing block surfaces. Off disables their glow; 1.00\u00d7 keeps the intended brightness. This does not change block lights such as torches.",
+  "rtxremix.setting.materials.glassDepth": "Glass Block Depth",
+  "rtxremix.setting.materials.glassDepth.tip": "How strongly a block of glass tints what lies behind it. 1.00 keeps the intended look. Applied when this page closes.",
   "rtxremix.setting.materials.smoothReliefMaps": "Smooth Relief Maps",
   "rtxremix.setting.materials.smoothReliefMaps.tip": "Samples normal and height maps smoothly, which removes banding from surface bumps and depth, while block textures keep their pixelated look.",
   "rtxremix.setting.materials.puddleAmount": "Puddle Amount",

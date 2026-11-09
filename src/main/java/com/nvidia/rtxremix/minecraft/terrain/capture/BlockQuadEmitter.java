@@ -190,6 +190,8 @@ public final class BlockQuadEmitter {
     private int tintValidMask;
     /** Sides of the current block {@link #meetsNeighbourFace} has decided, and those it found shared. */
     private int sharedSidesTested, sharedSides;
+    /** Whether the current block's model is a see-through medium; see {@link #holdsMedium}. */
+    private boolean currentHoldsMedium;
     /** Added to every position staged for the current face; non-zero only on a shared side. */
     private float facePushX, facePushY, facePushZ;
 
@@ -417,6 +419,7 @@ public final class BlockQuadEmitter {
 
         BlockStateModel model = blockModelSet.get(state);
         String layerOverride = blockLayerOverride(state, cutoutLeaves);
+        currentHoldsMedium = holdsMedium(state);
 
         random.setSeed(modelRandomSeed);
         model.collectParts(random, parts);
@@ -537,7 +540,7 @@ public final class BlockQuadEmitter {
                     }
                     continue;
                 }
-                setFacePush(meetsNeighbourFace(world, state, dir) ? dir : null);
+                setDrawnSidePush(world, state, dir);
                 for (int q = 0, quadCount = culledQuads.size(); q < quadCount; q++) {
                     stageBakedQuad(culledQuads.get(q), layerOverride, state, world, lx, ly, lz);
                 }
@@ -772,8 +775,10 @@ public final class BlockQuadEmitter {
                 return;
             }
             setFacePush(cull, -CONTACT_FACE_INSET);
+        } else if (cull != null) {
+            setDrawnSidePush(frapiWorld, frapiState, cull);
         } else {
-            setFacePush(cull != null && meetsNeighbourFace(frapiWorld, frapiState, cull) ? cull : null);
+            setFacePush(null);
         }
         for (int v = 0; v < 4; v++) {
             tempPositions[v * 3]     = quad.x(v) + frapiX + facePushX;
@@ -964,8 +969,10 @@ public final class BlockQuadEmitter {
         BlockState belowState = getCachedBlockState(world,
                 fluidCheckPos.getX(), fluidCheckPos.getY(), fluidCheckPos.getZ());
         if (!belowFluid.getType().isSame(fluidState.getType()) && !belowState.isSolidRender()) {
-            setPos4(tempPositions, lx, ly, lz + 1, lx + 1, ly, lz + 1,
-                    lx + 1, ly, lz, lx, ly, lz);
+            // On glass or ice the bottom rises into the water, as the glass's top sinks into the glass.
+            float bottom = isWater && holdsMedium(belowState) ? ly + CONTACT_FACE_INSET : ly;
+            setPos4(tempPositions, lx, bottom, lz + 1, lx + 1, bottom, lz + 1,
+                    lx + 1, bottom, lz, lx, bottom, lz);
             if (isWater) {
                 float u0 = waterTileCoordinate(wx, tileSize), v0 = waterTileCoordinate(wz, tileSize);
                 float u1 = u0 + 1 / tileSize, v1 = v0 + 1 / tileSize;
@@ -1022,8 +1029,15 @@ public final class BlockQuadEmitter {
             // Against a block short of a full cube (a dirt path) the side lies on the block's
             // own face, and from under water the ray restarted past the translucent side
             // carried on past that face too, so the block showed hollow. Moved into the
-            // block, as see-through block faces are, the block's face is met first.
-            if (meetsNeighbourFace(fluidBlock, sideState, dir)) {
+            // block, as see-through block faces are, the block's face is met first. Against
+            // glass or ice the side moves into the water instead, as the glass's face moves
+            // into the glass (see meetsMedium).
+            if (isWater && holdsMedium(sideState)) {
+                for (int v = 0; v < 4; v++) {
+                    tempPositions[v * 3] -= dir.getStepX() * CONTACT_FACE_INSET;
+                    tempPositions[v * 3 + 2] -= dir.getStepZ() * CONTACT_FACE_INSET;
+                }
+            } else if (meetsNeighbourFace(fluidBlock, sideState, dir)) {
                 for (int v = 0; v < 4; v++) {
                     tempPositions[v * 3] += dir.getStepX() * SHARED_FACE_PUSH;
                     tempPositions[v * 3 + 2] += dir.getStepZ() * SHARED_FACE_PUSH;
@@ -1268,6 +1282,49 @@ public final class BlockQuadEmitter {
         return (sharedSides & sideBit) != 0;
     }
 
+    /** Places the faces of a side vanilla draws: see {@link #meetsMedium} and {@link #meetsNeighbourFace}. */
+    private void setDrawnSidePush(BlockAndTintGetter world, BlockState state, Direction side) {
+        if (meetsMedium(world, side)) {
+            setFacePush(side, -CONTACT_FACE_INSET);
+        } else {
+            setFacePush(meetsNeighbourFace(world, state, side) ? side : null);
+        }
+    }
+
+    /**
+     * Whether the current block and its neighbour on {@code side} both hold a see-through
+     * medium, such as two colours of glass, glass and ice, or glass and water. Vanilla culls
+     * only the face between two blocks of one kind, so each draws its face on the shared
+     * plane. Pushed into each other ({@link #meetsNeighbourFace}), a ray crossing them entered
+     * the far medium before it left the near one. Each face moves {@link #CONTACT_FACE_INSET}
+     * into its own block instead, as it does against a solid block, so a ray leaves one medium
+     * before it enters the next.
+     */
+    private boolean meetsMedium(BlockAndTintGetter world, Direction side) {
+        if (!currentHoldsMedium) {
+            return false;
+        }
+        BlockState neighbour = neighbourState(world, side);
+        return neighbour.getFluidState().is(FluidTags.WATER) || holdsMedium(neighbour);
+    }
+
+    /**
+     * Whether a block's own model is a see-through medium: glass, or a translucent block that
+     * reads as one. Water is a fluid, and a block it fills keeps its own faces.
+     */
+    private boolean holdsMedium(BlockState state) {
+        if (state.canOcclude()) {
+            return false;
+        }
+        String override = blockLayerOverride(state, cutoutLeaves);
+        if (override != null) {
+            return "glass".equals(override);
+        }
+        BlockStateModel model = blockModelSet.get(state);
+        return model.hasMaterialFlag(BakedQuad.FLAG_TRANSLUCENT)
+                && (texManager == null || texManager.hasSeeThroughQuads(state, model));
+    }
+
     /**
      * Whether a drawn face of see-through {@code state} on {@code side} meets a face
      * {@code neighbour} draws. Cheap without a cache: {@code state} does not occlude, so
@@ -1416,8 +1473,8 @@ public final class BlockQuadEmitter {
      *
      * <p>Vanilla draws clear glass as a cutout: the texture is alpha 0 between
      * the frame pixels and the GL path simply discards those. Remix can refract
-     * through it instead, so clear glass takes its own layer and a translucent
-     * material with the frame as a diffuse layer. Stained glass is already
+     * through it instead, so clear glass takes its own layer and a near-clear
+     * translucent material. Stained glass is already
      * translucent and keeps vanilla's layer. Leaves follow vanilla's Cutout
      * Leaves option, which draws them solid when off.
      */

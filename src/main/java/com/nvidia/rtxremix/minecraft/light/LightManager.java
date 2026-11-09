@@ -167,8 +167,16 @@ public class LightManager {
     public static final float DEFAULT_MOON_INTENSITY = 0.2f;
     /** The most moonlight the setting reaches, ten times the default. */
     public static final float MAX_MOON_INTENSITY = 2.0f;
+    /**
+     * Sun Size: the sun's and the moon's lights as a multiple of their real width. The real sun's
+     * edge blurs a shadow by about a centimetre a metre, sharp at block scale; a wider light blurs
+     * it more and, the runtime spreading the same light over the wider disc, lights no brighter.
+     * The discs drawn in the sky keep their size.
+     */
+    public static final float DEFAULT_SUN_SIZE = 1.0f, MAX_SUN_SIZE = 20.0f;
 
     private static float sunIntensity = DEFAULT_SUN_INTENSITY;
+    private static float sunSize = DEFAULT_SUN_SIZE;
     private static float moonIntensity = DEFAULT_MOON_INTENSITY;
     private static float sunDiscVisibility = 1.0f;
     private static long sunDiscVisibilityNanos;
@@ -219,6 +227,14 @@ public class LightManager {
 
     public static void setSunIntensity(float value) {
         sunIntensity = value;
+    }
+
+    public static float getSunSize() {
+        return sunSize;
+    }
+
+    public static void setSunSize(float value) {
+        sunSize = Math.max(DEFAULT_SUN_SIZE, Math.min(MAX_SUN_SIZE, value));
     }
 
     /**
@@ -1149,10 +1165,10 @@ public class LightManager {
         try {
             sunLight = updateDistantLight(sunLight, skyLightState.sunPosition(),
                     scaleRadiance(skyLightState.sunDirectRadiance(), 1.0f - SUN_DISC_SHARE),
-                    SUN_ANGULAR_DIAMETER_DEGREES, 1.0f);
+                    SUN_ANGULAR_DIAMETER_DEGREES * sunSize, 1.0f);
             moonLight = updateDistantLight(moonLight, skyLightState.moonPosition(),
                     skyLightState.moonDirectRadiance(),
-                    MOON_ANGULAR_DIAMETER_DEGREES, 1.0f);
+                    MOON_ANGULAR_DIAMETER_DEGREES * sunSize, 1.0f);
         } catch (RemixException e) {
             LOGGER.error("Failed to update sky light: {}", e.getMessage());
         }
