@@ -104,7 +104,7 @@ final class RtxSettingsCategoryScreen extends OptionsSubScreen {
                 if (saveSettings != null) {
                     saveSettings.run();
                 }
-                if (commitTerrainEmission()) {
+                if (commitMaterialSettings()) {
                     RtxRemixMod.rebuildTerrainForMaterialSettings();
                 }
                 this.minecraft.gui.setScreen(
@@ -143,11 +143,11 @@ final class RtxSettingsCategoryScreen extends OptionsSubScreen {
         return group == SettingGroup.FRAMERATE;
     }
 
-    private boolean commitTerrainEmission() {
+    private boolean commitMaterialSettings() {
         BlockTextureManager textures = BlockTextureManager.get();
         return category == SettingCategory.MATERIALS
                 && textures != null
-                && textures.commitTerrainEmissionMultiplier();
+                && textures.commitMaterialSettings();
     }
 
     @Override
@@ -158,7 +158,7 @@ final class RtxSettingsCategoryScreen extends OptionsSubScreen {
         if (saveSettings != null) {
             saveSettings.run();
         }
-        if (commitTerrainEmission()) {
+        if (commitMaterialSettings()) {
             RtxRemixMod.rebuildTerrainForMaterialSettings();
         }
         this.minecraft.gui.setScreen(this.lastScreen);

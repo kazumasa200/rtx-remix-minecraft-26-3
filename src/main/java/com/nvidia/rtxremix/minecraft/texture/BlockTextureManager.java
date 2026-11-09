@@ -81,6 +81,13 @@ public class BlockTextureManager {
     private static final float DEFAULT_CUTOUT_SSS_ALBEDO = 0.5f;
     public static final float DEFAULT_TERRAIN_EMISSION_MULTIPLIER = 1.0f;
     public static final float MAX_TERRAIN_EMISSION_MULTIPLIER = 50.0f;
+    /**
+     * Glass Block Depth: how many times more a block of glass absorbs than as shipped. Its
+     * transmittance is measured over {@link #GLASS_TRANSMITTANCE_DISTANCE} / depth, so the least
+     * depth keeps that distance under half a block, below every other medium's.
+     */
+    public static final float MIN_GLASS_DEPTH = 0.75f, DEFAULT_GLASS_DEPTH = 1.0f, MAX_GLASS_DEPTH = 4.0f;
+    private static final float GLASS_TRANSMITTANCE_DISTANCE = 0.35f;
     private static final float BASE_TERRAIN_EMISSION_INTENSITY = 100.0f;
     public static final int L_SOLID = 0, L_CUTOUT = 1, L_CUTOUT_MIPPED = 2, L_TRANS = 3, L_GLASS = 4, LAYER_COUNT = 5;
     private static final RedstoneEmission[] REDSTONE_EMISSIONS = RedstoneEmission.values();
@@ -135,6 +142,8 @@ public class BlockTextureManager {
     private boolean cutoutSssAlbedoTextureEnabled = true;
     private float terrainEmissionMultiplier = DEFAULT_TERRAIN_EMISSION_MULTIPLIER;
     private float appliedTerrainEmissionMultiplier = DEFAULT_TERRAIN_EMISSION_MULTIPLIER;
+    private float glassDepth = DEFAULT_GLASS_DEPTH;
+    private float appliedGlassDepth = DEFAULT_GLASS_DEPTH;
     private boolean terrainEmissionMaterialsInitialized;
 
     /**
@@ -388,6 +397,7 @@ public class BlockTextureManager {
             buildSprites(api, spriteAtlas, labPBRVariants);
             if (!terrainEmissionMaterialsInitialized) {
                 appliedTerrainEmissionMultiplier = terrainEmissionMultiplier;
+                appliedGlassDepth = glassDepth;
             }
             buildAtlasMaterials(api, labPBRVariants);
             buildWaterMaterials(api);
@@ -793,16 +803,18 @@ public class BlockTextureManager {
         }
         return mb.translucentExt(MaterialInfoTranslucentEXT.builder()
                 .refractiveIndex(COMMON_GLASS_IOR).transmittanceColor(0.97f, 0.97f, 0.97f)
-                .transmittanceTexture(atlasAlbedo.getHandle()).transmittanceMeasurementDistance(0.35f)
+                .transmittanceTexture(atlasAlbedo.getHandle())
+                .transmittanceMeasurementDistance(glassTransmittanceDistance())
                 .useDiffuseLayer(false).build()).build();
     }
 
     /**
      * Clear glass. Vanilla's glass texture is alpha 0 between its frame pixels, with
      * mid-grey RGB there, so the stained-glass material (transmittance from the
-     * albedo) would make it grey. Here the glass itself is a constant near-clear
-     * transmission and the albedo rides on top as a diffuse layer blended by its
-     * alpha, which draws the frame and streaks opaque and leaves the rest to refract.
+     * albedo) would make it grey. Here the glass is a constant near-clear transmission.
+     * The runtime reads a translucent material's diffuse layer from its transmittance
+     * texture, which this material leaves unset, so clear glass draws without its frame
+     * and streaks, as upstream ships it.
      */
     private MaterialInfo buildAtlasGlassMaterialInfo(
             RemixTexture emissiveTex, RemixTexture normalTex, float emissionIntensity) {
@@ -815,8 +827,13 @@ public class BlockTextureManager {
         }
         return mb.translucentExt(MaterialInfoTranslucentEXT.builder()
                 .refractiveIndex(COMMON_GLASS_IOR).transmittanceColor(0.97f, 0.97f, 0.97f)
-                .transmittanceMeasurementDistance(0.35f)
+                .transmittanceMeasurementDistance(glassTransmittanceDistance())
                 .useDiffuseLayer(true).build()).build();
+    }
+
+    /** The distance a glass material's transmittance is measured over, by {@link #MIN_GLASS_DEPTH Glass Block Depth}. */
+    private float glassTransmittanceDistance() {
+        return GLASS_TRANSMITTANCE_DISTANCE / appliedGlassDepth;
     }
 
     // ====================================================================
@@ -1026,12 +1043,25 @@ public class BlockTextureManager {
                 0.0f, Math.min(MAX_TERRAIN_EMISSION_MULTIPLIER, multiplier));
     }
 
-    public boolean commitTerrainEmissionMultiplier() {
-        if (Float.compare(
-                appliedTerrainEmissionMultiplier, terrainEmissionMultiplier) == 0) {
+    public float getGlassDepth() { return glassDepth; }
+
+    public void setGlassDepth(float depth) {
+        glassDepth = Math.max(MIN_GLASS_DEPTH, Math.min(MAX_GLASS_DEPTH, depth));
+    }
+
+    /**
+     * Applies the terrain emission and Glass Block Depth set since the last commit. Both live in
+     * the atlas materials, so a change means rebuilding them and the terrain that names them.
+     *
+     * @return whether either changed
+     */
+    public boolean commitMaterialSettings() {
+        if (Float.compare(appliedTerrainEmissionMultiplier, terrainEmissionMultiplier) == 0
+                && Float.compare(appliedGlassDepth, glassDepth) == 0) {
             return false;
         }
         appliedTerrainEmissionMultiplier = terrainEmissionMultiplier;
+        appliedGlassDepth = glassDepth;
         return true;
     }
 
@@ -1343,7 +1373,7 @@ public class BlockTextureManager {
                 .useDiffuseLayer(false).build()).build());
     }
 
-    /** Per-sprite form of {@link #buildAtlasGlassMaterialInfo}: clear transmission with the sprite as a diffuse layer. */
+    /** Per-sprite form of {@link #buildAtlasGlassMaterialInfo}: clear transmission. */
     private RemixMaterial createGlassMaterial(SpriteEntry se) {
         MaterialInfo.Builder mb = MaterialInfo.builder()
                 .albedoTexture(se.albedo.getHandle()).filterMode(0);
@@ -1351,7 +1381,7 @@ public class BlockTextureManager {
         if (se.emissive != null) mb.emissiveTexture(se.emissive.getHandle()).emissiveIntensity(100.0f);
         return createMaterialViaStore(mb.translucentExt(MaterialInfoTranslucentEXT.builder()
                 .refractiveIndex(COMMON_GLASS_IOR).transmittanceColor(0.97f, 0.97f, 0.97f)
-                .transmittanceMeasurementDistance(0.35f)
+                .transmittanceMeasurementDistance(glassTransmittanceDistance())
                 .useDiffuseLayer(true).build()).build());
     }
 

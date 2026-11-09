@@ -39,6 +39,10 @@ also part of every mod file name.
 
 ### Added
 
+- Sun Size (Lighting) widens the light of the sun and the moon so the edges
+  of their shadows soften, without lighting more. Glass Block Depth
+  (Materials) sets how strongly a block of glass tints what lies behind it.
+  Both start at the look as before, after PurrsianMilkman's settings.
 - Distant Horizons LODs show block textures when its LOD Textures option is on,
   as they do without RTX, instead of one flat colour per block (#25).
 - Powered redstone dust glows in its own colour and fades as the signal

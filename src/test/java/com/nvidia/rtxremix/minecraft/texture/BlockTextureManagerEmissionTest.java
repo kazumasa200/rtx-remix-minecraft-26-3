@@ -46,7 +46,7 @@ class BlockTextureManagerEmissionTest {
             field.set(manager, new TestTexture(i + 1));
         }
         manager.setTerrainEmissionMultiplier(0.25f);
-        manager.commitTerrainEmissionMultiplier();
+        manager.commitMaterialSettings();
         for (int layer : new int[] {BlockTextureManager.L_SOLID, BlockTextureManager.L_CUTOUT,
                 BlockTextureManager.L_CUTOUT_MIPPED}) {
             for (boolean sss : new boolean[] {false, true}) {
@@ -93,13 +93,13 @@ class BlockTextureManagerEmissionTest {
         manager.setTerrainEmissionMultiplier(0.25f);
         assertEquals(0.25f, manager.getTerrainEmissionMultiplier());
         assertEquals(100.0f, manager.terrainEmissionIntensity());
-        assertTrue(manager.commitTerrainEmissionMultiplier());
+        assertTrue(manager.commitMaterialSettings());
         assertEquals(25.0f, manager.terrainEmissionIntensity());
-        assertFalse(manager.commitTerrainEmissionMultiplier());
+        assertFalse(manager.commitMaterialSettings());
 
         manager.setTerrainEmissionMultiplier(0.0f);
         assertEquals(25.0f, manager.terrainEmissionIntensity());
-        assertTrue(manager.commitTerrainEmissionMultiplier());
+        assertTrue(manager.commitMaterialSettings());
         assertEquals(0.0f, manager.terrainEmissionIntensity());
     }
 
@@ -114,6 +114,37 @@ class BlockTextureManagerEmissionTest {
         assertEquals(
                 BlockTextureManager.MAX_TERRAIN_EMISSION_MULTIPLIER,
                 manager.getTerrainEmissionMultiplier());
+    }
+
+    @Test
+    void glassDepthShortensTheGlassMeasurementDistanceOnceCommitted() throws Exception {
+        BlockTextureManager manager = new BlockTextureManager(null);
+        Field albedo = BlockTextureManager.class.getDeclaredField("atlasAlbedo");
+        albedo.setAccessible(true);
+        albedo.set(manager, new TestTexture(ALBEDO));
+        float shipped = glassDistance(manager, BlockTextureManager.L_GLASS);
+        assertEquals(0.35f, shipped, 0.00001f);
+        assertEquals(shipped, glassDistance(manager, BlockTextureManager.L_TRANS), 0.00001f);
+
+        manager.setGlassDepth(2.0f);
+        assertEquals(shipped, glassDistance(manager, BlockTextureManager.L_GLASS), 0.00001f);
+        assertTrue(manager.commitMaterialSettings());
+        assertEquals(shipped / 2, glassDistance(manager, BlockTextureManager.L_GLASS), 0.00001f);
+        assertEquals(shipped / 2, glassDistance(manager, BlockTextureManager.L_TRANS), 0.00001f);
+        assertFalse(manager.commitMaterialSettings());
+
+        // The least depth keeps glass under half a block, which the runtime patches tell glass by.
+        manager.setGlassDepth(0.0f);
+        assertEquals(BlockTextureManager.MIN_GLASS_DEPTH, manager.getGlassDepth());
+        manager.commitMaterialSettings();
+        assertTrue(glassDistance(manager, BlockTextureManager.L_GLASS) < 0.5f);
+        manager.setGlassDepth(100.0f);
+        assertEquals(BlockTextureManager.MAX_GLASS_DEPTH, manager.getGlassDepth());
+    }
+
+    private static float glassDistance(BlockTextureManager manager, int layer) {
+        return manager.atlasMaterialInfo(layer, false, RedstoneEmission.NONE)
+                .translucentExt.transmittanceMeasurementDistance;
     }
 
     @Test

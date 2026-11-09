@@ -248,6 +248,9 @@ public final class RtxSettingsFactory {
         list.add(skyFloat(renderer, "sky.sunIntensity", "rtxremix.setting.sky.sunIntensity",
                 0.0, 100.0,
                 LightManager::getSunIntensity, LightManager::setSunIntensity));
+        list.add(floatSetting("sky.sunSize", SettingGroup.SKY, "rtxremix.setting.sky.sunSize",
+                LightManager.DEFAULT_SUN_SIZE, LightManager.MAX_SUN_SIZE,
+                LightManager::getSunSize, LightManager::setSunSize));
         list.add(relativeFloat("sky.moonScale", SettingGroup.SKY,
                 "rtxremix.setting.sky.moonIntensity",
                 LightManager.DEFAULT_MOON_INTENSITY, LightManager.MAX_MOON_INTENSITY,
@@ -290,6 +293,12 @@ public final class RtxSettingsFactory {
                 BlockTextureManager.DEFAULT_TERRAIN_EMISSION_MULTIPLIER,
                 () -> (double) textures.getTerrainEmissionMultiplier(),
                 value -> textures.setTerrainEmissionMultiplier(value.floatValue())));
+        // Applied with the terrain emission when the page closes: both rebuild the atlas materials.
+        list.add(RtxSetting.ofFloat("materials.glassDepth", SettingGroup.MATERIALS,
+                "rtxremix.setting.materials.glassDepth", "rtxremix.setting.materials.glassDepth.tip",
+                BlockTextureManager.MIN_GLASS_DEPTH, BlockTextureManager.MAX_GLASS_DEPTH,
+                BlockTextureManager.DEFAULT_GLASS_DEPTH,
+                () -> (double) textures.getGlassDepth(), v -> textures.setGlassDepth(v.floatValue())));
         RemixAPI remix = renderer.getRemixApi();
         remixBool("materials.smoothReliefMaps", SettingGroup.MATERIALS,
                 "rtxremix.setting.materials.smoothReliefMaps",

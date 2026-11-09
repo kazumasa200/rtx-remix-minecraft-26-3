@@ -158,6 +158,8 @@
   "rtxremix.setting.clouds.height.tip": "雲の高さを上げ下げします。",
   "rtxremix.setting.sky.sunIntensity": "太陽の明るさ",
   "rtxremix.setting.sky.sunIntensity.tip": "直射日光の明るさを調整します。1.00 が想定のバランスです。",
+  "rtxremix.setting.sky.sunSize": "太陽の大きさ",
+  "rtxremix.setting.sky.sunSize.tip": "太陽と月の光の幅を広げて、影の縁をぼかします。明るさは変わりません。1.00 が本当の幅です。空に描く太陽と月の大きさは変わりません。",
   "rtxremix.setting.sky.moonIntensity": "月の明るさ",
   "rtxremix.setting.sky.moonIntensity.tip": "月の光の明るさを調整します。1.00 が想定のバランスです。",
   "rtxremix.setting.sky.dayAmbient": "昼の環境光の強さ",
@@ -178,6 +180,8 @@
 
   "rtxremix.setting.materials.terrainEmission": "ブロックの発光の強さ",
   "rtxremix.setting.materials.terrainEmission.tip": "光るブロックの表面が出す光に掛ける倍率です。オフで発光が消え、1.00× で想定の明るさになります。松明などのブロックの光は変わりません。",
+  "rtxremix.setting.materials.glassDepth": "ガラスの濃さ",
+  "rtxremix.setting.materials.glassDepth.tip": "ガラスのブロックが、向こうにあるものをどれだけ濃く色づけるかです。1.00 が想定の見た目です。このページを閉じたときに反映します。",
   "rtxremix.setting.materials.smoothReliefMaps": "なめらかな凹凸マップ",
   "rtxremix.setting.materials.smoothReliefMaps.tip": "法線マップと高さマップをなめらかに読み取り、表面の凹凸や奥行きに出る縞模様をなくします。ブロックのテクスチャはドット絵のままです。",
   "rtxremix.setting.materials.puddleAmount": "水たまりの量",
