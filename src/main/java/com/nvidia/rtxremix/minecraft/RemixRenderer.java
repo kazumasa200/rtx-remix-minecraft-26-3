@@ -80,6 +80,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.material.FogType;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Vector3fc;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GLCapabilities;
 import org.lwjgl.sdl.SDLProperties;
@@ -1300,24 +1301,12 @@ public class RemixRenderer {
     private void updateCamera(Camera camera, float tickDelta) {
         try {
             Vec3 pos = camera.position();
-            float pitch = camera.xRot();
-            float yaw = camera.yRot();
-    
-            float yawRad = (float) Math.toRadians(-yaw);
-            float pitchRad = (float) Math.toRadians(pitch);
-    
-            float forwardX = (float) (Math.sin(yawRad) * Math.cos(pitchRad));
-            float forwardY = (float) (-Math.sin(pitchRad));
-            float forwardZ = (float) (Math.cos(yawRad) * Math.cos(pitchRad));
-    
-            float rightX = (float) (-Math.cos(yawRad));
-            float rightY = 0.0f;
-            float rightZ = (float) (Math.sin(yawRad));
-    
-            float upX = rightY * forwardZ - rightZ * forwardY;
-            float upY = rightZ * forwardX - rightX * forwardZ;
-            float upZ = rightX * forwardY - rightY * forwardX;
-    
+            // The camera's own axes, not ones rebuilt from its yaw and pitch: a mod that rolls the
+            // camera turns its rotation, which yaw and pitch do not show (#28).
+            Vector3fc forward = camera.forwardVector();
+            Vector3fc up = camera.upVector();
+            Vector3fc left = camera.leftVector();
+
             Minecraft client = Minecraft.getInstance();
             float worldFov = camera.getFov();
             int width = client.getWindow().getWidth();
@@ -1343,9 +1332,9 @@ public class RemixRenderer {
     
             CameraInfoParameterizedEXT worldCameraParams = CameraInfoParameterizedEXT.builder()
                 .position(SceneSpace.x(pos.x), SceneSpace.y(pos.y), SceneSpace.z(pos.z))
-                .forward(forwardX, forwardY, forwardZ)
-                .up(upX, upY, upZ)
-                .right(rightX, rightY, rightZ)
+                .forward(forward.x(), forward.y(), forward.z())
+                .up(up.x(), up.y(), up.z())
+                .right(-left.x(), -left.y(), -left.z())
                 .fovYInDegrees(worldFov)
                 .aspect(aspect)
                 .nearPlane(0.05f)

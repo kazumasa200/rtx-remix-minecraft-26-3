@@ -36,6 +36,9 @@ also part of every mod file name.
   view through a glass tank of water no longer breaks into dark patches and
   folded sky, and a stack of different colours tints with every one of them.
   After PurrsianMilkman's Glass Layer Gap.
+- A mod that rolls the camera, such as Do a Barrel Roll in elytra flight, rolls
+  the path-traced world as well; the world used to stay level while the clouds
+  turned (#28).
 
 ### Added
 
