@@ -1280,7 +1280,7 @@ public class RemixEntitySubmitter {
         RemixMesh mesh = emissiveBeaconLens
                 ? acquireBeaconLensMesh(
                         beacon, vertexCount, texId, shellLayer, sides, sprite)
-                : transientGeometry && sides == null
+                : (transientGeometry || consumer.isPartStreamed(partIndex)) && sides == null
                         ? createTransientMesh(consumer, startVertex, vertexCount,
                                 texId, surfaceMode, topology, shellLayer)
                         : acquirePooledMesh(consumer, startVertex, vertexCount,

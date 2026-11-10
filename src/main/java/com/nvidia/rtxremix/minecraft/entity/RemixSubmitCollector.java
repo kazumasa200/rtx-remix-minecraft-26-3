@@ -297,7 +297,17 @@ public final class RemixSubmitCollector implements SubmitNodeCollector {
                     time, blockOrigin, renderType.pipeline() == RenderPipelines.END_PORTAL));
             return;
         }
-        customGeometryRenderer.render(poseStack.last(), provider.getBuffer(renderType));
+        if (!(provider.getBuffer(renderType) instanceof RemixCapturingConsumer buffer)) {
+            return;
+        }
+        int written = buffer.writtenVertexCount();
+        customGeometryRenderer.render(poseStack.last(), buffer);
+        if (buffer.writtenVertexCount() == written) {
+            // Vanilla draws a submit after all of them are in, and this one has nothing
+            // to draw yet, so it is asked again at the end of the capture.
+            PoseStack.Pose pose = poseStack.last().copy();
+            provider.drawAtEnd(() -> customGeometryRenderer.render(pose, buffer));
+        }
     }
 
     /** The fire on a burning entity, drawn as the flame feature renderer draws it. */

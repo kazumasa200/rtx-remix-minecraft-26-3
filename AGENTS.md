@@ -705,7 +705,16 @@ hidden body is captured nowhere else. Rigid occurrences retain instances
 keyed by owner, category, layer, and part; strips and beams stream transient
 meshes per frame. `OverlayComposite` paints cutout overlay layers, such as a
 villager's profession, a sheep's wool or a GeckoLib model's layer drawn again
-vertex by vertex, into a copy of the body texture so they do not render black. `RemixBlockDamagePass` submits static terrain damage
+vertex by vertex, into a copy of the body texture so they do not render black.
+`RemixSubmitCollector` draws a submit as it arrives, where vanilla draws them all
+after the last; custom geometry that drew nothing then is asked again when the
+capture ends (`RemixVertexConsumerProvider.drawAtEnd`), since a renderer may fill
+its buffer after submitting it, as TACZ does a gun's. A vertex written without a
+pose is one its writer transformed: it sits under the capture's root, the
+first-person pass gives it an identity bone so the view correction reaches it
+(`EntityRenderContext.boneUnposedVertices`), a layer grows from 4096 vertices to
+65,536 for such vertices alone, and their mesh is rebuilt every frame instead of
+pooled, as a streamed layer's is (#29). `RemixBlockDamagePass` submits static terrain damage
 decals. Vanilla draws the End portal's and gateway's starfield in a shader from
 screen position, with position-only faces; `EndPortalFaces` lays vanilla's layers
 along the face in world space instead, the stars glowing over a dark sky and

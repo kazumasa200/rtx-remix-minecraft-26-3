@@ -101,6 +101,9 @@ public final class RemixFirstPersonPass implements AutoCloseable {
             Matrix4f modelView = new Matrix4f(RenderSystem.getModelViewStack());
             modelView.invert(inverseModelView).transformPosition(eye.set(0.0f, 0.0f, 0.0f));
             context.setEye(eye.x, eye.y, eye.z);
+            // The view correction rides on the bones, so vertices a mod has transformed
+            // itself need one too (#29).
+            context.boneUnposedVertices();
 
             handsRenderer.submitHandsWithItems(tickDelta, matrices, collector, playerState, handsState);
 

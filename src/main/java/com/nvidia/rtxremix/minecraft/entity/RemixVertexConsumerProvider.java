@@ -49,6 +49,9 @@ public class RemixVertexConsumerProvider {
     /** Reusable result buffer, only safe when caller consumes before next beginEntity(). */
     private final List<CapturedLayer> resultBuffer = new ArrayList<>();
 
+    /** Draws put off to {@link #endEntity()}, see {@link #drawAtEnd}. */
+    private final List<Runnable> endDraws = new ArrayList<>();
+
     // ---- Per-capture lifecycle ----
 
     /**
@@ -63,6 +66,17 @@ public class RemixVertexConsumerProvider {
             activeLayers[i] = null;
         }
         activeCount = 0;
+        endDraws.clear();
+    }
+
+    /**
+     * Puts a draw off until every submit of this capture is in, which is when vanilla
+     * draws all of them. {@link RemixSubmitCollector} draws a submit as it arrives and
+     * hands over only what drew nothing then: a renderer that fills its buffer after
+     * submitting it, as TACZ does a gun's (#29).
+     */
+    void drawAtEnd(Runnable draw) {
+        endDraws.add(draw);
     }
 
     /**
@@ -71,6 +85,11 @@ public class RemixVertexConsumerProvider {
      * {@link #beginEntity()} call.
      */
     public List<CapturedLayer> endEntity() {
+        // By index: a draw may submit more.
+        for (int i = 0; i < endDraws.size(); i++) {
+            endDraws.get(i).run();
+        }
+        endDraws.clear();
         resultBuffer.clear();
         for (int i = 0; i < activeCount; i++) {
             RemixCapturingConsumer consumer = activeConsumers[i];

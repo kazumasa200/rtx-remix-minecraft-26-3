@@ -41,7 +41,8 @@ import net.minecraft.resources.Identifier;
  * mesh that never changes and a transform that does.
  *
  * <p>Uses pre-allocated flat arrays (struct-of-arrays) to avoid per-vertex object
- * allocations. Maximum capacity is {@link #MAX_VERTICES} per consumer.
+ * allocations. Capacity is {@link #MAX_VERTICES} per consumer, and up to
+ * {@link #MAX_UNPOSED_VERTICES} for vertices their writer has already transformed.
  */
 public class RemixCapturingConsumer implements VertexConsumer {
 
@@ -51,6 +52,14 @@ public class RemixCapturingConsumer implements VertexConsumer {
      * on both faces approach 4000.
      */
     static final int MAX_VERTICES = 4096;
+    /**
+     * Maximum vertices per consumer once it holds vertices written without a pose: another
+     * mod's model, transformed by its own renderer, arrives so and is far larger than
+     * anything vanilla draws. A TACZ rifle is some 18,000 vertices (#29). The arrays grow
+     * to this on demand. Posed vertices keep {@link #MAX_VERTICES}, which the depth steps
+     * of text rest on.
+     */
+    static final int MAX_UNPOSED_VERTICES = 65536;
 
     private Identifier textureId;
     private RenderLayerUtils.Topology topology = RenderLayerUtils.Topology.QUADS;
@@ -61,26 +70,26 @@ public class RemixCapturingConsumer implements VertexConsumer {
      */
     private boolean transientGeometry;
 
-    // ---- Struct-of-arrays vertex storage (pre-allocated, zero GC) ----
+    // ---- Struct-of-arrays vertex storage (pre-allocated, zero GC; see growForUnposedVertex) ----
     private int vertexCount = 0;
-    private final float[] px = new float[MAX_VERTICES];
-    private final float[] py = new float[MAX_VERTICES];
-    private final float[] pz = new float[MAX_VERTICES];
-    private final float[] nx = new float[MAX_VERTICES];
-    private final float[] ny = new float[MAX_VERTICES];
-    private final float[] nz = new float[MAX_VERTICES];
-    private final float[] tu = new float[MAX_VERTICES];
-    private final float[] tv = new float[MAX_VERTICES];
+    private float[] px = new float[MAX_VERTICES];
+    private float[] py = new float[MAX_VERTICES];
+    private float[] pz = new float[MAX_VERTICES];
+    private float[] nx = new float[MAX_VERTICES];
+    private float[] ny = new float[MAX_VERTICES];
+    private float[] nz = new float[MAX_VERTICES];
+    private float[] tu = new float[MAX_VERTICES];
+    private float[] tv = new float[MAX_VERTICES];
     /**
      * Packed ARGB (0xAARRGGBB). Remix reads {@code HardcodedVertex.color} as
      * {@code VK_FORMAT_B8G8R8A8_UNORM} from a little-endian buffer, so any other
      * channel order reaches the renderer with red and blue swapped.
      */
-    private final int[] colors = new int[MAX_VERTICES];
-    private final int[] boneIndices = new int[MAX_VERTICES];
-    private final int[] texcoordBoundsMin = new int[MAX_VERTICES];
-    private final int[] texcoordBoundsMax = new int[MAX_VERTICES];
-    private final boolean[] generatedNormals = new boolean[MAX_VERTICES];
+    private int[] colors = new int[MAX_VERTICES];
+    private int[] boneIndices = new int[MAX_VERTICES];
+    private int[] texcoordBoundsMin = new int[MAX_VERTICES];
+    private int[] texcoordBoundsMax = new int[MAX_VERTICES];
+    private boolean[] generatedNormals = new boolean[MAX_VERTICES];
 
     // ---- Per-vertex accumulation state ----
     private float vx, vy, vz;
@@ -90,6 +99,8 @@ public class RemixCapturingConsumer implements VertexConsumer {
     private int vOverlay = OverlayTexture.NO_OVERLAY;
     private boolean vertexOpen = false;
     private boolean explicitNormal = false;
+    /** Whether the open vertex was written without a pose. */
+    private boolean vertexUnposed = false;
     private int currentVertexBoneIndex = -1;
 
     private final Matrix4f lastPose = new Matrix4f();
@@ -179,6 +190,11 @@ public class RemixCapturingConsumer implements VertexConsumer {
      * it in its plane; see {@link RemixEntitySubmitter#shellOffsets}.
      */
     private final int[] partCardFace = new int[MAX_PARTS];
+    /**
+     * Whether each vertex part is another renderer's vertices, transformed afresh every
+     * frame; see {@link EntityRenderContext#unposedVerticesStreamed}.
+     */
+    private final boolean[] partStreamed = new boolean[MAX_PARTS];
     /**
      * Whether closing quads and strip runs are recorded as rigid parts. Every
      * provider-owned consumer records; the submitter's rebuild scratch only needs
@@ -272,11 +288,22 @@ public class RemixCapturingConsumer implements VertexConsumer {
         return this;
     }
 
+    /**
+     * A vertex its writer has already transformed. It sits under the capture's root,
+     * or on the bone the capture owner gives such vertices
+     * ({@link EntityRenderContext#boneUnposedVertices}).
+     */
     @Override
     public VertexConsumer addVertex(float x, float y, float z) {
-        beginVertex(-1);
+        beginVertex(EntityRenderContext.get().unposedBone());
+        vertexUnposed = true;
         vx = x; vy = y; vz = z;
         return this;
+    }
+
+    /** Vertices written so far, the open one included. */
+    int writtenVertexCount() {
+        return vertexOpen ? vertexCount + 1 : vertexCount;
     }
 
     /** Nothing the capture keeps reads a third texture coordinate. */
@@ -388,7 +415,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
 
     private void finalizeVertex() {
         if (!vertexOpen) return;
-        if (vertexCount >= MAX_VERTICES) {
+        if (vertexCount >= MAX_VERTICES && !(vertexUnposed && growForUnposedVertex())) {
             resetOpenVertexState();
             return;
         }
@@ -416,8 +443,30 @@ public class RemixCapturingConsumer implements VertexConsumer {
         resetOpenVertexState();
     }
 
+    /** Makes room for one more unposed vertex, up to {@link #MAX_UNPOSED_VERTICES}. */
+    private boolean growForUnposedVertex() {
+        if (vertexCount < px.length) return true;
+        if (vertexCount >= MAX_UNPOSED_VERTICES) return false;
+        int size = px.length * 2;
+        px = Arrays.copyOf(px, size);
+        py = Arrays.copyOf(py, size);
+        pz = Arrays.copyOf(pz, size);
+        nx = Arrays.copyOf(nx, size);
+        ny = Arrays.copyOf(ny, size);
+        nz = Arrays.copyOf(nz, size);
+        tu = Arrays.copyOf(tu, size);
+        tv = Arrays.copyOf(tv, size);
+        colors = Arrays.copyOf(colors, size);
+        boneIndices = Arrays.copyOf(boneIndices, size);
+        texcoordBoundsMin = Arrays.copyOf(texcoordBoundsMin, size);
+        texcoordBoundsMax = Arrays.copyOf(texcoordBoundsMax, size);
+        generatedNormals = Arrays.copyOf(generatedNormals, size);
+        return true;
+    }
+
     private void resetOpenVertexState() {
         vertexOpen = false;
+        vertexUnposed = false;
         explicitNormal = false;
         currentVertexBoneIndex = -1;
         vColor = 0xFFFFFFFF;
@@ -956,6 +1005,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
             partSprite[parts] = null;
             partBlockItemLayer[parts] = EntityRenderContext.get().getBlockItemLayer();
             partCardFace[parts] = NO_VERTICES;
+            partStreamed[parts] = vertexUnposed && EntityRenderContext.get().unposedVerticesStreamed();
             lane0 = FNV_OFFSET; lane1 = FNV_OFFSET; lane2 = FNV_OFFSET; lane3 = FNV_OFFSET;
             partOpen = true;
         }
@@ -991,6 +1041,7 @@ public class RemixCapturingConsumer implements VertexConsumer {
         // constants are exact.
         partBlockItemLayer[parts] = EntityRenderContext.NO_BLOCK_ITEM;
         partCardFace[parts] = NO_VERTICES;
+        partStreamed[parts] = vertexUnposed && EntityRenderContext.get().unposedVerticesStreamed();
         lane0 = FNV_OFFSET; lane1 = FNV_OFFSET; lane2 = FNV_OFFSET; lane3 = FNV_OFFSET;
         partOpen = true;
     }
@@ -1090,6 +1141,9 @@ public class RemixCapturingConsumer implements VertexConsumer {
     public int getPartBone(int part) { return partBone[part]; }
 
     public long getPartHash(int part) { return partHash[part]; }
+
+    /** Whether a vertex part's content differs every frame, so its mesh must not be pooled. */
+    public boolean isPartStreamed(int part) { return partStreamed[part]; }
 
     /** The cuboid this part came from, or null if it came from another source. */
     public ModelPart.Polygon[] getPartSides(int part) { return partSides[part]; }

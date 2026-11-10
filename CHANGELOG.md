@@ -39,6 +39,11 @@ also part of every mod file name.
 - A mod that rolls the camera, such as Do a Barrel Roll in elytra flight, rolls
   the path-traced world as well; the world used to stay level while the clouds
   turned (#28).
+- A first-person model another mod draws with its own renderer, such as a gun
+  from Timeless and Classics Zero, shows in the hand as it does without RTX. It
+  was missing or drew many times too large and turned with the view, and a
+  model of more than about a thousand faces was cut short. Such a gun also
+  shows in the hands of players seen from outside (#29).
 
 ### Added
 
