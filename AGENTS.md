@@ -761,8 +761,16 @@ clouds went orange and blue, then white.
 
 Terrain block lights are per-frame draws, not retained instances: every frame
 `ChunkManager.draw` submits each surviving `TerrainLight` (the `RemixLight`
-plus its position, power, rule output, and last drawn frame), so not drawing a
-light is a complete cull. Culling applies the column Chebyshev box and the
+plus its position, power, rule output, and last drawn frame). Not drawing a light
+does not make it free: the runtime walks every light that exists each frame, and
+290,000 created and undrawn in a city took the frame from 8 ms to 27. So a
+terrain light is registered asleep, with a hash and no native light
+(`RemixLight.isAsleepFast`); the draw loop wakes it when it first passes the cull,
+at most 128 a frame, building it from its rule output at the current scene
+origin, and a light undrawn for 240 frames sleeps again (`ChunkManager.sleepIdleLights`,
+`Chunk.LightsAwake`). Registering costs no native call, so the light budget's
+call cap leaves it to the time budget and a city's lights are all known within
+seconds. Culling applies the column Chebyshev box and the
 section connectivity flood in `TerrainState`, then a power-aware reach test with
 hysteresis. When more lights pass than `ChunkManager.MAX_DRAWN_LIGHTS`, the next
 frames raise the reach test's weight floor for every light alike until the
@@ -883,8 +891,11 @@ diluting the sampler's candidate pool.
 - Whether a held item's lit element burns is decided once, in `HeldLightState`;
   the flame, the smoke, the hand light, and the held beam all consult it
   (`HeldItemEffectsRenderer`, `LightManager`).
-- A terrain light's cull is the decision not to draw it this frame, never a
-  destroy; the radius `TerrainState` holds is finite and pushed only on
+- A terrain light's cull is the decision not to draw it this frame, never the
+  end of the light: its registration and hash stand until its block goes, and
+  only its native light comes and goes with being drawn, so ReSTIR meets the
+  same source each time (`RemixLight.wake`, `RemixLight.sleep`). The radius
+  `TerrainState` holds is finite and pushed only on
   change, because a changed radius dirties the whole flood, and the draw
   budget raises the weight floor, never that radius (`ChunkManager`,
   `TerrainState`).

@@ -14,7 +14,8 @@ import org.jetbrains.annotations.Nullable;
 /**
  * One terrain block light as the draw loop sees it: the native handle plus
  * the position and power the reach cull needs, which the {@link RemixLight}
- * itself no longer holds after creation.
+ * itself does not hold. The handle sleeps, with no native light behind it, until
+ * the light is first drawn and again once it has gone undrawn for a while.
  *
  * <p>Render-thread only. The drawn-frame stamp is written only when the light
  * is visited, so a light skipped wholesale by the column or section gates
@@ -73,6 +74,11 @@ public final class TerrainLight {
 
     public boolean drawnInFrame(long frame) {
         return lastDrawnFrame == frame;
+    }
+
+    /** Whether the light has passed no reach test for more than {@code frames} frames. */
+    public boolean idleFor(long frame, long frames) {
+        return lastDrawnFrame < frame - frames;
     }
 
     /**

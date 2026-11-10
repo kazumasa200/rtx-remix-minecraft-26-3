@@ -52,15 +52,56 @@ public class RemixLight extends RemixAssetBase {
     }
 
     /**
+     * Whether the light is registered but holds no native light for now: one created
+     * without properties, or put to {@link #sleep}. Render thread.
+     */
+    public boolean isAsleepFast() {
+        return handle == 0 && deletionFlag == DeletionReason.NOT_DELETED;
+    }
+
+    /**
+     * Gives a sleeping light its native light, under the hash it has had since it was
+     * registered, so ReSTIR takes it for the same source each time it wakes.
+     */
+    void wake(RemixAPI api, LightInfo info) {
+        rwLock.writeLock().lock();
+        try {
+            if (handle != 0 || deletionFlag != DeletionReason.NOT_DELETED) return;
+            info.hash = this.hash;
+            replaceNativeHandle(api.createLight(info));
+        } finally {
+            rwLock.writeLock().unlock();
+        }
+    }
+
+    /**
+     * Gives up the native light and keeps the registration. The runtime walks every
+     * light that exists each frame, drawn or not: 290,000 undrawn ones in a city cost
+     * it some 18 ms a frame.
+     */
+    void sleep(RemixAPI api) {
+        rwLock.writeLock().lock();
+        try {
+            if (handle == 0 || deletionFlag != DeletionReason.NOT_DELETED) return;
+            // Destroyed first: a failure leaves the handle in place for the next attempt.
+            api.destroyLight(handle);
+            replaceNativeHandle(0);
+        } finally {
+            rwLock.writeLock().unlock();
+        }
+    }
+
+    /**
      * Replaces this light's properties while preserving its hash, so Remix's
-     * ReSTIR can track it as the same light source across frames.
-     * Must only be called on an alive light.
+     * ReSTIR can track it as the same light source across frames. A sleeping
+     * light is left alone: it takes its properties when it wakes.
      */
     void update(RemixAPI api, LightInfo newInfo) {
         rwLock.writeLock().lock();
         try {
-            if (handle == 0 || deletionFlag != DeletionReason.NOT_DELETED)
+            if (deletionFlag != DeletionReason.NOT_DELETED)
                 throw new IllegalStateException("Cannot update a light that is not alive");
+            if (handle == 0) return;
             newInfo.hash = this.hash;
             long oldHandle = handle;
             long newHandle = api.createLight(newInfo);
@@ -85,6 +126,8 @@ public class RemixLight extends RemixAssetBase {
 
     @Override
     protected long doCreate(RemixAPI api, long hash) {
+        // Registered without properties, the light sleeps until wake() gives it both.
+        if (lightInfo == null) return 0;
         lightInfo.hash = hash;
         long result = api.createLight(lightInfo);
         Reference.reachabilityFence(nativeBuffers);

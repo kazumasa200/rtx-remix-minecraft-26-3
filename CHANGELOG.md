@@ -23,6 +23,11 @@ also part of every mod file name.
 
 ### Fixed
 
+- A world with very many lights no longer slows down as they load. In a city
+  of some 290,000 light blocks the frame time climbed from 8 ms to about 27 ms
+  over the first four minutes and stayed there, with the GPU a third idle;
+  it now holds at 8 ms. The lights drawn are the same, and all of them are
+  known within seconds of arriving instead of over minutes.
 - With Distant Horizons' LOD terrain, the sky seen through stained glass or
   water keeps its tint instead of showing through untinted.
 - The Unbound clouds seen through stained glass, ice or water show as the

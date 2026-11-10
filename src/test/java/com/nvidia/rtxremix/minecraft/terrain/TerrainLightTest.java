@@ -13,6 +13,18 @@ import org.junit.jupiter.api.Test;
 
 class TerrainLightTest {
 
+    @Test
+    void aLightIsIdleOnceItHasGoneUndrawnForLongerThanTheWait() {
+        TerrainLight light = new TerrainLight(new com.nvidia.rtxremix.minecraft.asset.RemixLight(null, null));
+        light.place(0f, 0f, 0f, 1f);
+        assertTrue(light.idleFor(0L, 240L), "never drawn");
+
+        assertTrue(light.shouldDraw(0, 0, 0, 0f, 100L));
+        assertFalse(light.idleFor(100L, 240L));
+        assertFalse(light.idleFor(340L, 240L));
+        assertTrue(light.idleFor(341L, 240L));
+    }
+
     private static TerrainLight torchAtOrigin() {
         TerrainLight torch = new TerrainLight(new RemixLight(null, null));
         torch.place(0f, 0f, 0f, LightPower.torchReference());
