@@ -1353,6 +1353,7 @@ public class RemixEntitySubmitter {
                     vertexCount,
                     textureId,
                     RenderLayerUtils.Topology.QUADS,
+                    false,
                     shellLayer,
                     material);
             if (mesh == null) {
@@ -1911,6 +1912,7 @@ public class RemixEntitySubmitter {
                                           int vertCount,
                                           RenderLayerUtils.Topology topology,
                                           boolean text,
+                                          boolean streamed,
                                           int shellLayer,
                                           RemixMaterial mat) {
         float[] cpx = consumer.getPx(), cpy = consumer.getPy(), cpz = consumer.getPz();
@@ -1930,6 +1932,13 @@ public class RemixEntitySubmitter {
             }
             if (text) {
                 textOffsets(cnx, cny, cnz, sourceStart, vertCount, shellLayer,
+                        shellOffsetX, shellOffsetY, shellOffsetZ);
+            } else if (streamed) {
+                // A part rebuilt every frame welds the corners its faces share and no more:
+                // looking for the faces a vertex stands on is quadratic in quads, eighty
+                // million tests a frame for a rifle with a sight on it (#29).
+                sharedPositionShellOffsets(cpx, cpy, cpz, cnx, cny, cnz, sourceStart, vertCount,
+                        surfaceDepth(false, shellLayer, 0),
                         shellOffsetX, shellOffsetY, shellOffsetZ);
             } else {
                 shellOffsets(cpx, cpy, cpz, cnx, cny, cnz, sourceStart, vertCount,
@@ -2003,7 +2012,7 @@ public class RemixEntitySubmitter {
                                       RenderLayerUtils.Topology topology,
                                       int shellLayer) {
         RemixMesh mesh = createMesh(consumer, sourceStart, vertexCount,
-                textureId, surfaceMode, topology, shellLayer);
+                textureId, surfaceMode, topology, false, shellLayer);
         if (mesh != null) {
             rigidMeshPool.put(meshKey, new PooledMesh(mesh, frameIndex()));
         }
@@ -2030,7 +2039,7 @@ public class RemixEntitySubmitter {
                                           RenderLayerUtils.Topology topology,
                                           int shellLayer) {
         RemixMesh mesh = createMesh(consumer, sourceStart, vertexCount,
-                textureId, surfaceMode, topology, shellLayer);
+                textureId, surfaceMode, topology, true, shellLayer);
         if (mesh != null) {
             transientMeshes.add(mesh);
         }
@@ -2044,6 +2053,7 @@ public class RemixEntitySubmitter {
                                  Identifier textureId,
                                  RenderLayerUtils.SurfaceMode surfaceMode,
                                  RenderLayerUtils.Topology topology,
+                                 boolean streamed,
                                  int shellLayer) {
         RemixMaterial material = materialCache.get(materialLookupKey.set(textureId, surfaceMode));
         if (material == null || material.isDeleted()) {
@@ -2061,6 +2071,7 @@ public class RemixEntitySubmitter {
                 vertexCount,
                 textureId,
                 topology,
+                streamed,
                 shellLayer,
                 material);
     }
@@ -2071,6 +2082,7 @@ public class RemixEntitySubmitter {
             int vertexCount,
             Identifier textureId,
             RenderLayerUtils.Topology topology,
+            boolean streamed,
             int shellLayer,
             RemixMaterial material) {
         boolean strip = topology == RenderLayerUtils.Topology.TRIANGLE_STRIP;
@@ -2083,7 +2095,7 @@ public class RemixEntitySubmitter {
             return null;
         }
         RemixMeshSurface surface = buildSurface(consumer, sourceStart, vertexCount,
-                topology, DynamicTextureCache.isGlyphPage(textureId), shellLayer, material);
+                topology, DynamicTextureCache.isGlyphPage(textureId), streamed, shellLayer, material);
         try {
             RemixMesh mesh = new RemixMesh(new RemixMeshSurface[]{surface});
             try (ProfileScope createScope = ProfileScope.begin("Entity createRigidMesh")) {

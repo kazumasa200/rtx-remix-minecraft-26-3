@@ -714,7 +714,9 @@ pose is one its writer transformed: it sits under the capture's root, the
 first-person pass gives it an identity bone so the view correction reaches it
 (`EntityRenderContext.boneUnposedVertices`), a layer grows from 4096 vertices to
 65,536 for such vertices alone, and their mesh is rebuilt every frame instead of
-pooled, as a streamed layer's is (#29). `RemixBlockDamagePass` submits static terrain damage
+pooled, as a streamed layer's is. A mesh rebuilt every frame takes its shell offset
+by welding the corners its faces share, not by the search for faces a vertex
+stands on, which is quadratic in quads (#29). `RemixBlockDamagePass` submits static terrain damage
 decals. Vanilla draws the End portal's and gateway's starfield in a shader from
 screen position, with position-only faces; `EndPortalFaces` lays vanilla's layers
 along the face in world space instead, the stars glowing over a dark sky and
