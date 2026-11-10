@@ -39,6 +39,13 @@ also part of every mod file name.
 
 ### Added
 
+- LOD Light Glow and LOD Light Fade (Performance) set how lights in distant
+  Distant Horizons terrain glow. Glow is how strongly torches, lamps and other
+  lights glow there, 0.2 of their glow nearby as before, down to none. Fade is
+  the dimming of far lights that 0.4.0-pre.4 brought, now a switch: off,
+  lights glow the same at every distance, so a city seen from above keeps its
+  lights, while far ones show as glowing boxes again (#23). Glow replaces the
+  `rtxremix.lod.lampEmission` JVM property.
 - Sun Size (Lighting) widens the light of the sun and the moon so the edges
   of their shadows soften, without lighting more. Glass Block Depth
   (Materials) sets how strongly a block of glass tints what lies behind it.

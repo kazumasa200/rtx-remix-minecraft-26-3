@@ -436,16 +436,20 @@ translucent surface's transmittance only from textures, so lava and glowing
 blocks (the LOD mod's `LAVA` and `ILLUMINATED` materials) and its translucent
 buffer (glass, ice) carry their colour as coordinates into a palette texture of
 every colour at five bits a channel (`LodPalette`): lava glows at the terrain's
-emission and the other glowing blocks at a fifth of it (`LodTerrain.LAMP_EMISSION`),
+emission and the other glowing blocks at the LOD Light Glow setting's share of it, a fifth by default (`LodTerrain.getLampGlow`),
 and the translucent buffer is thin-walled glass tinted by the block's hue. Drawn as plain
 ground, glass stood as pale solid blocks and lava did not glow. The LOD mod
 draws an area of many blocks as one of them, so a rooftop torch became a box
 several blocks across, which at the full emission lit the roofs around and
-bloomed to white. That fifth holds where a cell is one block; a coarser
+bloomed to white. That share holds where a cell is one block; a coarser
 section's lamps glow over the area of their box less (`LodSection.blocksPerCell`),
 so a lamp gives off one block's light at any detail and distant ones fade. The
 vertex says only that a block glows, not which block or how large its flame
-is, so the rule is the same for every block and mod.
+is, so the rule is the same for every block and mod. Seen from above, the
+faded lights leave a far city dark, so the LOD Light Fade setting turns the
+fade off and every detail level glows alike (#23). Changing either setting
+installs every section again (`LodTerrain.clear`), since a lamp material holds
+its strength.
 The LOD mod names a material by block id before it asks about light, so
 glowstone and lit redstone lamps came out as stone; every block that gives off
 light, liquids aside, is marked illuminated through its block-state event

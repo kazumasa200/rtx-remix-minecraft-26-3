@@ -71,9 +71,12 @@ public final class LodTerrain {
     private static final float GLASS_IOR = 1.52f;
     /** A glass face's thickness; its transmittance is measured over the same, so a face passes its tint once. */
     private static final float GLASS_WALL = 0.05f;
-    /** Share of the terrain's emission at which blocks that give off light, lava aside, glow. */
-    private static final float LAMP_EMISSION = Math.max(0f,
-            Float.parseFloat(System.getProperty("rtxremix.lod.lampEmission", "0.2")));
+    /**
+     * The LOD Light Glow setting: the share of the terrain's emission at which blocks that give
+     * off light, lava aside, glow. 0 draws them as plain blocks.
+     */
+    public static final float DEFAULT_LAMP_GLOW = 0.2f;
+    public static final float MAX_LAMP_GLOW = 1.0f;
     /**
      * Low-priority threads building meshes. One fell some eighty sections behind a camera
      * flying across the city, and the sections it had not reached showed LOD ground over
@@ -143,6 +146,8 @@ public final class LodTerrain {
     private int memoryMib = DEFAULT_MEMORY_MIB;
     private long maxInstalledBytes = (long) DEFAULT_MEMORY_MIB << 20;
     private boolean budgetWarned;
+    private float lampGlow = DEFAULT_LAMP_GLOW;
+    private boolean lampFade = true;
     /**
      * Blocks from the camera past which no section is drawn, shrunk from infinity when the mesh
      * budget fills so that it is spent on the ground nearest the camera.
@@ -205,6 +210,40 @@ public final class LodTerrain {
         } else if (grew) {
             budgetRadius = Double.POSITIVE_INFINITY;
             revisitStarved();
+        }
+    }
+
+    /** The LOD Light Glow setting. */
+    public float getLampGlow() {
+        return lampGlow;
+    }
+
+    /** Render thread. Every section is installed again, with lamps of the new strength. */
+    public void setLampGlow(float glow) {
+        float clamped = Math.max(0f, Math.min(MAX_LAMP_GLOW, glow));
+        if (clamped == lampGlow) return;
+        lampGlow = clamped;
+        relight();
+    }
+
+    /** The LOD Light Fade setting: whether a coarser section's lamps glow less (#23). */
+    public boolean isLampFade() {
+        return lampFade;
+    }
+
+    /** Render thread. Every section is installed again. */
+    public void setLampFade(boolean fade) {
+        if (fade == lampFade) return;
+        lampFade = fade;
+        relight();
+    }
+
+    /** The lamp materials hold their strength, so the sections that use them are installed again. */
+    private void relight() {
+        if (capturing) {
+            clear();
+        } else {
+            destroyPaletteMaterials();
         }
     }
 
@@ -834,19 +873,21 @@ public final class LodTerrain {
     }
 
     /**
-     * Other blocks that give off light glow at {@link #LAMP_EMISSION} of the terrain's emission
-     * where the LOD draws a block as one block; the block's own texture glows only where its
-     * flame is. Farther out the LOD mod draws an area of many blocks as one of them, so a rooftop
-     * torch became a box several blocks across, which lit the roofs around and bloomed to white
-     * (#23). The glow is spread over that box, so a lamp gives off one block's light at any
-     * detail and the far ones fade, whatever block or mod they come from.
+     * Other blocks that give off light glow at the LOD Light Glow setting's share of the terrain's
+     * emission where the LOD draws a block as one block; the block's own texture glows only where
+     * its flame is. Farther out the LOD mod draws an area of many blocks as one of them, so a
+     * rooftop torch became a box several blocks across, which lit the roofs around and bloomed to
+     * white (#23). With LOD Light Fade on, the glow is spread over that box, so a lamp gives off
+     * one block's light at any detail and the far ones fade, whatever block or mod they come
+     * from. Seen from above the far lights then go dim, so the fade can be turned off: every
+     * detail level then glows alike.
      */
     private RemixMaterial lampMaterial(float intensity, LodSection section) {
-        int cell = section.blocksPerCell();
+        int cell = lampFade ? section.blocksPerCell() : 1;
         int level = Math.min(lampMaterials.length - 1, Integer.numberOfTrailingZeros(cell));
         RemixMaterial lamp = lampMaterials[level];
         if (lamp != null && !lamp.isDeleted()) return lamp;
-        lamp = paletteGlow(intensity * LAMP_EMISSION / ((float) cell * cell), "lamp");
+        lamp = paletteGlow(intensity * lampGlow / ((float) cell * cell), "lamp");
         lampMaterials[level] = lamp;
         return lamp;
     }

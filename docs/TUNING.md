@@ -82,7 +82,6 @@ per-frame budgets.
 | Key | Effect | Owner |
 |---|---|---|
 | `rtxremix.chunk.meshBuildThreads` | Threads in the column merge executor | `ChunkManager` |
-| `rtxremix.lod.lampEmission` | Share of the terrain's emission at which LOD blocks that give off light glow, lava aside, 0.2 by default; coarser LOD sections divide it by the area each cell covers | `LodTerrain` |
 | `rtxremix.lod.buildThreads` | Low-priority threads building LOD terrain meshes against the current clip, 3 by default | `LodTerrain` |
 | `rtxremix.chunk.maxPendingBuilds` | Merges outstanding at once | `ChunkManager` |
 | `rtxremix.chunk.maxPendingMeshBytes` | Bytes of merged but not yet installed geometry | `ChunkManager` |

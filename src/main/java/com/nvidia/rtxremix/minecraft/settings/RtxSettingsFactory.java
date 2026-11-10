@@ -93,6 +93,15 @@ public final class RtxSettingsFactory {
                 LodTerrain.MIN_MEMORY_MIB, LodTerrain.UNLIMITED_MEMORY_MIB, LodTerrain.DEFAULT_MEMORY_MIB,
                 lod::getMemoryMib, lod::setMemoryMib)
                 .withStep(LodTerrain.MEMORY_STEP_MIB).deferSliderApply());
+        // Deferred: a new strength installs every LOD section again.
+        list.add(RtxSetting.ofFloat("dist.lodLightGlow", SettingGroup.RENDER_DISTANCE,
+                "rtxremix.setting.dist.lodLightGlow", "rtxremix.setting.dist.lodLightGlow.tip",
+                0.0, LodTerrain.MAX_LAMP_GLOW, LodTerrain.DEFAULT_LAMP_GLOW,
+                () -> (double) lod.getLampGlow(), v -> lod.setLampGlow(v.floatValue()))
+                .deferSliderApply());
+        list.add(RtxSetting.ofBool("dist.lodLightFade", SettingGroup.RENDER_DISTANCE,
+                "rtxremix.setting.dist.lodLightFade", "rtxremix.setting.dist.lodLightFade.tip",
+                true, lod::isLampFade, lod::setLampFade));
 
         // Both ranges are 0 to 32 chunks and both zeros mean Auto, Minecraft's
         // render distance. 32 is Minecraft's maximum render distance and
