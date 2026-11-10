@@ -136,6 +136,12 @@ public final class LodTerrain {
     private final int cntAwaited;
     private final int cntLingering;
     private final int cntHeld;
+    private final int cntInstalls;
+    private final int cntInstallKb;
+    private final int cntBuildQueue;
+    /** Meshes handed to Remix this frame, and their bytes. */
+    private int frameInstalls;
+    private long frameInstallBytes;
 
     private boolean enabled = true;
     private int frame;
@@ -178,6 +184,9 @@ public final class LodTerrain {
         cntAwaited = timer.registerCounter("Lod.Awaited");
         cntLingering = timer.registerCounter("Lod.Lingering");
         cntHeld = timer.registerCounter("Lod.Held");
+        cntInstalls = timer.registerCounter("Lod.Installs");
+        cntInstallKb = timer.registerCounter("Lod.InstallKB");
+        cntBuildQueue = timer.registerCounter("Lod.BuildQueue");
         if (DISTANT_HORIZONS) DistantHorizonsCompat.bindEvents();
     }
 
@@ -275,6 +284,11 @@ public final class LodTerrain {
         timer.count(cntAwaited, awaited.size());
         timer.count(cntLingering, lingering.size());
         timer.count(cntHeld, held.size());
+        timer.count(cntInstalls, frameInstalls);
+        timer.count(cntInstallKb, (int) (frameInstallBytes >> 10));
+        timer.count(cntBuildQueue, buildQueue.size() + buildsInFlight);
+        frameInstalls = 0;
+        frameInstallBytes = 0;
     }
 
     /**
@@ -739,6 +753,8 @@ public final class LodTerrain {
             section.shown = visible;
             section.installedBytes = bytes;
             installedBytes += bytes;
+            frameInstalls++;
+            frameInstallBytes += bytes;
         } catch (RuntimeException e) {
             LOGGER.error("LOD terrain install failed at {}, {}", section.minX, section.minZ, e);
             if (instance != null) {

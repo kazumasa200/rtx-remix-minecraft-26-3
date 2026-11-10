@@ -28,6 +28,10 @@ also part of every mod file name.
   over the first four minutes and stayed there, with the GPU a third idle;
   it now holds at 8 ms. The lights drawn are the same, and all of them are
   known within seconds of arriving instead of over minutes.
+- With Distant Horizons, a short look through a sight, spyglass or zoom no
+  longer rebuilds the distant terrain in view. Its finer detail for a zoomed
+  view arrives once the zoom has been held for two and a half seconds and
+  stays for ten seconds after.
 - With Distant Horizons' LOD terrain, the sky seen through stained glass or
   water keeps its tint instead of showing through untinted.
 - The Unbound clouds seen through stained glass, ice or water show as the

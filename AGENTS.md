@@ -423,7 +423,13 @@ draws nothing while capture is on, so its uploads complete without filling GPU
 buffers (`LodBufferContainerMixin`), and stopping capture rebuilds them. Its
 vanilla fade is skipped then too (`ClientApiFadeMixin`): fading the main
 target's terrain toward its empty textures drew black wherever the main target's
-depth held land.
+depth held land. Zoomed in by half or more, the LOD mod raises the detail of every
+section in a cone about the view and lowers it when the zoom ends; here each is a
+mesh handed to Remix, 1.8 GiB in twelve seconds for a pistol's sight across a
+city, so while capturing a zoom reaches the terrain only once it has been held for
+two and a half seconds and the detail stays ten seconds past its end (`ZoomHold`,
+`CameraZoomMixin`). `Lod.Installs` and `Lod.InstallKB` in the performance report
+count what a frame handed over.
 LOD quads carry the LOD mod's one averaged colour per block, which lights the
 ground as vertex colour. With the LOD mod's LOD textures on, a quad near enough
 also names a 16-texel tile of the face's colour against that average, which the

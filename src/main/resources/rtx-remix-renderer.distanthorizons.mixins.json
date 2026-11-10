@@ -6,6 +6,7 @@
     "compatibilityLevel": "JAVA_25",
     "client": [
         "BlockTextureRegistryAccessor",
+        "CameraZoomMixin",
         "ClientApiFadeMixin",
         "LodBufferContainerMixin",
         "LodRenderSectionMixin",
