@@ -11,6 +11,8 @@ also part of every mod file name.
 
 ## Unreleased
 
+## 0.4.0-pre.5 - 2026-11-11
+
 ### Changed
 
 - The recommended JVM arguments run ZGC on the fixed 16 GB heap, touched up
