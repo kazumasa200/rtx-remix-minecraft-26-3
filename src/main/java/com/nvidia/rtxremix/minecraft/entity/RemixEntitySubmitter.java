@@ -40,8 +40,6 @@ import com.nvidia.rtxremix.TexturePatchInfo;
 import com.nvidia.rtxremix.TexturePurpose;
 import com.nvidia.rtxremix.Transform;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
-import it.unimi.dsi.fastutil.ints.IntArrays;
-import it.unimi.dsi.fastutil.ints.IntComparator;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2LongOpenHashMap;
 import org.slf4j.Logger;
@@ -1836,59 +1834,91 @@ public class RemixEntitySubmitter {
                 && t >= -SHELL_EXTENT_EPSILON && t <= 1.0f + SHELL_EXTENT_EPSILON;
     }
 
-    /** Every vertex travels along the distinct normals of the vertices sharing its exact position. */
+    // Scratch for sharedPositionShellOffsets, render thread only: a part rebuilt every frame
+    // welds some 18,000 vertices a frame, and sorting them by position took a third of a
+    // millisecond of it.
+    private static int[] weldTable = new int[0];
+    private static int[] weldGroup = new int[0];
+    private static int[] weldNext = new int[0];
+    private static int[] weldTail = new int[0];
+    private static boolean[] weldDistinct = new boolean[0];
+
+    /**
+     * Every vertex travels along the distinct normals of the vertices sharing its exact
+     * position. The vertices are grouped by position through a hash table, each group a
+     * chain in the order its vertices arrived, and a normal within a degree of an earlier
+     * one of its chain counts once.
+     */
     private static void sharedPositionShellOffsets(float[] px, float[] py, float[] pz,
                                                    float[] nx, float[] ny, float[] nz,
                                                    int start, int count, float depth,
                                                    float[] ox, float[] oy, float[] oz) {
-        int[] order = new int[count];
-        for (int i = 0; i < count; i++) order[i] = start + i;
-        // Adding 0f folds -0f into 0f, so the order agrees with the == used below.
-        IntArrays.quickSort(order, 0, count, (IntComparator) (a, b) -> {
-            int c = Float.compare(px[a] + 0f, px[b] + 0f);
-            if (c == 0) c = Float.compare(py[a] + 0f, py[b] + 0f);
-            if (c == 0) c = Float.compare(pz[a] + 0f, pz[b] + 0f);
-            return c;
-        });
-        int runStart = 0;
-        while (runStart < count) {
-            int first = order[runStart];
-            int runEnd = runStart + 1;
-            while (runEnd < count && px[order[runEnd]] == px[first]
-                    && py[order[runEnd]] == py[first] && pz[order[runEnd]] == pz[first]) {
-                runEnd++;
-            }
-            for (int k = runStart; k < runEnd; k++) {
-                int v = order[k];
-                float sx = 0f, sy = 0f, sz = 0f;
-                for (int j = runStart; j < runEnd; j++) {
-                    int w = order[j];
-                    if (normalCountedBefore(nx, ny, nz, order, runStart, j)) continue;
-                    // The face directly opposite this one is not a neighbour to grow along.
-                    if (nx[v] * nx[w] + ny[v] * ny[w] + nz[v] * nz[w] < -0.999f) continue;
-                    sx += nx[w];
-                    sy += ny[w];
-                    sz += nz[w];
+        // At most half full, so a probe always ends at an empty slot.
+        int tableSize = Integer.highestOneBit(Math.max(count, 4) * 2 - 1) << 1;
+        if (weldTable.length < tableSize) weldTable = new int[tableSize];
+        if (weldGroup.length < count) {
+            weldGroup = new int[count];
+            weldNext = new int[count];
+            weldTail = new int[count];
+            weldDistinct = new boolean[count];
+        }
+        int[] table = weldTable, group = weldGroup, next = weldNext, tail = weldTail;
+        boolean[] distinct = weldDistinct;
+        Arrays.fill(table, 0, tableSize, -1);
+        int mask = tableSize - 1;
+        for (int i = 0; i < count; i++) {
+            int v = start + i;
+            // Adding 0f folds -0f into 0f, so the hash agrees with the == used below.
+            int h = Float.floatToRawIntBits(px[v] + 0f) * 0x9E3779B1
+                    ^ Float.floatToRawIntBits(py[v] + 0f) * 0x85EBCA77
+                    ^ Float.floatToRawIntBits(pz[v] + 0f) * 0xC2B2AE3D;
+            h = (h ^ h >>> 15) & mask;
+            int first;
+            while (true) {
+                first = table[h];
+                if (first < 0) {
+                    table[h] = i;
+                    first = i;
+                    break;
                 }
-                int o = v - start;
-                ox[o] = sx * depth;
-                oy[o] = sy * depth;
-                oz[o] = sz * depth;
+                int f = start + first;
+                if (px[f] == px[v] && py[f] == py[v] && pz[f] == pz[v]) break;
+                h = (h + 1) & mask;
             }
-            runStart = runEnd;
+            group[i] = first;
+            next[i] = -1;
+            if (first == i) {
+                distinct[i] = true;
+            } else {
+                // Whether an earlier vertex of the chain already contributes this normal.
+                boolean counted = false;
+                for (int j = first; j >= 0 && !counted; j = next[j]) {
+                    int w = start + j;
+                    counted = distinct[j] && nx[v] * nx[w] + ny[v] * ny[w] + nz[v] * nz[w] > 0.999f;
+                }
+                distinct[i] = !counted;
+                next[tail[first]] = i;
+            }
+            tail[first] = i;
+        }
+        for (int i = 0; i < count; i++) {
+            int v = start + i;
+            float sx = 0f, sy = 0f, sz = 0f;
+            for (int j = group[i]; j >= 0; j = next[j]) {
+                if (!distinct[j]) continue;
+                int w = start + j;
+                // The face directly opposite this one is not a neighbour to grow along.
+                if (nx[v] * nx[w] + ny[v] * ny[w] + nz[v] * nz[w] < -0.999f) continue;
+                sx += nx[w];
+                sy += ny[w];
+                sz += nz[w];
+            }
+            ox[i] = sx * depth;
+            oy[i] = sy * depth;
+            oz[i] = sz * depth;
         }
     }
 
-    /** Whether an earlier vertex of the same position run already contributed this normal. */
-    private static boolean normalCountedBefore(float[] nx, float[] ny, float[] nz,
-                                               int[] order, int runStart, int k) {
-        int v = order[k];
-        for (int j = runStart; j < k; j++) {
-            int w = order[j];
-            if (nx[v] * nx[w] + ny[v] * ny[w] + nz[v] * nz[w] > 0.999f) return true;
-        }
-        return false;
-    }
     /** Per-vertex displacement of a text part: each quad steps along its normal by its draw order. */
     private static void textOffsets(float[] nx, float[] ny, float[] nz,
                                     int start, int count, int shellLayer,

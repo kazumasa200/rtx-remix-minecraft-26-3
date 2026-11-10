@@ -220,6 +220,56 @@ class RemixEntitySubmitterShellOffsetTest {
     }
 
     @Test
+    void weldingCountsCoincidentFacesOnceAndTakesNegativeZeroForZero() {
+        // The cube's 24 vertices twice over, the copy's zeros negative: every corner now
+        // holds six vertices, two for each of its three faces, and still moves one depth
+        // along each axis. Many parts in one call also share the scratch tables.
+        float[][] cube = unitCube();
+        int n = 48;
+        float[] px = new float[n], py = new float[n], pz = new float[n];
+        float[] nx = new float[n], ny = new float[n], nz = new float[n];
+        for (int i = 0; i < n; i++) {
+            int source = i % 24;
+            boolean copy = i >= 24;
+            px[i] = copy && cube[0][source] == 0f ? -0f : cube[0][source];
+            py[i] = copy && cube[1][source] == 0f ? -0f : cube[1][source];
+            pz[i] = copy && cube[2][source] == 0f ? -0f : cube[2][source];
+            nx[i] = cube[3][source];
+            ny[i] = cube[4][source];
+            nz[i] = cube[5][source];
+        }
+        float[] ox = new float[n], oy = new float[n], oz = new float[n];
+        for (int pass = 0; pass < 2; pass++) {
+            RemixEntitySubmitter.shellOffsets(px, py, pz, nx, ny, nz, 0, n, DEPTH,
+                    RenderLayerUtils.Topology.TRIANGLE_STRIP, NO_CARD, ox, oy, oz);
+            for (int i = 0; i < n; i++) {
+                assertEquals(px[i] == 0f ? -DEPTH : DEPTH, ox[i], EPSILON, "x of vertex " + i);
+                assertEquals(py[i] == 0f ? -DEPTH : DEPTH, oy[i], EPSILON, "y of vertex " + i);
+                assertEquals(pz[i] == 0f ? -DEPTH : DEPTH, oz[i], EPSILON, "z of vertex " + i);
+            }
+        }
+    }
+
+    @Test
+    void weldingLeavesAZeroThicknessSheetGrowingBothWays() {
+        // Two faces back to back share every position; each keeps its own normal and
+        // leaves the opposite one out, so the sheet thickens instead of standing still.
+        float[] px = {0, 1, 1, 0, 0, 1, 1, 0};
+        float[] py = {0, 0, 1, 1, 0, 0, 1, 1};
+        float[] pz = new float[8];
+        float[] nx = new float[8], ny = new float[8];
+        float[] nz = {1, 1, 1, 1, -1, -1, -1, -1};
+        float[] ox = new float[8], oy = new float[8], oz = new float[8];
+        RemixEntitySubmitter.shellOffsets(px, py, pz, nx, ny, nz, 0, 8, DEPTH,
+                RenderLayerUtils.Topology.TRIANGLE_STRIP, NO_CARD, ox, oy, oz);
+        for (int i = 0; i < 8; i++) {
+            assertEquals(0f, ox[i], EPSILON);
+            assertEquals(0f, oy[i], EPSILON);
+            assertEquals(i < 4 ? DEPTH : -DEPTH, oz[i], EPSILON, "z of vertex " + i);
+        }
+    }
+
+    @Test
     void theBaseLayerDoesNotMove() {
         float[][] cube = unitCube();
         float[][] o = offsets(cube, 0, 24, 0f);
