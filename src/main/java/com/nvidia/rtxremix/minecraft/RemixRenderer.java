@@ -22,6 +22,7 @@ import com.nvidia.rtxremix.minecraft.asset.RemixTexture;
 import com.nvidia.rtxremix.minecraft.asset.RemixTextureStore;
 import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import com.nvidia.rtxremix.minecraft.benchmark.BenchmarkController;
+import com.nvidia.rtxremix.minecraft.gl.CompositeHold;
 import com.nvidia.rtxremix.minecraft.gl.GlInterop;
 import com.nvidia.rtxremix.minecraft.gl.RemixPresentationWindow;
 import com.nvidia.rtxremix.minecraft.gl.PresentationMode;
@@ -151,6 +152,9 @@ public class RemixRenderer {
     private int presentationSourceFbo = -1;
     private int presentationSourceWidth;
     private int presentationSourceHeight;
+    /** Overlay source chosen by the latest {@link #blitVkImageToGL(boolean)}. */
+    private CompositeHold.Decision overlayDecision = new CompositeHold.Decision(
+            CompositeHold.Source.INTEROP, false, false, false, false);
     
     private GlInterop interopGlVk = null;
     
@@ -1507,19 +1511,27 @@ public class RemixRenderer {
     /**
      * Returns the GL texture ID containing the Remix output for this frame, or 0 when
      * no interop texture exists this frame; the caller then skips compositing.
+     * {@code screenOpen} keeps the composite check armed while a screen is up.
      */
-    public int blitVkImageToGL() {
+    public int blitVkImageToGL(boolean screenOpen) {
         try (ProfileScope ignored = ProfileScope.begin("Interop.VKToGL")) {
             // must be called after Submit(), which allocates the image
             InteropInfo interopInfo = remixApi.dxvkGetInteropInfo();
             interopGlVk.recreateImagesIf(interopInfo);
 
-            // to blit, we need to wait for VK to finish writing into GPU image
-            interopGlVk.waitForVk(interopInfo);
+            // The present path waits on this same timeline value later and must
+            // not decide the flip again. A moved value can still be the composite.
+            boolean semaphoreAdvanced = interopGlVk.waitForVk(interopInfo);
+            overlayDecision = interopGlVk.decideOverlay(screenOpen, semaphoreAdvanced);
 
             // return VK-GL shared image, so GL can copy/draw on top
             return interopGlVk.getTexture();
         }
+    }
+
+    /** Overlay source chosen by the latest {@link #blitVkImageToGL(boolean)}. */
+    public CompositeHold.Decision overlayDecision() {
+        return overlayDecision;
     }
 
     /** Called after the GL backend attaches the completed frame's texture. Render thread only. */

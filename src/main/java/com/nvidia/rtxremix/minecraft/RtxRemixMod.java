@@ -36,6 +36,7 @@ import com.nvidia.rtxremix.minecraft.light.BlockLightRuleManager;
 import com.nvidia.rtxremix.minecraft.input.RemixMouseAccess;
 import com.nvidia.rtxremix.minecraft.input.RemixKeyboardAccess;
 import com.nvidia.rtxremix.minecraft.input.RemixInputGate;
+import com.nvidia.rtxremix.minecraft.gl.CompositeHold;
 import com.nvidia.rtxremix.minecraft.gl.ModOverlayLayer;
 import com.nvidia.rtxremix.minecraft.gl.TextureOverlay;
 import com.nvidia.rtxremix.minecraft.entity.CopperBeaconBlockEntityRenderer;
@@ -664,7 +665,7 @@ public class RtxRemixMod implements ClientModInitializer {
             int remixTexture;
             try {
                 renderer.renderAndSubmitFrame();
-                remixTexture = renderer.blitVkImageToGL();
+                remixTexture = renderer.blitVkImageToGL(Minecraft.getInstance().gui.screen() != null);
             } catch (RuntimeException e) {
                 // Compositing is skipped, so this frame presents whatever GL drew, which
                 // with RTX on holds neither terrain nor entities: both are captured for
@@ -678,19 +679,25 @@ public class RtxRemixMod implements ClientModInitializer {
             }
             mod.frameFailureLogged = false;
             if (remixTexture > 0 && mod.textureOverlay != null && isRtxEnabled()) {
-                mod.textureOverlay.render(remixTexture);
-                try (ProfileScope lensScope = ProfileScope.begin("Lens")) {
-                    renderer.getLensEffects().render(remixTexture, renderer.getInteropDepthTexture());
-                }
-                RemixWeatherRenderer weather = renderer.getWeatherRenderer();
-                if (weather != null) {
-                    try (ProfileScope weatherScope = ProfileScope.begin("Weather")) {
-                        weather.render(
-                                remixTexture,
-                                renderer.getInteropDepthTexture());
-                        weatherScope
-                                .drawCalls(weather.getLastDrawCount())
-                                .vertexCount(weather.getLastQuadCount() * 4);
+                CompositeHold.Decision overlay = renderer.overlayDecision();
+                mod.textureOverlay.render(remixTexture, overlay);
+                // Lens and weather sample the Vulkan image on a frame that replaced it.
+                // The leftover composite is already oriented the other way, and it
+                // already contains last frame's effects. The held world is upright.
+                if (overlay.sampleEffects()) {
+                    try (ProfileScope lensScope = ProfileScope.begin("Lens")) {
+                        renderer.getLensEffects().render(remixTexture, renderer.getInteropDepthTexture());
+                    }
+                    RemixWeatherRenderer weather = renderer.getWeatherRenderer();
+                    if (weather != null) {
+                        try (ProfileScope weatherScope = ProfileScope.begin("Weather")) {
+                            weather.render(
+                                    remixTexture,
+                                    renderer.getInteropDepthTexture());
+                            weatherScope
+                                    .drawCalls(weather.getLastDrawCount())
+                                    .vertexCount(weather.getLastQuadCount() * 4);
+                        }
                     }
                 }
                 mod.modOverlay.composite();
