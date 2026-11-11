@@ -98,9 +98,10 @@ leaves the callbacks that hide the vanilla player on the model for vanilla's
 model feature renderer to run, and keeps an avatar's texture in memory outside
 `DynamicTexture`; the capture's own collector met none of the three, so it drew
 the vanilla player and no avatar. `FiguraSubmitUtilsMixin` draws the avatar's
-buffers into the capture, `RemixSubmitCollector.submitModel` runs and clears the
-callbacks around its draw, and `FiguraTextureMixin` snapshots the texture where
-Figura loads it. An avatar's text and item tasks are not captured.
+buffers and queued text and sprite tasks into the capture (item and block tasks
+submit to the collector themselves), `RemixSubmitCollector.submitModel` runs and
+clears the callbacks around its draw, and `FiguraTextureMixin` snapshots the
+texture where Figura loads it.
 
 Do not run Gradle while a client from the same checkout is up: staging can fail
 on locked DLLs or replace its live configuration. Stop the client or use another

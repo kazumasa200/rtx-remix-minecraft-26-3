@@ -54,10 +54,15 @@ public final class FiguraCapture {
         extension.figura$setPreventAnimSetup(false);
     }
 
-    /** Draws an avatar's buffered parts, in Figura's own order. Its text and item tasks are left out. */
+    /** Draws an avatar's buffered parts and then its queued tasks (text, sprites), in Figura's own order. */
     public static void draw(RemixVertexConsumerProvider provider, FiguraSubmission submission) {
         draw(provider, submission.primaryBuffers());
         draw(provider, submission.secondaryBuffers());
+        List<FiguraSubmission.QueuedRenderTask> tasks = submission.renderTasks();
+        for (int i = 0; i < tasks.size(); i++) {
+            FiguraSubmission.QueuedRenderTask queued = tasks.get(i);
+            queued.task().render(queued.poseStack(), provider::getBuffer, queued.light(), queued.overlay());
+        }
     }
 
     private static void draw(RemixVertexConsumerProvider provider,
