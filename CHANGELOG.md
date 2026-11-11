@@ -11,6 +11,10 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Fixed
+
+- The first load of a singleplayer world no longer flips the picture, hotbar and chat included, while shaders compile. That moment can stay black a little longer.
+
 ## 0.4.0-pre.5 - 2026-11-11
 
 ### Changed

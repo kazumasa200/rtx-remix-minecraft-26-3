@@ -9,6 +9,40 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class PresentationModeTest {
     @Test
+    void aRepeatedSemaphoreIsThePreviousGlComposite() {
+        assertFalse(GlInterop.hasNewVulkanImage(4L, 4L));
+    }
+
+    @Test
+    void aMovedSemaphoreIsANewVulkanImage() {
+        assertTrue(GlInterop.hasNewVulkanImage(5L, 4L));
+        assertTrue(GlInterop.hasNewVulkanImage(0L, -1L));
+    }
+
+    @Test
+    void aSignaledImageThatStillMatchesTheCompositeStaysUnflipped() {
+        assertFalse(GlInterop.overlayNeedsYFlip(true, true));
+        assertFalse(GlInterop.overlayNeedsYFlip(false, true));
+        assertFalse(GlInterop.overlayNeedsYFlip(false, false));
+    }
+
+    @Test
+    void aSignaledImageWithReplacedPixelsIsFlipped() {
+        assertTrue(GlInterop.overlayNeedsYFlip(true, false));
+    }
+
+    @Test
+    void aCompositeStampMatchesOnlyTheSameBytes() {
+        byte[] saved = {1, 2, 3, 4};
+        assertTrue(GlInterop.stampMatches(saved, new byte[] {1, 2, 3, 4}));
+        assertFalse(GlInterop.stampMatches(saved, new byte[] {1, 2, 3, 5}));
+        assertFalse(GlInterop.stampMatches(saved, new byte[] {1, 2, 3}));
+        assertFalse(GlInterop.stampMatches(saved, null));
+        assertFalse(GlInterop.stampMatches(null, saved));
+        assertFalse(GlInterop.stampMatches(new byte[0], new byte[0]));
+    }
+
+    @Test
     void presentationSelectionIsExplicit() {
         assertEquals(PresentationMode.CHILD, PresentationMode.parse("child"));
         assertEquals(PresentationMode.PARENT, PresentationMode.parse("parent"));
