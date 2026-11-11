@@ -49,7 +49,7 @@ body:
       description: >-
         The full file name from the mods folder in your game directory. It
         carries the version and the build, and identifies the exact code.
-      placeholder: rtx-remix-renderer-0.4.0-pre.6-<stamp>-<hash>.jar
+      placeholder: rtx-remix-renderer-0.4.0-pre.7-<stamp>-<hash>.jar
     validations:
       required: true
 
