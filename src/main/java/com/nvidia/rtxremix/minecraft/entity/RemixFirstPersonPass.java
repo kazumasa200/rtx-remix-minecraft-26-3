@@ -9,11 +9,13 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.nvidia.rtxremix.InstanceCategoryBit;
 import com.nvidia.rtxremix.Transform;
 import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
+import com.nvidia.rtxremix.minecraft.camera.LevelViewPose;
+import com.nvidia.rtxremix.minecraft.camera.WorldCameraAxes;
 import com.nvidia.rtxremix.minecraft.lens.FlareSources;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import org.joml.Matrix4f;
+import org.joml.Matrix4fc;
 import org.joml.Vector3f;
-import org.joml.Vector3fc;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -117,8 +119,11 @@ public final class RemixFirstPersonPass implements AutoCloseable {
             setViewCorrection(viewCorrection, modelView, fovScale);
 
             int boneCount = context.getBoneCount();
+            // The bone keeps bobHurt and bobView. The mount uses the same pose,
+            // and the 0.1 view scale sits outside the bob, so the item sways
+            // with the walk instead of sticking to the crosshair.
             reusableBoneData = snapshotCorrectedBones(context, boneCount, reusableBoneData);
-            setCameraToWorld(camera, cameraToWorld);
+            setCameraToWorld(camera, LevelViewPose.peek(), cameraToWorld);
             pendingMainHandLightPosition = findHeldBlockLightPosition(
                     layers, context, reusableBoneData, boneCount, InteractionHand.MAIN_HAND);
             pendingOffHandLightPosition = findHeldBlockLightPosition(
@@ -323,30 +328,37 @@ public final class RemixFirstPersonPass implements AutoCloseable {
     }
 
     /**
-     * Builds an object-to-world transform whose local axes match Minecraft's
-     * camera space: +X right, +Y up, and -Z forward. Its translation is in scene
-     * space ({@link SceneSpace}), as everything handed to Remix is. The axes are
-     * the camera's own, which carry a roll another mod gives it (#28), as the
-     * world camera's do ({@code RemixRenderer.updateCamera}).
+     * Mounts the hand on the camera this frame submits, roll and the captured
+     * {@code renderLevel} pose included. Local +X is right, +Y is up, and -Z is
+     * forward. Translation is already in scene space. The axes are the camera's
+     * own, so a roll another mod writes still reaches the item.
      */
-    private static void setCameraToWorld(Camera camera, Transform transform) {
+    private static void setCameraToWorld(Camera camera, Matrix4fc levelPose, Transform transform) {
         Vec3 pos = camera.position();
-        Vector3fc forward = camera.forwardVector();
-        Vector3fc up = camera.upVector();
-        Vector3fc left = camera.leftVector();
+        LevelViewPose.PlacedCamera placed = LevelViewPose.place(
+                WorldCameraAxes.fromCamera(camera.forwardVector(), camera.leftVector(), camera.upVector()),
+                SceneSpace.x(pos.x),
+                SceneSpace.y(pos.y),
+                SceneSpace.z(pos.z),
+                levelPose);
+        setCameraToWorld(placed, transform);
+    }
 
-        transform.set(0, 0, -left.x());
-        transform.set(0, 1, up.x());
-        transform.set(0, 2, -forward.x());
-        transform.set(0, 3, SceneSpace.x(pos.x));
-        transform.set(1, 0, -left.y());
-        transform.set(1, 1, up.y());
-        transform.set(1, 2, -forward.y());
-        transform.set(1, 3, SceneSpace.y(pos.y));
-        transform.set(2, 0, -left.z());
-        transform.set(2, 1, up.z());
-        transform.set(2, 2, -forward.z());
-        transform.set(2, 3, SceneSpace.z(pos.z));
+    /** Row-major 3x4, the same layout {@link Transform} stores. */
+    static void setCameraToWorld(LevelViewPose.PlacedCamera placed, Transform transform) {
+        WorldCameraAxes.Axes axes = placed.axes();
+        transform.set(0, 0, axes.rightX());
+        transform.set(0, 1, axes.upX());
+        transform.set(0, 2, -axes.forwardX());
+        transform.set(0, 3, placed.sceneX());
+        transform.set(1, 0, axes.rightY());
+        transform.set(1, 1, axes.upY());
+        transform.set(1, 2, -axes.forwardY());
+        transform.set(1, 3, placed.sceneY());
+        transform.set(2, 0, axes.rightZ());
+        transform.set(2, 1, axes.upZ());
+        transform.set(2, 2, -axes.forwardZ());
+        transform.set(2, 3, placed.sceneZ());
     }
 
     @Override

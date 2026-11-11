@@ -50,6 +50,18 @@ class RemixEntityPassSweepAdmissionTest {
         }
     }
 
+    @ParameterizedTest
+    @CsvSource({
+            "true, false, false, true",
+            "true, true, false, false",
+            "true, false, true, false",
+            "false, false, false, false"
+    })
+    void theAttachedCameraBodyStaysOutOfTheSweep(
+            boolean cameraEntity, boolean detached, boolean localPlayer, boolean skip) {
+        assertEquals(skip, RemixEntityPass.sweepSkipsAttachedCameraBody(cameraEntity, detached, localPlayer));
+    }
+
     @Test
     void lightOwnerRanksBelowEveryNonOwner() {
         // A non-owner standing at the camera is the best any non-owner can rank.

@@ -45,6 +45,9 @@ import com.nvidia.rtxremix.minecraft.weather.RainSurfaces;
 import com.nvidia.rtxremix.minecraft.weather.RemixWeatherRenderer;
 import com.nvidia.rtxremix.minecraft.lens.LensEffects;
 import com.nvidia.rtxremix.minecraft.camera.CameraController;
+import com.nvidia.rtxremix.minecraft.camera.LevelViewPose;
+import com.nvidia.rtxremix.minecraft.camera.PortalWarp;
+import com.nvidia.rtxremix.minecraft.camera.WorldCameraAxes;
 import com.nvidia.rtxremix.minecraft.logic.ConfLayerDriver;
 import com.nvidia.rtxremix.minecraft.logic.ZoneRegistry;
 import com.nvidia.rtxremix.minecraft.entity.EntityRenderContext;
@@ -80,7 +83,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.material.FogType;
 import net.minecraft.world.phys.Vec3;
-import org.joml.Vector3fc;
+import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GLCapabilities;
 import org.lwjgl.sdl.SDLProperties;
@@ -1296,16 +1299,72 @@ public class RemixRenderer {
     }
 
     /**
-     * Updates the Remix camera from Minecraft's camera
+     * Portal and nausea strength already lerped into this frame's render state.
+     * The distortion slider is squared, matching {@code GameRenderer.renderLevel}.
+     */
+    private static float portalWarpIntensity(Minecraft client) {
+        PlayerRenderState player = client.gameRenderer.gameRenderState().levelRenderState.playerRenderState;
+        if (!player.hasPlayer) {
+            return 0.0f;
+        }
+        return PortalWarp.intensity(
+                player.portalEffectIntensity,
+                player.nauseaEffectIntensity,
+                client.gameRenderer.gameRenderState().optionsRenderState.screenEffectScale);
+    }
+
+    /**
+     * One view and one projection for the world and the hand. Differing projections
+     * would make Remix rebuild its view-model correction, which stays identity when
+     * both cameras match.
+     */
+    private void submitCameraPair(Matrix4f view, Matrix4f projection) {
+        float[] viewFloats = new float[16];
+        float[] projectionFloats = new float[16];
+        view.get(viewFloats);
+        projection.get(projectionFloats);
+        remixApi.setupCamera(CameraInfo.builder()
+                .type(CameraType.WORLD)
+                .view(viewFloats)
+                .projection(projectionFloats)
+                .build());
+        remixApi.setupCamera(CameraInfo.builder()
+                .type(CameraType.VIEW_MODEL)
+                .view(viewFloats)
+                .projection(projectionFloats)
+                .build());
+    }
+
+    /**
+     * Updates the Remix camera from Minecraft's camera. The quaternion carries roll, which
+     * Do a Barrel Roll writes into {@code setRotation}; yaw and pitch alone stay level.
+     * {@code renderLevel}'s pose, captured after {@code bobHurt} and {@code bobView},
+     * adds damage tilt, view bobbing, and any camera mod injected there.
+     * The portal and nausea warp is the view-space scale {@code renderLevel} applies
+     * outside that pose. It is sent as raw matrices only while the effect is on. The
+     * projection stays a plain frustum so Remix can still read near, far and fov.
      */
     private void updateCamera(Camera camera, float tickDelta) {
         try {
             Vec3 pos = camera.position();
             // The camera's own axes, not ones rebuilt from its yaw and pitch: a mod that rolls the
             // camera turns its rotation, which yaw and pitch do not show (#28).
-            Vector3fc forward = camera.forwardVector();
-            Vector3fc up = camera.upVector();
-            Vector3fc left = camera.leftVector();
+            WorldCameraAxes.Axes axes = WorldCameraAxes.fromCamera(
+                    camera.forwardVector(), camera.leftVector(), camera.upVector());
+            Matrix4f levelPose = LevelViewPose.consume();
+            float sceneX = SceneSpace.x(pos.x);
+            float sceneY = SceneSpace.y(pos.y);
+            float sceneZ = SceneSpace.z(pos.z);
+            LevelViewPose.PlacedCamera placed = LevelViewPose.place(axes, sceneX, sceneY, sceneZ, levelPose);
+            float forwardX = placed.axes().forwardX();
+            float forwardY = placed.axes().forwardY();
+            float forwardZ = placed.axes().forwardZ();
+            float rightX = placed.axes().rightX();
+            float rightY = placed.axes().rightY();
+            float rightZ = placed.axes().rightZ();
+            float upX = placed.axes().upX();
+            float upY = placed.axes().upY();
+            float upZ = placed.axes().upZ();
 
             Minecraft client = Minecraft.getInstance();
             float worldFov = camera.getFov();
@@ -1329,34 +1388,46 @@ public class RemixRenderer {
                 lensEffects.setWaterIor(textureManager.getWaterIor());
             }
             lensEffects.updateCamera(camera, client.level, worldFov, aspect, farPlane, sunDirection);
-    
-            CameraInfoParameterizedEXT worldCameraParams = CameraInfoParameterizedEXT.builder()
-                .position(SceneSpace.x(pos.x), SceneSpace.y(pos.y), SceneSpace.z(pos.z))
-                .forward(forward.x(), forward.y(), forward.z())
-                .up(up.x(), up.y(), up.z())
-                .right(-left.x(), -left.y(), -left.z())
-                .fovYInDegrees(worldFov)
-                .aspect(aspect)
-                .nearPlane(0.05f)
-                .farPlane(farPlane)
-                .build();
-    
-            CameraInfo worldCameraInfo = CameraInfo.builder()
-                .type(CameraType.WORLD)
-                .parameterizedExt(worldCameraParams)
-                .build();
-    
-            CameraInfo viewModelCameraInfo = CameraInfo.builder()
-                .type(CameraType.VIEW_MODEL)
-                // The hand-FOV adjustment is already applied to first-person
-                // bones. Supplying the exact world camera keeps Remix's
-                // perspective-correction matrix at identity while retaining
-                // its per-frame view-model transform/history update.
-                .parameterizedExt(worldCameraParams)
-                .build();
-    
-            remixApi.setupCamera(worldCameraInfo);
-            remixApi.setupCamera(viewModelCameraInfo);
+
+            float portalIntensity = portalWarpIntensity(client);
+            if (portalIntensity > 0.0f) {
+                Matrix4f view = PortalWarp.worldToView(axes, sceneX, sceneY, sceneZ);
+                Matrix4f projection = PortalWarp.projection(worldFov, aspect, 0.05f, farPlane);
+                PortalWarp.apply(
+                        view,
+                        client.gameRenderer.gameRenderState().levelRenderState.playerRenderState.spinningEffectAngle,
+                        portalIntensity);
+                LevelViewPose.premultiply(view, levelPose);
+                submitCameraPair(view, projection);
+            } else {
+                CameraInfoParameterizedEXT worldCameraParams = CameraInfoParameterizedEXT.builder()
+                    .position(placed.sceneX(), placed.sceneY(), placed.sceneZ())
+                    .forward(forwardX, forwardY, forwardZ)
+                    .up(upX, upY, upZ)
+                    .right(rightX, rightY, rightZ)
+                    .fovYInDegrees(worldFov)
+                    .aspect(aspect)
+                    .nearPlane(0.05f)
+                    .farPlane(farPlane)
+                    .build();
+
+                CameraInfo worldCameraInfo = CameraInfo.builder()
+                    .type(CameraType.WORLD)
+                    .parameterizedExt(worldCameraParams)
+                    .build();
+
+                CameraInfo viewModelCameraInfo = CameraInfo.builder()
+                    .type(CameraType.VIEW_MODEL)
+                    // The hand-FOV adjustment is already applied to first-person
+                    // bones. Supplying the exact world camera keeps Remix's
+                    // perspective-correction matrix at identity while retaining
+                    // its per-frame view-model transform/history update.
+                    .parameterizedExt(worldCameraParams)
+                    .build();
+
+                remixApi.setupCamera(worldCameraInfo);
+                remixApi.setupCamera(viewModelCameraInfo);
+            }
             int renderDistance = ClientViewDistance.chunks();
             float viewDistanceStrength = viewDistanceFade.layerStrength(renderDistance);
             float lodFadeStrength = viewDistanceFade.lodLayerStrength(renderDistance, lodRadius);

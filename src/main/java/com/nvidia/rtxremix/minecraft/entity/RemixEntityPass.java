@@ -19,6 +19,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.IntPredicate;
+import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -434,7 +435,11 @@ public class RemixEntityPass {
                                    EntityRenderDispatcher dispatcher, CameraRenderState camera,
                                    RemixEntitySubmitter submitter) {
         int budget = Math.max(1, MAX_ENTITIES - capturedIds.size());
-        Entity self = Minecraft.getInstance().player;
+        Minecraft client = Minecraft.getInstance();
+        Entity self = client.player;
+        Camera view = client.gameRenderer.mainCamera();
+        Entity cameraEntity = view.entity();
+        boolean detached = view.isDetached();
         // Bounded to the budget, not to MAX_ENTITIES. Heap order is not distance order, so
         // keeping the first `budget` slots of a larger heap would keep the farthest entity
         // (slot 0 is the max) and drop near ones from the leaves. Letting the heap do the
@@ -449,6 +454,12 @@ public class RemixEntityPass {
         maxDistSq *= maxDistSq;
         for (Entity entity : world.entitiesForRendering()) {
             if (capturedIds.contains(entity.getId())) {
+                continue;
+            }
+            // Vanilla leaves out the body whose eyes this camera uses. The local
+            // player stays, that is the first-person shadow. A sleeping body is
+            // already in the in-place list.
+            if (sweepSkipsAttachedCameraBody(entity == cameraEntity, detached, entity == self)) {
                 continue;
             }
             double distSq = entity.distanceToSqr(cameraPos);
@@ -496,6 +507,15 @@ public class RemixEntityPass {
      */
     static boolean sweepAdmits(double distSq, double maxDistSq, boolean ownsLight) {
         return ownsLight || distSq <= maxDistSq;
+    }
+
+    /**
+     * The attached camera's own body. Spectator mobs and Freecam's fake player sit
+     * here, and submitting them puts the eye inside the head. The local player's
+     * first-person shadow is the one body that stays.
+     */
+    static boolean sweepSkipsAttachedCameraBody(boolean cameraEntity, boolean detached, boolean localPlayer) {
+        return cameraEntity && !detached && !localPlayer;
     }
 
     /**
