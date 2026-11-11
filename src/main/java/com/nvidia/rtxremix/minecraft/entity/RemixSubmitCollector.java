@@ -7,6 +7,8 @@ package com.nvidia.rtxremix.minecraft.entity;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.QuadInstance;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.nvidia.rtxremix.minecraft.compat.figura.FiguraCapture;
+import com.nvidia.rtxremix.minecraft.compat.figura.FiguraMixinPlugin;
 import java.util.List;
 import java.util.function.Function;
 import net.fabricmc.fabric.api.client.renderer.v1.mesh.Mesh;
@@ -127,8 +129,18 @@ public final class RemixSubmitCollector implements SubmitNodeCollector {
         if (uvMapping != null) {
             buffer = uvMapping.wrap(buffer);
         }
-        model.setupAnim(state);
-        model.renderToBuffer(poseStack, buffer, lightCoords, overlayCoords, tintedColor);
+        if (!FiguraMixinPlugin.INSTALLED) {
+            model.setupAnim(state);
+            model.renderToBuffer(poseStack, buffer, lightCoords, overlayCoords, tintedColor);
+            return;
+        }
+        if (!FiguraCapture.preventsAnimSetup(model)) {
+            model.setupAnim(state);
+        }
+        if (FiguraCapture.beforeDraw(model, buffer, poseStack)) {
+            model.renderToBuffer(poseStack, buffer, lightCoords, overlayCoords, tintedColor);
+        }
+        FiguraCapture.afterDraw(model);
     }
 
     @Override

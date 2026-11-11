@@ -91,6 +91,17 @@ Other versions warn and skip those hooks; their rendering is unsupported.
 Shared glyph-page mirroring stays active, and no ImmediatelyFast option is
 changed. Version selection happens at startup, never per frame.
 
+NoFigura 0.1.6.12+26.3 (mod id `figura`) is compile-only and never bundled. Its
+conditional `rtx-remix-renderer.figura.mixins.json` and `FiguraCapture` are under
+`compat/figura/`. Figura hands an avatar only to vanilla's `SubmitNodeStorage`,
+leaves the callbacks that hide the vanilla player on the model for vanilla's
+model feature renderer to run, and keeps an avatar's texture in memory outside
+`DynamicTexture`; the capture's own collector met none of the three, so it drew
+the vanilla player and no avatar. `FiguraSubmitUtilsMixin` draws the avatar's
+buffers into the capture, `RemixSubmitCollector.submitModel` runs and clears the
+callbacks around its draw, and `FiguraTextureMixin` snapshots the texture where
+Figura loads it. An avatar's text and item tasks are not captured.
+
 Do not run Gradle while a client from the same checkout is up: staging can fail
 on locked DLLs or replace its live configuration. Stop the client or use another
 worktree. Build guards should prevent a silently wrong artifact, as the

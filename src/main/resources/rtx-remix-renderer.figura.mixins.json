@@ -1,0 +1,14 @@
+{
+    "required": false,
+    "minVersion": "0.8",
+    "package": "com.nvidia.rtxremix.minecraft.compat.figura.mixin",
+    "plugin": "com.nvidia.rtxremix.minecraft.compat.figura.FiguraMixinPlugin",
+    "compatibilityLevel": "JAVA_25",
+    "client": [
+        "FiguraSubmitUtilsMixin",
+        "FiguraTextureMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    }
+}

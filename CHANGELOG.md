@@ -11,6 +11,12 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Fixed
+
+- A Figura avatar (NoFigura) shows in the path-traced world in place of the
+  vanilla player. With RTX on, the player drew with the vanilla model and skin
+  and the avatar did not draw at all (#30)
+
 ## 0.4.0-pre.5 - 2026-11-11
 
 ### Changed
