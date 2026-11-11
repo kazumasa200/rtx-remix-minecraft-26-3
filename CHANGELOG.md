@@ -11,6 +11,8 @@ also part of every mod file name.
 
 ## Unreleased
 
+## 0.4.0-pre.6 - 2026-11-12
+
 ### Fixed
 
 - A Figura avatar (NoFigura) shows in the path-traced world in place of the

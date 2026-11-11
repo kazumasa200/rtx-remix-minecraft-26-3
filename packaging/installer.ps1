@@ -130,7 +130,7 @@ param(
 $ErrorActionPreference = 'Continue'
 
 # --- Constants (kept in sync with build.gradle / rtxremix-java) ---
-$script:APP_VERSION          = '0.4.0-pre.5'
+$script:APP_VERSION          = '0.4.0-pre.6'
 $script:PRISM_INSTANCE_NAME  = 'NVIDIA RTX Remix for Minecraft'
 # Legacy instance names kept for backward detection only; prior installs
 # used shorter / differently-worded names. Ordered newest-to-oldest.
