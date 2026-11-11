@@ -11,6 +11,12 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Fixed
+
+- Taking damage tilts the view, and walking bobs it, as they do without RTX. A camera mod that moves that view, such as Camera Overhaul or Shoulder Surfing, moves the path-traced world with it. Items in the hand follow the view, including a roll, and bob with the walk.
+- Standing in a nether portal warps the view, and a nausea effect such as a pufferfish spins it, as they do without RTX. The projection stays a normal frustum.
+- Looking through a mob in spectator, or through a freecam mod, keeps the world visible.
+
 ## 0.4.0-pre.5 - 2026-11-11
 
 ### Changed

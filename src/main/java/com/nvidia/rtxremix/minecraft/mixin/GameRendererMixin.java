@@ -7,8 +7,10 @@ package com.nvidia.rtxremix.minecraft.mixin;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.llamalad7.mixinextras.sugar.Local;
 import com.nvidia.rtxremix.minecraft.RemixRenderer;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
+import com.nvidia.rtxremix.minecraft.camera.LevelViewPose;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.renderer.FirstPersonHandsAndItemsRenderer;
@@ -79,6 +81,29 @@ public abstract class GameRendererMixin {
             boolean consistentDepthRequired,
             CallbackInfo ci) {
         RtxRemixMod.submitRemixFrameIfReady();
+    }
+
+    /** Drops a pose captured for a frame that never reached the camera submit. */
+    @Inject(method = "renderLevel", at = @At("HEAD"))
+    private void rtxremix$clearLevelPose(CallbackInfo ci) {
+        LevelViewPose.clear();
+    }
+
+    /**
+     * After {@code bobHurt} and {@code bobView}, at the multiply that folds that pose
+     * into the projection. The hand's own bob uses a different stack and does not hit
+     * this call. {@code require = 1} fails the load if a second {@code mul} appears,
+     * instead of capturing whichever call runs last.
+     */
+    @Inject(
+            method = "renderLevel",
+            require = 1,
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lorg/joml/Matrix4f;mul(Lorg/joml/Matrix4fc;)Lorg/joml/Matrix4f;"
+            ))
+    private void rtxremix$captureLevelPose(CallbackInfo ci, @Local PoseStack poseStack) {
+        LevelViewPose.capture(poseStack.last().pose());
     }
 
     /**
