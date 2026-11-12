@@ -57,8 +57,7 @@ public final class RemixFirstPersonPass implements AutoCloseable {
     public static final float VIEW_MODEL_SCALE = 0.1f;
 
     private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
-    private final RemixSubmitCollector collector = new RemixSubmitCollector(provider);
-    private final VanillaFeatureCapture featureCapture = new VanillaFeatureCapture(collector);
+    private final VanillaFeatureCapture featureCapture = new VanillaFeatureCapture(provider);
     private final Transform cameraToWorld = new Transform();
     private final Transform heldLightTransform = new Transform();
     private final Matrix4f correctedBone = new Matrix4f();
@@ -73,7 +72,7 @@ public final class RemixFirstPersonPass implements AutoCloseable {
 
     /**
      * Submits the hands vanilla extracted through its own first-person renderer into
-     * a Remix-only collector.
+     * the capture ({@link VanillaFeatureCapture}).
      */
     public void capture(FirstPersonHandsAndItemsRenderer handsRenderer,
                         float tickDelta,
@@ -106,16 +105,11 @@ public final class RemixFirstPersonPass implements AutoCloseable {
             // itself need one too (#29).
             context.boneUnposedVertices();
 
-            if (VanillaFeatureCapture.scope() != VanillaFeatureCapture.Scope.OFF) {
-                try {
-                    handsRenderer.submitHandsWithItems(
-                            tickDelta, matrices, featureCapture.begin(provider), playerState, handsState);
-                    featureCapture.drain(provider);
-                } finally {
-                    featureCapture.discard();
-                }
-            } else {
-                handsRenderer.submitHandsWithItems(tickDelta, matrices, collector, playerState, handsState);
+            try {
+                handsRenderer.submitHandsWithItems(tickDelta, matrices, featureCapture.begin(), playerState, handsState);
+                featureCapture.drain();
+            } finally {
+                featureCapture.discard();
             }
 
             List<RemixVertexConsumerProvider.CapturedLayer> layers = provider.endEntity();

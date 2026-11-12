@@ -92,16 +92,12 @@ Shared glyph-page mirroring stays active, and no ImmediatelyFast option is
 changed. Version selection happens at startup, never per frame.
 
 NoFigura 0.1.6.12+26.3 (mod id `figura`) is compile-only and never bundled. Its
-conditional `rtx-remix-renderer.figura.mixins.json` and `FiguraCapture` are under
-`compat/figura/`. Figura hands an avatar only to vanilla's `SubmitNodeStorage`,
-leaves the callbacks that hide the vanilla player on the model for vanilla's
-model feature renderer to run, and keeps an avatar's texture in memory outside
-`DynamicTexture`; the capture's own collector met none of the three, so it drew
-the vanilla player and no avatar. `FiguraSubmitUtilsMixin` draws the avatar's
-buffers and queued text and sprite tasks into the capture (item and block tasks
-submit to the collector themselves), `RemixSubmitCollector.submitModel` runs and
-clears the callbacks around its draw, and `FiguraTextureMixin` snapshots the
-texture where Figura loads it.
+conditional `rtx-remix-renderer.figura.mixins.json` holds one mixin, under
+`compat/figura/`: Figura keeps an avatar's texture in memory outside
+`DynamicTexture`, so `FiguraTextureMixin` snapshots it where Figura loads it. The
+avatar itself, and the callbacks that hide the vanilla player, need nothing of
+their own: they go through vanilla's storage and feature renderers, which the
+capture runs (see Entities).
 
 Do not run Gradle while a client from the same checkout is up: staging can fail
 on locked DLLs or replace its live configuration. Stop the client or use another
@@ -725,15 +721,14 @@ capture's (`RenderTypeFeatureRendererMixin`, the one place a feature renderer ta
 it from). Whatever another mod puts into the storage or a feature renderer
 therefore runs: Figura's avatars and the callbacks that hide the vanilla player,
 Entity Model Features' animation, a renderer that fills its buffer after
-submitting it. The port first gave renderers a collector of its own
-(`RemixSubmitCollector`) that redid each feature renderer, and none of that ran
-(#29, #30); `/rtx capture legacy` still selects it, for comparison. Submits are
+submitting it. The port first gave renderers a collector of its own that redid
+each feature renderer, and none of that ran (#29, #30). Submits are
 built in the order they arrived, not grouped as vanilla groups them, since a
 layer's index is its first use and an overlay is painted onto the layer before it.
 Text submits go to the capture's own layout and the End portal's faces to
-`EndPortalFaces`; blob shadows, outlines, crumbling overlays, the water mask and
-gizmos are left unbuilt. On this path `ModelPart.translateAndRotate` is vanilla's
-too: the capture replaced it with pooled arithmetic on its own pose stack, which
+`EndPortalFaces` (`SpecialSubmits`); blob shadows, outlines, crumbling overlays, the water mask and
+gizmos are left unbuilt. `ModelPart.translateAndRotate` is vanilla's too: the
+capture once replaced it with pooled arithmetic on its own pose stack, which
 dropped what Entity Model Features adds there. Vertices a renderer transformed
 itself are streamed as a new mesh each frame until a part comes back unchanged,
 when it takes a pooled mesh like any other (an item frame's model through Fabric's
@@ -750,10 +745,7 @@ keyed by owner, category, layer, and part; strips and beams stream transient
 meshes per frame. `OverlayComposite` paints cutout overlay layers, such as a
 villager's profession, a sheep's wool or a GeckoLib model's layer drawn again
 vertex by vertex, into a copy of the body texture so they do not render black.
-`RemixSubmitCollector` draws a submit as it arrives, where vanilla draws them all
-after the last; custom geometry that drew nothing then is asked again when the
-capture ends (`RemixVertexConsumerProvider.drawAtEnd`), since a renderer may fill
-its buffer after submitting it, as TACZ does a gun's. A vertex written without a
+A vertex written without a
 pose is one its writer transformed: it sits under the capture's root, the
 first-person pass gives it an identity bone so the view correction reaches it
 (`EntityRenderContext.boneUnposedVertices`), a layer grows from 4096 vertices to

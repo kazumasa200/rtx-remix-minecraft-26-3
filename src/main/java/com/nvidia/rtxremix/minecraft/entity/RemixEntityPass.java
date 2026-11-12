@@ -24,7 +24,6 @@ import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
-import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -46,7 +45,7 @@ import net.minecraft.world.phys.Vec3;
  * submits them closest-first under a {@code MAX_ENTITIES} budget.
  *
  * <p>Both paths submit through the vanilla {@link EntityRenderDispatcher} into a
- * {@link RemixSubmitCollector}, so Minecraft keeps ownership of animation, feature
+ * {@link VanillaFeatureCapture}, so Minecraft keeps ownership of animation, feature
  * renderers, multi-layer models and modded entities. Distant off-screen entities may replay a
  * cached pose instead of re-running the dispatcher; the world transform is still recomputed
  * every frame, so a reused pose lags an animation but never misplaces an entity.
@@ -88,8 +87,7 @@ public class RemixEntityPass {
     private static final int TYPE_LOG_INTERVAL = 300;
 
     private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
-    private final RemixSubmitCollector collector = new RemixSubmitCollector(provider);
-    private final VanillaFeatureCapture featureCapture = new VanillaFeatureCapture(collector);
+    private final VanillaFeatureCapture featureCapture = new VanillaFeatureCapture(provider);
     /**
      * The per-type breakdown costs a HashMap probe per entity per frame and a
      * stream sort plus a dozen String.formats on the render thread every summary,
@@ -264,8 +262,8 @@ public class RemixEntityPass {
             return false;
         }
         long captureStart = System.nanoTime();
-        // Remix traces shadows from the scene lights, so the collector drops
-        // vanilla's blob shadow submits.
+        // Remix traces shadows from the scene lights, so the capture leaves
+        // vanilla's blob shadow submits unbuilt.
         EntityCaptureResult result;
         try {
             result = renderOneEntity(entity, state, camera, dispatcher, tickDelta,
@@ -751,24 +749,14 @@ public class RemixEntityPass {
         EntityRenderContext ctx = EntityRenderContext.get();
         ctx.begin(true);
 
-        VanillaFeatureCapture.Scope scope = VanillaFeatureCapture.scope();
-        boolean vanillaFeatures = scope == VanillaFeatureCapture.Scope.ALL
-                || scope == VanillaFeatureCapture.Scope.PLAYERS && state instanceof AvatarRenderState;
         sharedMatrices.pushPose();
         try {
-            if (vanillaFeatures) {
-                try {
-                    dispatcher.submit(state, camera, 0.0, 0.0, 0.0, sharedMatrices, featureCapture.begin(provider));
-                    // Still inside the capture: the feature renderers pose the models, and
-                    // every cuboid's pivot is read as it is drawn.
-                    featureCapture.drain(provider);
-                } finally {
-                    featureCapture.discard();
-                }
-            } else {
-                dispatcher.submit(state, camera, 0.0, 0.0, 0.0, sharedMatrices, collector);
-            }
+            dispatcher.submit(state, camera, 0.0, 0.0, 0.0, sharedMatrices, featureCapture.begin());
+            // Still inside the capture: the feature renderers pose the models, and every
+            // cuboid's pivot is read as it is drawn.
+            featureCapture.drain();
         } finally {
+            featureCapture.discard();
             // Both reset even if a renderer threw mid-traversal: the identity root
             // returns every pooled entry, and a capture left open would make the
             // next one look nested and keep its bone numbering. The bone count stays

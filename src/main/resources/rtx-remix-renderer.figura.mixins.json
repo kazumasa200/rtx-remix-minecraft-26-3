@@ -5,7 +5,6 @@
     "plugin": "com.nvidia.rtxremix.minecraft.compat.figura.FiguraMixinPlugin",
     "compatibilityLevel": "JAVA_25",
     "client": [
-        "FiguraSubmitUtilsMixin",
         "FiguraTextureMixin"
     ],
     "injectors": {

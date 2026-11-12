@@ -17,9 +17,9 @@ import net.minecraft.resources.Identifier;
 /**
  * The {@link MultiBufferSource} every Remix capture pass renders into.
  *
- * <p>Stands in for vanilla's feature renderers while an entity, the first-person
- * model or a block entity is submitted for Remix: {@link RemixSubmitCollector}
- * draws each submit straight into it. For each
+ * <p>Takes the vertices vanilla's feature renderers build while an entity, the
+ * first-person model or a block entity is captured for Remix
+ * ({@link VanillaFeatureCapture}). For each
  * {@link RenderType} requested via {@link #getBuffer(RenderType)}, it returns a
  * part-recording {@link RemixCapturingConsumer} that records vertices alongside the
  * layer's texture {@link Identifier}.
@@ -27,7 +27,7 @@ import net.minecraft.resources.Identifier;
  * <h3>Usage per capture</h3>
  * <ol>
  *   <li>Call {@link #beginEntity()} before rendering</li>
- *   <li>Submit through a {@link RemixSubmitCollector} over this provider</li>
+ *   <li>Submit to {@link VanillaFeatureCapture#begin()} and drain it</li>
  *   <li>Call {@link #endEntity()} after rendering; it returns all captured layers</li>
  * </ol>
  */
@@ -49,9 +49,6 @@ public class RemixVertexConsumerProvider {
     /** Reusable result buffer, only safe when caller consumes before next beginEntity(). */
     private final List<CapturedLayer> resultBuffer = new ArrayList<>();
 
-    /** Draws put off to {@link #endEntity()}, see {@link #drawAtEnd}. */
-    private final List<Runnable> endDraws = new ArrayList<>();
-
     // ---- Per-capture lifecycle ----
 
     /**
@@ -66,17 +63,6 @@ public class RemixVertexConsumerProvider {
             activeLayers[i] = null;
         }
         activeCount = 0;
-        endDraws.clear();
-    }
-
-    /**
-     * Puts a draw off until every submit of this capture is in, which is when vanilla
-     * draws all of them. {@link RemixSubmitCollector} draws a submit as it arrives and
-     * hands over only what drew nothing then: a renderer that fills its buffer after
-     * submitting it, as TACZ does a gun's (#29).
-     */
-    void drawAtEnd(Runnable draw) {
-        endDraws.add(draw);
     }
 
     /**
@@ -85,11 +71,6 @@ public class RemixVertexConsumerProvider {
      * {@link #beginEntity()} call.
      */
     public List<CapturedLayer> endEntity() {
-        // By index: a draw may submit more.
-        for (int i = 0; i < endDraws.size(); i++) {
-            endDraws.get(i).run();
-        }
-        endDraws.clear();
         resultBuffer.clear();
         for (int i = 0; i < activeCount; i++) {
             RemixCapturingConsumer consumer = activeConsumers[i];

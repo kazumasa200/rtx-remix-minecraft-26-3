@@ -15,8 +15,7 @@ also part of every mod file name.
 
 - Entities, block entities and the first-person hand are captured after vanilla's
   own render queue and feature renderers have processed them, so what another mod
-  adds there is drawn without code written for that mod. `/rtx capture legacy`
-  selects the earlier path for comparison
+  adds there is drawn without code written for that mod
 
 ### Fixed
 

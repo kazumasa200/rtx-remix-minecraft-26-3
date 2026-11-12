@@ -27,6 +27,7 @@ import net.minecraft.client.renderer.feature.TextFeatureRenderer;
 import net.minecraft.client.renderer.feature.phase.FeatureRenderPhase;
 import net.minecraft.client.renderer.feature.submit.SubmitNode;
 import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.core.BlockPos;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -36,23 +37,19 @@ import org.jspecify.annotations.Nullable;
  * <p>A renderer submits to {@link #storage()}, which is vanilla's storage itself.
  * {@link #drain} then has vanilla's feature renderers build each submit, as they
  * do before a frame is drawn, and only the vertex builder they ask for is the
- * capture's ({@code RenderTypeFeatureRendererMixin}). {@link RemixSubmitCollector}
- * instead takes the storage's place and redoes what each feature renderer does,
- * and a mod that puts work into the storage or a feature renderer never ran.
+ * capture's ({@code RenderTypeFeatureRendererMixin}). The port to 26.3 first gave
+ * renderers a collector of its own that redid each feature renderer, and a mod that
+ * put work into the storage or a feature renderer never ran (#29, #30).
  *
  * <p>Render thread only.
  */
 public final class VanillaFeatureCapture implements FeatureRenderPhase.Output {
-
-    /** Whose submits take this path. */
-    public enum Scope { OFF, PLAYERS, ALL }
 
     /** The feature renderers' own build step, reached through {@code RenderTypeFeatureRendererMixin}. */
     public interface GroupBuilder {
         void rtxremix$buildGroup(FeatureFrameContext context, List<SubmitNode> submits);
     }
 
-    private static volatile Scope scope = Scope.ALL;
     /** Where the feature renderers' vertices go while a drain runs. */
     private static @Nullable RemixVertexConsumerProvider target;
     /** The storage of the capture being submitted to, and where it is captured. */
@@ -69,20 +66,23 @@ public final class VanillaFeatureCapture implements FeatureRenderPhase.Output {
     private static final List<FeatureRenderPhase<?>> ORDERED_PHASES = new ArrayList<>();
 
     private final SubmitNodeStorage storage = new SubmitNodeStorage();
-    /** Draws the text submits, which the capture lays out itself to keep their depth order. */
-    private final RemixSubmitCollector text;
+    private final RemixVertexConsumerProvider provider;
+    /** Text and the End portal, which the capture draws its own way. */
+    private final SpecialSubmits special;
     private final List<FeatureRenderPhase<?>> skipped = new ArrayList<>();
     private final List<SubmitNode> single = new ArrayList<>(1);
     private final Consumer<FeatureRenderPhase<?>> discard = phase -> phase.sortInto((submit, ordered) -> { });
     private FeatureFrameContext context;
     private FeatureRendererMap renderers;
 
-    public VanillaFeatureCapture(RemixSubmitCollector text) {
-        this.text = text;
+    public VanillaFeatureCapture(RemixVertexConsumerProvider provider) {
+        this.provider = provider;
+        this.special = new SpecialSubmits(provider);
     }
 
-    public static Scope scope() {
-        return scope;
+    /** The block a block entity's capture belongs to; see {@link SpecialSubmits}. */
+    public void setBlockOrigin(BlockPos origin) {
+        special.setBlockOrigin(origin);
     }
 
     /** Called by vanilla's phases for every node they take (the two phase mixins). */
@@ -93,33 +93,26 @@ public final class VanillaFeatureCapture implements FeatureRenderPhase.Output {
         }
     }
 
-    public static void setScope(Scope value) {
-        scope = value;
-    }
-
     /**
-     * Opens a capture into {@code provider} and returns the storage its renderer submits to.
-     * {@link #drain} or {@link #discard} closes it.
+     * Opens a capture and returns the storage its renderer submits to. {@link #drain} or
+     * {@link #discard} closes it.
      */
-    public SubmitNodeStorage begin(RemixVertexConsumerProvider provider) {
+    public SubmitNodeStorage begin() {
         submitting = storage;
         submittingProvider = provider;
         return storage;
     }
 
     /**
-     * The provider a collector's submits are captured into, whichever way the capture takes
-     * them, or null for a collector that is not a capture's: vanilla's own frame, a GUI.
+     * The provider a collector's submits are captured into, or null for a collector that is
+     * not a capture's: vanilla's own frame, a GUI.
      */
     public static @Nullable RemixVertexConsumerProvider provider(SubmitNodeCollector collector) {
-        if (collector instanceof RemixSubmitCollector legacy) {
-            return legacy.provider();
-        }
         return collector == submitting ? submittingProvider : null;
     }
 
-    /** Builds everything submitted to {@link #storage()} into {@code provider} and empties the storage. */
-    public void drain(RemixVertexConsumerProvider provider) {
+    /** Builds everything submitted since {@link #begin()} into the provider and empties the storage. */
+    public void drain() {
         Minecraft client = Minecraft.getInstance();
         GameRenderer gameRenderer = client.gameRenderer;
         renderers = ((FeatureRenderDispatcherAccessor) gameRenderer.featureRenderDispatcher()).rtxremix$featureRenderers();
@@ -177,12 +170,12 @@ public final class VanillaFeatureCapture implements FeatureRenderPhase.Output {
                 || type == GizmoFeatureRenderer.TYPE || type == QuadParticleFeatureRenderer.TYPE) {
             return;
         }
-        if (submit instanceof TextFeatureRenderer.Submit textSubmit) {
-            text.captureText(textSubmit);
+        if (submit instanceof TextFeatureRenderer.Submit text) {
+            special.captureText(text);
             return;
         }
         if (submit instanceof CustomFeatureRenderer.Submit custom
-                && text.capturePortal(custom.pose(), custom.renderType(), custom.customGeometryRenderer())) {
+                && special.capturePortal(custom.pose(), custom.renderType(), custom.customGeometryRenderer())) {
             return;
         }
         FeatureRenderer<?> renderer = renderers.get(type);
