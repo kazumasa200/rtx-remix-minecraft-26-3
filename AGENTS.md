@@ -91,14 +91,6 @@ Other versions warn and skip those hooks; their rendering is unsupported.
 Shared glyph-page mirroring stays active, and no ImmediatelyFast option is
 changed. Version selection happens at startup, never per frame.
 
-NoFigura 0.1.6.12+26.3 (mod id `figura`) is compile-only and never bundled. Its
-conditional `rtx-remix-renderer.figura.mixins.json` holds one mixin, under
-`compat/figura/`: Figura keeps an avatar's texture in memory outside
-`DynamicTexture`, so `FiguraTextureMixin` snapshots it where Figura loads it. The
-avatar itself, and the callbacks that hide the vanilla player, need nothing of
-their own: they go through vanilla's storage and feature renderers, which the
-capture runs (see Entities).
-
 Do not run Gradle while a client from the same checkout is up: staging can fail
 on locked DLLs or replace its live configuration. Stop the client or use another
 worktree. Build guards should prevent a silently wrong artifact, as the
@@ -510,6 +502,12 @@ generation and resource/world teardown invalidate prepared glyphs. Text and
 layout jointly identify cache entries; cache-hit lookup reuses a probe whose
 miss key is snapshotted before reentrant font preparation. `TextGlyphCapture`
 owns preparation and emission for both cached and ordinary text.
+An entity layer's texture is read from its pack file, or from the snapshot taken
+when a `DynamicTexture` uploads; a texture with neither, which another mod keeps
+its own way (a Figura avatar's lives in a `SimpleTexture` with no file behind
+it), is read back from the GPU once, when a material first needs it, and again
+after anything writes to that GPU texture (`GpuTextureReadback`,
+`CommandEncoderGlyphMirrorMixin`). Its layers had no material and were dropped.
 `BlockTextureManager` keeps only mostly translucent
 sprites translucent; doors, flowers and the like become cutout. Only terrain
 whose sprite has texels in the emissive atlas takes an atlas material that
@@ -719,7 +717,8 @@ a renderer vanilla's `SubmitNodeStorage` itself, then have vanilla's feature
 renderers build each submit, and only the vertex builder those ask for is the
 capture's (`RenderTypeFeatureRendererMixin`, the one place a feature renderer takes
 it from). Whatever another mod puts into the storage or a feature renderer
-therefore runs: Figura's avatars and the callbacks that hide the vanilla player,
+therefore runs, with no code written for the mod: Figura's avatars and the
+callbacks that hide the vanilla player,
 Entity Model Features' animation, a renderer that fills its buffer after
 submitting it. The port first gave renderers a collector of its own that redid
 each feature renderer, and none of that ran (#29, #30). Submits are

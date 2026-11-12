@@ -2313,6 +2313,11 @@ public class RemixEntitySubmitter {
             // entity renders with the default and picks the skin up on a later frame.
             DynamicTextureCache.Pixels cached = DynamicTextureCache.get(sourceId);
             if (cached == null) {
+                // Neither a file nor a snapshotted upload: a texture another mod keeps its
+                // own way. Its pixels are on the GPU whatever class holds it.
+                cached = DynamicTextureCache.readBack(sourceId);
+            }
+            if (cached == null) {
                 return null;
             }
             width = cached.width();

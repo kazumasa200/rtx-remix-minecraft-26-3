@@ -139,10 +139,23 @@ public final class DynamicTextureCache {
             return snapshot;
         }
         GlyphPageMirror page = GLYPH_PAGES.get(id);
-        return page == null
-                ? null
-                : new Pixels(page.data(), page.width(), page.height(),
-                        page.version());
+        if (page != null) {
+            return new Pixels(page.data(), page.width(), page.height(), page.version());
+        }
+        return GpuTextureReadback.current(id);
+    }
+
+    /**
+     * The pixels of a texture nothing snapshotted, read back from the GPU. Render thread only.
+     * Later {@link #get} calls return them, refreshed after the texture is written again.
+     */
+    public static Pixels readBack(Identifier id) {
+        return GpuTextureReadback.read(id);
+    }
+
+    /** A new version, above every one handed out before. */
+    static long nextVersion() {
+        return allocateVersion();
     }
 
     public static boolean isGlyphPage(Identifier id) {
@@ -155,6 +168,7 @@ public final class DynamicTextureCache {
         synchronized (CACHE) {
             CACHE.keySet().retainAll(liveIds);
         }
+        GpuTextureReadback.clear();
     }
 
     // ---- Internal helpers ----

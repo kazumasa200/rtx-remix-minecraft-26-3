@@ -11,6 +11,7 @@
         "BakedQuadMixin",
         "BillboardParticleAccessor",
         "FeatureRenderDispatcherAccessor",
+        "TextureManagerAccessor",
         "SimpleFeatureRenderPhaseMixin",
         "TranslucentFeatureRenderPhaseMixin",
         "BiomeMixin",
