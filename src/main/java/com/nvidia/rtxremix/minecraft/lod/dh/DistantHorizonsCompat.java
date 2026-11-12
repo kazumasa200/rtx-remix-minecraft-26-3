@@ -32,6 +32,10 @@ public final class DistantHorizonsCompat {
     private static volatile boolean capturing;
     private static boolean eventsBound;
     private static IDhApiConfigValue<Integer> renderDistance;
+    /** Counts the times Distant Horizons has dropped its tiles and numbers them anew. */
+    private static volatile int tileGeneration;
+    /** Set by a resource reload: the tiles Distant Horizons holds were cut from the old packs. */
+    private static boolean tilesStale;
 
     private DistantHorizonsCompat() {}
 
@@ -53,9 +57,31 @@ public final class DistantHorizonsCompat {
                 shading.clearValue();
             }
         }
+        if (on && tilesStale) {
+            tilesStale = false;
+            BlockTextureRegistry.INSTANCE.clear();
+        }
         if (DhApi.Delayed.renderProxy != null) {
             DhApi.Delayed.renderProxy.clearRenderDataCache();
         }
+    }
+
+    /**
+     * Render thread, after a resource reload. Distant Horizons cuts a block face's tile when
+     * it first meets the block and drops its tiles only when a world loads, so a pack chosen
+     * in a world kept the old pack's textures on the LODs until the world was entered again
+     * (#25). While capturing, its tiles are dropped and every section rebuilt at once;
+     * otherwise that waits for the capture to start, since Distant Horizons draws its own
+     * LODs meanwhile.
+     */
+    public static void reloadTiles() {
+        tilesStale = true;
+        if (capturing) setCapturing(true);
+    }
+
+    /** Called where Distant Horizons drops its tiles, on any thread. */
+    public static void tilesCleared() {
+        tileGeneration++;
     }
 
     /**
@@ -93,6 +119,11 @@ public final class DistantHorizonsCompat {
         @Override
         public int tileCount() {
             return BlockTextureRegistry.INSTANCE.getTileCount();
+        }
+
+        @Override
+        public int generation() {
+            return tileGeneration;
         }
 
         @Override

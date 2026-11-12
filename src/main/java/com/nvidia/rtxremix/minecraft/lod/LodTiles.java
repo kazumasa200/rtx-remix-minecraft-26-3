@@ -39,6 +39,9 @@ public final class LodTiles {
         /** How many tiles the LOD mod holds. */
         int tileCount();
 
+        /** Changes whenever the LOD mod drops its tiles and numbers them anew. */
+        int generation();
+
         /** Copies references to tiles {@code first} onward into {@code out}; returns how many. */
         int tiles(int first, byte[][] out);
     }
@@ -59,6 +62,7 @@ public final class LodTiles {
     private RemixTexture texture;
     /** Tiles converted into {@link #pixels} and uploaded. Render thread. */
     private int known;
+    private int knownGeneration;
     private float[] scales = {1f};
     /** What mesh builders read: the scales of every uploaded tile. */
     private volatile float[] published = {1f};
@@ -77,8 +81,13 @@ public final class LodTiles {
         if (texture == null || texture.isDeleted()) {
             if (!create()) return false;
         }
+        // Read before the count: tiles numbered anew after this read are caught next time.
+        int generation = source.generation();
         int count = Math.min(source.tileCount(), CAPACITY);
-        boolean restarted = count < known;
+        // The count alone misses a restart whose tiles outnumber the old ones by the time
+        // this runs, as after a reload screen, and the old pixels stayed under new numbers.
+        boolean restarted = count < known || generation != knownGeneration;
+        knownGeneration = generation;
         if (restarted) {
             known = 0;
             scales = new float[] {1f};

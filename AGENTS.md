@@ -449,7 +449,12 @@ LOD mod draws as colour times twice the tile. `LodTiles` copies the tiles into o
 texture, each divided by its largest factor, and the quad carries its colour
 times that factor, since the runtime multiplies a vertex colour by a texture that
 holds at most 1; the coordinates repeat the tile once a block in the LOD mod's
-orientation, wrapped within its bounds. Tile 0, the untextured one, is white. The runtime takes emission and a
+orientation, wrapped within its bounds. Tile 0, the untextured one, is white.
+The LOD mod cuts a tile when it first meets a block and drops its tiles only when
+a world loads, so a resource reload has it drop them and rebuild every section
+(`DistantHorizonsCompat.reloadTiles`), and `LodTiles` starts its copy over
+whenever they are dropped (`BlockTextureRegistryMixin`), not only when their
+count falls. The runtime takes emission and a
 translucent surface's transmittance only from textures, so lava and glowing
 blocks (the LOD mod's `LAVA` and `ILLUMINATED` materials) and its translucent
 buffer (glass, ice) carry their colour as coordinates into a palette texture of

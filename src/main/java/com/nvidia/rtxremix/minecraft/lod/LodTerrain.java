@@ -291,6 +291,12 @@ public final class LodTerrain {
         frameInstallBytes = 0;
     }
 
+    /** Render thread, after a resource reload: the LOD mod's tiles are cut again from the new packs. */
+    public void reloadTextures() {
+        if (DISTANT_HORIZONS) DistantHorizonsCompat.reloadTiles();
+        clear();
+    }
+
     /**
      * Drops every Remix object before materials are rebuilt, keeping the copied
      * geometry so each section reinstalls with the new materials.

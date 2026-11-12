@@ -622,7 +622,7 @@ public class RemixRenderer {
         if (weatherRenderer != null) weatherRenderer.cleanup();
         puddles.destroy();
         if (chunkManager != null) chunkManager.clear();
-        if (lodTerrain != null) lodTerrain.clear();
+        if (lodTerrain != null) lodTerrain.reloadTextures();
         if (textureManager != null) textureManager.reload();
         if (skyRenderer != null) skyRenderer.reloadResources();
         if (cloudRenderer != null) {

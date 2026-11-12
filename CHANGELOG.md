@@ -11,6 +11,12 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Fixed
+
+- Distant Horizons: LODs take the textures of a resource pack chosen inside a
+  world. They kept the old pack's until the world was entered again, and could
+  show the wrong texture on a block (#25)
+
 ## 0.4.0-pre.7 - 2026-11-12
 
 ### Fixed
