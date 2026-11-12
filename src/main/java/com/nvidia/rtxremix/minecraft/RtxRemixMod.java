@@ -39,6 +39,7 @@ import com.nvidia.rtxremix.minecraft.input.RemixInputGate;
 import com.nvidia.rtxremix.minecraft.gl.ModOverlayLayer;
 import com.nvidia.rtxremix.minecraft.gl.TextureOverlay;
 import com.nvidia.rtxremix.minecraft.entity.CopperBeaconBlockEntityRenderer;
+import com.nvidia.rtxremix.minecraft.entity.VanillaFeatureCapture;
 import com.nvidia.rtxremix.minecraft.camera.CameraController;
 import com.nvidia.rtxremix.minecraft.camera.StillShot;
 import com.nvidia.rtxremix.minecraft.block.CopperBeaconScreenHandler;
@@ -861,6 +862,11 @@ public class RtxRemixMod implements ClientModInitializer {
                         }
                         return 1;
                     }))
+                // /rtx capture <legacy|players|all> - which entities are captured through vanilla's own feature renderers
+                .then(ClientCommands.literal("capture")
+                    .then(ClientCommands.literal("legacy").executes(context -> setFeatureCapture(context.getSource(), VanillaFeatureCapture.Scope.OFF)))
+                    .then(ClientCommands.literal("players").executes(context -> setFeatureCapture(context.getSource(), VanillaFeatureCapture.Scope.PLAYERS)))
+                    .then(ClientCommands.literal("all").executes(context -> setFeatureCapture(context.getSource(), VanillaFeatureCapture.Scope.ALL))))
                 .then(ClientCommands.literal("entities")
                     .executes(context -> {
                         entitiesEnabled = !entitiesEnabled;
@@ -2096,6 +2102,12 @@ public class RtxRemixMod implements ClientModInitializer {
                                 DOCS_SHOT_SET, StringArgumentType.getString(context, "name"))));
                         return 1;
                     })));
+    }
+
+    private static int setFeatureCapture(FabricClientCommandSource source, VanillaFeatureCapture.Scope scope) {
+        VanillaFeatureCapture.setScope(scope);
+        source.sendFeedback(Component.literal("Vanilla feature capture: " + scope));
+        return 1;
     }
 
     private static int markShot(FabricClientCommandSource source, String name) {

@@ -24,6 +24,7 @@ import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
+import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -88,6 +89,7 @@ public class RemixEntityPass {
 
     private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
     private final RemixSubmitCollector collector = new RemixSubmitCollector(provider);
+    private final VanillaFeatureCapture featureCapture = new VanillaFeatureCapture();
     /**
      * The per-type breakdown costs a HashMap probe per entity per frame and a
      * stream sort plus a dozen String.formats on the render thread every summary,
@@ -749,9 +751,23 @@ public class RemixEntityPass {
         EntityRenderContext ctx = EntityRenderContext.get();
         ctx.begin(true);
 
+        VanillaFeatureCapture.Scope scope = VanillaFeatureCapture.scope();
+        boolean vanillaFeatures = scope == VanillaFeatureCapture.Scope.ALL
+                || scope == VanillaFeatureCapture.Scope.PLAYERS && state instanceof AvatarRenderState;
         sharedMatrices.pushPose();
         try {
-            dispatcher.submit(state, camera, 0.0, 0.0, 0.0, sharedMatrices, collector);
+            if (vanillaFeatures) {
+                try {
+                    dispatcher.submit(state, camera, 0.0, 0.0, 0.0, sharedMatrices, featureCapture.storage());
+                    // Still inside the capture: the feature renderers pose the models, and
+                    // every cuboid's pivot is read as it is drawn.
+                    featureCapture.drain(provider);
+                } finally {
+                    featureCapture.discard();
+                }
+            } else {
+                dispatcher.submit(state, camera, 0.0, 0.0, 0.0, sharedMatrices, collector);
+            }
         } finally {
             // Both reset even if a renderer threw mid-traversal: the identity root
             // returns every pooled entry, and a capture left open would make the

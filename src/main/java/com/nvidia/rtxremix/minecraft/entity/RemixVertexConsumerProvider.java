@@ -109,6 +109,11 @@ public class RemixVertexConsumerProvider {
 
     // ---- Buffers by layer ----
 
+    /** A consumer that drops what is drawn into it, for a layer the caller knows Remix has no use for. */
+    static VertexConsumer discarded() {
+        return NoOpVertexConsumer.INSTANCE;
+    }
+
     /** Returns the consumer that captures geometry drawn with {@code layer}. */
     public VertexConsumer getBuffer(RenderType layer) {
         // Reuse consumer for same layer within one entity (e.g. left arm + right arm)

@@ -61,6 +61,12 @@ public abstract class ModelPartMixin {
         if (!(matrices instanceof RecyclingMatrixStack recyclingMatrices)) {
             return;
         }
+        // TEMP (issue 29): with the vanilla feature capture on, leave the part's own
+        // transform to vanilla and to whatever another mod adds to it.
+        if (com.nvidia.rtxremix.minecraft.entity.VanillaFeatureCapture.scope()
+                != com.nvidia.rtxremix.minecraft.entity.VanillaFeatureCapture.Scope.OFF) {
+            return;
+        }
 
         recyclingMatrices.applyModelPartTransform(
                 x, y, z,
