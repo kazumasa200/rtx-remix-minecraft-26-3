@@ -29,6 +29,7 @@ import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
+import net.minecraft.client.renderer.feature.TextFeatureRenderer;
 import net.minecraft.client.renderer.feature.submit.SubmitNode;
 import net.minecraft.client.renderer.gizmos.DrawableGizmoPrimitives;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
@@ -459,6 +460,20 @@ public final class RemixSubmitCollector implements SubmitNodeCollector {
                                      Font.DisplayMode displayMode, int lightCoords) {
         glyphs.begin(poseStack.last().pose(), lightCoords, displayMode);
         glyphs.acceptRenderable(Minecraft.getInstance().font.prepareBackground(x0, y0, x1, y1, color));
+    }
+
+    /** A text submit as vanilla's storage holds it, drawn as the two submits above draw theirs. */
+    void captureText(TextFeatureRenderer.Submit submit) {
+        switch (submit.content()) {
+            case TextFeatureRenderer.Content.Text text -> drawText(submit.pose(), submit.displayMode(),
+                    submit.lightCoords(), text.x(), text.y(), text.string(), text.dropShadow(), text.color(),
+                    text.backgroundColor(), text.outlineColor());
+            case TextFeatureRenderer.Content.StandaloneBackground background -> {
+                glyphs.begin(submit.pose(), submit.lightCoords(), submit.displayMode());
+                glyphs.acceptRenderable(Minecraft.getInstance().font.prepareBackground(
+                        background.x0(), background.y0(), background.x1(), background.y1(), background.color()));
+            }
+        }
     }
 
     private void drawText(Matrix4fc pose, Font.DisplayMode displayMode, int lightCoords, float x, float y,

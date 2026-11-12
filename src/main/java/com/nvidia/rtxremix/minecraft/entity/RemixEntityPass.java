@@ -89,7 +89,7 @@ public class RemixEntityPass {
 
     private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
     private final RemixSubmitCollector collector = new RemixSubmitCollector(provider);
-    private final VanillaFeatureCapture featureCapture = new VanillaFeatureCapture();
+    private final VanillaFeatureCapture featureCapture = new VanillaFeatureCapture(collector);
     /**
      * The per-type breakdown costs a HashMap probe per entity per frame and a
      * stream sort plus a dozen String.formats on the render thread every summary,
@@ -758,7 +758,7 @@ public class RemixEntityPass {
         try {
             if (vanillaFeatures) {
                 try {
-                    dispatcher.submit(state, camera, 0.0, 0.0, 0.0, sharedMatrices, featureCapture.storage());
+                    dispatcher.submit(state, camera, 0.0, 0.0, 0.0, sharedMatrices, featureCapture.begin(provider));
                     // Still inside the capture: the feature renderers pose the models, and
                     // every cuboid's pivot is read as it is drawn.
                     featureCapture.drain(provider);

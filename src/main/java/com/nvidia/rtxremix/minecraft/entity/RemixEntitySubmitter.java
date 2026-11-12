@@ -652,6 +652,12 @@ public class RemixEntitySubmitter {
 
     private int lastDrawCount;
     private int lastMeshCreateCount;
+    /**
+     * The most vertices a part may have to leave the stream once it is still.
+     * shortcut: a pooled mesh welds its shell with the quadratic search, which a large
+     * part pays in one long frame; lift this once pooled meshes weld by hash too.
+     */
+    private static final int MAX_SETTLED_PART_VERTICES = 2048;
     /** Frame clock shared with retained-part stamping; owned by the registry. */
     private long frameIndex() {
         return retainedEntityParts.frameIndex();
@@ -1275,10 +1281,20 @@ public class RemixEntitySubmitter {
         boolean emissiveBeaconLens = beacon != null
                 && CopperBeaconBlockEntityRenderer.LENS_SPRITE_ID.equals(
                         sprite.contents().name());
+        boolean streamed = (transientGeometry || consumer.isPartStreamed(partIndex)) && sides == null;
+        if (streamed && !transientGeometry && vertexCount <= MAX_SETTLED_PART_VERTICES) {
+            // Vertices another renderer transformed itself are streamed because nothing
+            // says they will be the same next frame. Once a part does come back unchanged
+            // it is still: an item frame's model through Fabric's renderer, a gun at rest.
+            // It then takes a pooled mesh like any other part.
+            RetainedEntityPart last = retainedEntityParts.peek(
+                    result.owner(), categoryFlags, layerIndex, partIndex);
+            streamed = last == null || !rigidMeshLookupKey.equals(last.meshKey);
+        }
         RemixMesh mesh = emissiveBeaconLens
                 ? acquireBeaconLensMesh(
                         beacon, vertexCount, texId, shellLayer, sides, sprite)
-                : (transientGeometry || consumer.isPartStreamed(partIndex)) && sides == null
+                : streamed
                         ? createTransientMesh(consumer, startVertex, vertexCount,
                                 texId, surfaceMode, topology, shellLayer)
                         : acquirePooledMesh(consumer, startVertex, vertexCount,

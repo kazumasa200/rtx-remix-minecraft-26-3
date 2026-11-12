@@ -120,6 +120,14 @@ final class RetainedEntityPartRegistry<O, V> {
         return entry.value;
     }
 
+    /** The retained value for this owner and slot as the last frame left it, or null. */
+    V peek(O owner, int categoryFlags, int layerIndex, int partIndex) {
+        Map<Slot, Entry<V>> parts = owners.get(owner);
+        if (parts == null) return null;
+        Entry<V> entry = parts.get(slotProbe.set(categoryFlags, layerIndex, partIndex));
+        return entry != null ? entry.value : null;
+    }
+
     /** Retires every part this owner holds, so a partly submitted owner leaves nothing in the scene. */
     void discardOwner(O owner, Consumer<? super V> retire) {
         Map<Slot, Entry<V>> parts = owners.remove(owner);

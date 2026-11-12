@@ -10,7 +10,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.sugar.Local;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nvidia.rtxremix.minecraft.compat.immediatelyfast.MapTextureSource;
-import com.nvidia.rtxremix.minecraft.entity.RemixSubmitCollector;
+import com.nvidia.rtxremix.minecraft.entity.VanillaFeatureCapture;
 import net.minecraft.client.renderer.MapRenderer;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.state.MapRenderState;
@@ -34,7 +34,7 @@ public abstract class MapRendererMixin {
                                          boolean showOnlyFrame, int lightCoords, Operation<Void> original) {
         Identifier source = ((MapTextureSource) state).rtxremix$sourceMapTexture();
         Identifier atlas = state.texture;
-        if (!(collector instanceof RemixSubmitCollector) || source == null || source.equals(atlas)
+        if (VanillaFeatureCapture.provider(collector) == null || source == null || source.equals(atlas)
                 || !(state instanceof IMapRenderState mapped)
                 || !atlas.equals(mapped.immediatelyFast$getAtlasTextureId())) {
             original.call(state, pose, collector, showOnlyFrame, lightCoords);

@@ -8,7 +8,8 @@ import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nvidia.rtxremix.minecraft.compat.immediatelyfast.SignTextGeometryCache;
-import com.nvidia.rtxremix.minecraft.entity.RemixSubmitCollector;
+import com.nvidia.rtxremix.minecraft.entity.RemixVertexConsumerProvider;
+import com.nvidia.rtxremix.minecraft.entity.VanillaFeatureCapture;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.blockentity.AbstractSignRenderer;
@@ -27,9 +28,10 @@ public abstract class SignRendererMixin {
     @WrapMethod(method = "submitSignText")
     private void rtxremix$cacheSourceSignText(SignRenderState state, PoseStack pose,
             SubmitNodeCollector collector, SignText text, Operation<Void> original) {
-        if (collector instanceof RemixSubmitCollector remix
+        RemixVertexConsumerProvider provider = VanillaFeatureCapture.provider(collector);
+        if (provider != null
                 && text instanceof ISignText cached && cached.immediatelyFast$shouldCache()) {
-            SignTextGeometryCache.render(font, state, pose, remix.provider(), text);
+            SignTextGeometryCache.render(font, state, pose, provider, text);
         } else {
             original.call(state, pose, collector, text);
         }
