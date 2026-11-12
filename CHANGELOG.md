@@ -11,6 +11,8 @@ also part of every mod file name.
 
 ## Unreleased
 
+## 0.4.0-pre.8 - 2026-11-13
+
 ### Changed
 
 - Entities, block entities and the first-person hand are captured after vanilla's
