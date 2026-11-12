@@ -58,6 +58,7 @@ public final class RemixFirstPersonPass implements AutoCloseable {
 
     private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
     private final RemixSubmitCollector collector = new RemixSubmitCollector(provider);
+    private final VanillaFeatureCapture featureCapture = new VanillaFeatureCapture(collector);
     private final Transform cameraToWorld = new Transform();
     private final Transform heldLightTransform = new Transform();
     private final Matrix4f correctedBone = new Matrix4f();
@@ -105,7 +106,17 @@ public final class RemixFirstPersonPass implements AutoCloseable {
             // itself need one too (#29).
             context.boneUnposedVertices();
 
-            handsRenderer.submitHandsWithItems(tickDelta, matrices, collector, playerState, handsState);
+            if (VanillaFeatureCapture.scope() != VanillaFeatureCapture.Scope.OFF) {
+                try {
+                    handsRenderer.submitHandsWithItems(
+                            tickDelta, matrices, featureCapture.begin(provider), playerState, handsState);
+                    featureCapture.drain(provider);
+                } finally {
+                    featureCapture.discard();
+                }
+            } else {
+                handsRenderer.submitHandsWithItems(tickDelta, matrices, collector, playerState, handsState);
+            }
 
             List<RemixVertexConsumerProvider.CapturedLayer> layers = provider.endEntity();
             if (layers.isEmpty()) {

@@ -717,8 +717,29 @@ lightmap tints, not albedos, and the runtime lights a blended particle from the
 radiance cache with no self-shadowing, so `ParticleTint` draws soot near-black
 to keep smoke dark over a lit floor.
 
-**Entities.** Entities and block entities that vanilla already draws are
-captured in place, so a model is evaluated once rather than once for OpenGL and
+**Entities.** A renderer's submits are captured after vanilla's own storage and
+feature renderers have had them (`VanillaFeatureCapture`): the capture passes hand
+a renderer vanilla's `SubmitNodeStorage` itself, then have vanilla's feature
+renderers build each submit, and only the vertex builder those ask for is the
+capture's (`RenderTypeFeatureRendererMixin`, the one place a feature renderer takes
+it from). Whatever another mod puts into the storage or a feature renderer
+therefore runs: Figura's avatars and the callbacks that hide the vanilla player,
+Entity Model Features' animation, a renderer that fills its buffer after
+submitting it. The port first gave renderers a collector of its own
+(`RemixSubmitCollector`) that redid each feature renderer, and none of that ran
+(#29, #30); `/rtx capture legacy` still selects it, for comparison. Submits are
+built in the order they arrived, not grouped as vanilla groups them, since a
+layer's index is its first use and an overlay is painted onto the layer before it.
+Text submits go to the capture's own layout and the End portal's faces to
+`EndPortalFaces`; blob shadows, outlines, crumbling overlays, the water mask and
+gizmos are left unbuilt. On this path `ModelPart.translateAndRotate` is vanilla's
+too: the capture replaced it with pooled arithmetic on its own pose stack, which
+dropped what Entity Model Features adds there. Vertices a renderer transformed
+itself are streamed as a new mesh each frame until a part comes back unchanged,
+when it takes a pooled mesh like any other (an item frame's model through Fabric's
+renderer). Code that asks whether a collector is a capture's asks
+`VanillaFeatureCapture.provider`. Entities and block entities that vanilla already
+draws are captured in place, so a model is evaluated once rather than once for OpenGL and
 again for Remix; entities outside vanilla's frustum are swept up closest-first
 under a budget, because a path tracer needs them for shadows and reflections,
 and an entity that owns a Remix light this frame is swept at any distance so

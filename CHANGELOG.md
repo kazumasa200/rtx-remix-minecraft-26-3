@@ -11,7 +11,18 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Changed
+
+- Entities, block entities and the first-person hand are captured after vanilla's
+  own render queue and feature renderers have processed them, so what another mod
+  adds there is drawn without code written for that mod. `/rtx capture legacy`
+  selects the earlier path for comparison
+
 ### Fixed
+
+- With Entity Model Features and a player model pack such as FA+Player, the
+  player's body animates with RTX on as it does without, and a held gun sits in
+  the animated hand (#29, #30)
 
 - Distant Horizons: LODs take the textures of a resource pack chosen inside a
   world. They kept the old pack's until the world was entered again, and could

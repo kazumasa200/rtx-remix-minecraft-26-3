@@ -66,6 +66,7 @@ public final class RemixBlockEntityPass {
     private final RecyclingMatrixStack matrices = new RecyclingMatrixStack();
     private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
     private final RemixSubmitCollector collector = new RemixSubmitCollector(provider);
+    private final VanillaFeatureCapture featureCapture = new VanillaFeatureCapture(collector);
     private final IdentityHashMap<BlockEntityType<?>, String> typeKeyCache = new IdentityHashMap<>();
     private final FailureLogThrottle failures = new FailureLogThrottle(LOGGER, "Block entity");
     // One buffer suffices: the submit consumes the bones before the next capture
@@ -94,7 +95,16 @@ public final class RemixBlockEntityPass {
         List<RemixVertexConsumerProvider.CapturedLayer> layers;
         try {
             collector.setBlockOrigin(be.getBlockPos());
-            dispatcher.submit(state, matrices, collector, camera);
+            if (VanillaFeatureCapture.scope() == VanillaFeatureCapture.Scope.ALL) {
+                try {
+                    dispatcher.submit(state, matrices, featureCapture.begin(provider), camera);
+                    featureCapture.drain(provider);
+                } finally {
+                    featureCapture.discard();
+                }
+            } else {
+                dispatcher.submit(state, matrices, collector, camera);
+            }
             layers = provider.endEntity();
         } catch (Exception e) {
             failures.noteFailure("capturing", "block entity " + typeKey(be), be.getBlockPos(), e);

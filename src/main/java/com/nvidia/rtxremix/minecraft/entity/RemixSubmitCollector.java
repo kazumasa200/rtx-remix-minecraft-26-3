@@ -297,17 +297,7 @@ public final class RemixSubmitCollector implements SubmitNodeCollector {
         if (renderType.isOutline()) {
             return;
         }
-        if (renderType.pipeline() == RenderPipelines.END_PORTAL
-                || renderType.pipeline() == RenderPipelines.END_GATEWAY) {
-            Minecraft client = Minecraft.getInstance();
-            float time = client.level == null ? 0f
-                    : (client.level.getGameTime() % 24000L
-                            + client.getDeltaTracker().getGameTimeDeltaPartialTick(false)) / 24000f;
-            customGeometryRenderer.render(poseStack.last(), new EndPortalFaces(
-                    provider.getBuffer(RenderTypes.entitySolid(AbstractEndPortalRenderer.END_SKY_LOCATION)),
-                    provider.getBuffer(RenderTypes.eyes(AbstractEndPortalRenderer.END_SKY_LOCATION)),
-                    provider.getBuffer(RenderTypes.eyes(AbstractEndPortalRenderer.END_PORTAL_LOCATION)),
-                    time, blockOrigin, renderType.pipeline() == RenderPipelines.END_PORTAL));
+        if (capturePortal(poseStack.last(), renderType, customGeometryRenderer)) {
             return;
         }
         if (!(provider.getBuffer(renderType) instanceof RemixCapturingConsumer buffer)) {
@@ -321,6 +311,29 @@ public final class RemixSubmitCollector implements SubmitNodeCollector {
             PoseStack.Pose pose = poseStack.last().copy();
             provider.drawAtEnd(() -> customGeometryRenderer.render(pose, buffer));
         }
+    }
+
+    /**
+     * Draws the End portal's or gateway's faces the capture's own way and returns true, or
+     * returns false for any other custom geometry. Vanilla draws their starfield in a shader
+     * from screen position, which a path tracer has nothing to trace.
+     */
+    boolean capturePortal(PoseStack.Pose pose, RenderType renderType,
+                          SubmitNodeCollector.CustomGeometryRenderer customGeometryRenderer) {
+        if (renderType.pipeline() == RenderPipelines.END_PORTAL
+                || renderType.pipeline() == RenderPipelines.END_GATEWAY) {
+            Minecraft client = Minecraft.getInstance();
+            float time = client.level == null ? 0f
+                    : (client.level.getGameTime() % 24000L
+                            + client.getDeltaTracker().getGameTimeDeltaPartialTick(false)) / 24000f;
+            customGeometryRenderer.render(pose, new EndPortalFaces(
+                    provider.getBuffer(RenderTypes.entitySolid(AbstractEndPortalRenderer.END_SKY_LOCATION)),
+                    provider.getBuffer(RenderTypes.eyes(AbstractEndPortalRenderer.END_SKY_LOCATION)),
+                    provider.getBuffer(RenderTypes.eyes(AbstractEndPortalRenderer.END_PORTAL_LOCATION)),
+                    time, blockOrigin, renderType.pipeline() == RenderPipelines.END_PORTAL));
+            return true;
+        }
+        return false;
     }
 
     /** The fire on a burning entity, drawn as the flame feature renderer draws it. */

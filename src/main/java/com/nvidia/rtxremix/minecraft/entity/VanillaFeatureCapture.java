@@ -14,6 +14,7 @@ import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.SubmitNodeCollection;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.SubmitNodeStorage;
+import net.minecraft.client.renderer.feature.CustomFeatureRenderer;
 import net.minecraft.client.renderer.feature.FeatureFrameContext;
 import net.minecraft.client.renderer.feature.FeatureRenderer;
 import net.minecraft.client.renderer.feature.FeatureRendererMap;
@@ -51,7 +52,7 @@ public final class VanillaFeatureCapture implements FeatureRenderPhase.Output {
         void rtxremix$buildGroup(FeatureFrameContext context, List<SubmitNode> submits);
     }
 
-    private static volatile Scope scope = Scope.PLAYERS;
+    private static volatile Scope scope = Scope.ALL;
     /** Where the feature renderers' vertices go while a drain runs. */
     private static @Nullable RemixVertexConsumerProvider target;
     /** The storage of the capture being submitted to, and where it is captured. */
@@ -178,6 +179,10 @@ public final class VanillaFeatureCapture implements FeatureRenderPhase.Output {
         }
         if (submit instanceof TextFeatureRenderer.Submit textSubmit) {
             text.captureText(textSubmit);
+            return;
+        }
+        if (submit instanceof CustomFeatureRenderer.Submit custom
+                && text.capturePortal(custom.pose(), custom.renderType(), custom.customGeometryRenderer())) {
             return;
         }
         FeatureRenderer<?> renderer = renderers.get(type);
