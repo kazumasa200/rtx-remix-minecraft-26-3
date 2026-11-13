@@ -11,6 +11,13 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Added
+
+- Distant Horizons: with a release other than 3.3.4, LOD terrain is built from
+  Distant Horizons' public data, out to 4096 blocks and coloured by block and biome
+  rather than with its textures, instead of none at all. 3.3.4 keeps the full LOD
+  terrain
+
 ### Changed
 
 - Distant Horizons: LOD terrain is captured only with Distant Horizons 3.3.4, the

@@ -21,6 +21,8 @@ import com.nvidia.rtxremix.minecraft.asset.RemixMesh;
 import com.nvidia.rtxremix.minecraft.asset.RemixMeshStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixTexture;
 import com.nvidia.rtxremix.minecraft.asset.RemixTextureStore;
+import com.nvidia.rtxremix.minecraft.lod.dh.DhApiTerrain;
+import com.nvidia.rtxremix.minecraft.lod.dh.DhPublicApi;
 import com.nvidia.rtxremix.minecraft.lod.dh.DistantHorizonsCompat;
 import com.nvidia.rtxremix.minecraft.lod.dh.DistantHorizonsMixinPlugin;
 import com.nvidia.rtxremix.minecraft.lod.dh.DistantHorizonsRasterHold;
@@ -30,6 +32,7 @@ import com.nvidia.rtxremix.minecraft.terrain.TerrainAssetRetirementQueue;
 import com.nvidia.rtxremix.minecraft.terrain.TerrainNativeCallStats;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
+import net.minecraft.client.Minecraft;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,8 +49,11 @@ import java.util.concurrent.Executors;
  * Far terrain from an LOD mod, as retained Remix instances beyond Minecraft's
  * own terrain.
  *
- * <p>The LOD mod decides which sections exist, at what detail, and which are
- * drawn; {@link LodSection} carries those decisions over. Here, on the render
+ * <p>With the release of Distant Horizons the capture is written against, the LOD mod decides
+ * which sections exist, at what detail, and which are drawn; {@link LodSection} carries those
+ * decisions over. With another release whose public API matches, {@link LodApiSections} makes
+ * those decisions here and builds the sections from the LOD mod's block data instead, nearer
+ * and without its textures, rather than drawing no LOD terrain at all. Here, on the render
  * thread, a section's copied geometry is sent to the builder threads with the
  * current clip, and the finished mesh is installed under a frame budget as one
  * instance, submitted where it is created and again only when the mod shows or
@@ -65,7 +71,10 @@ public final class LodTerrain {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LodTerrain.class);
 
-    private static final boolean DISTANT_HORIZONS = DistantHorizonsMixinPlugin.SUPPORTED;
+    /** The installed Distant Horizons is the release whose renderer is captured. */
+    private static final boolean CAPTURE = DistantHorizonsMixinPlugin.SUPPORTED;
+    /** Another release, whose public API this mod can build its own LOD sections from. */
+    private static final boolean PUBLIC_DATA = DistantHorizonsMixinPlugin.UNTESTED && DhApiTerrain.available();
     private static final long INSTALL_BUDGET_NS = 1_000_000L;
     /** Common glass, as Minecraft's own glass takes it. */
     private static final float GLASS_IOR = 1.52f;
@@ -139,6 +148,7 @@ public final class LodTerrain {
     private final int cntInstalls;
     private final int cntInstallKb;
     private final int cntBuildQueue;
+    private final int cntResidentMib;
     /** Meshes handed to Remix this frame, and their bytes. */
     private int frameInstalls;
     private long frameInstallBytes;
@@ -171,13 +181,15 @@ public final class LodTerrain {
     private int clipCenterZ = Integer.MIN_VALUE;
     private RemixMaterial groundMaterial;
     /** The LOD mod's block-face tiles, when it is installed (#25). */
-    private final LodTiles tiles = DISTANT_HORIZONS ? new LodTiles(DistantHorizonsCompat.TILES) : null;
+    private final LodTiles tiles = CAPTURE ? new LodTiles(DistantHorizonsCompat.TILES) : null;
     private RemixMaterial tileMaterial;
     private RemixTexture palette;
     private RemixMaterial glassMaterial;
     private RemixMaterial glowMaterial;
     /** Indexed by the LOD's detail level: 0 draws a block as one block, each level doubles it. */
     private final RemixMaterial[] lampMaterials = new RemixMaterial[32];
+    /** The sections this mod builds itself, when the LOD mod's renderer is not captured. */
+    private final LodApiSections apiSections;
 
     public LodTerrain(PerformanceTimer timer) {
         this.timer = timer;
@@ -187,7 +199,20 @@ public final class LodTerrain {
         cntInstalls = timer.registerCounter("Lod.Installs");
         cntInstallKb = timer.registerCounter("Lod.InstallKB");
         cntBuildQueue = timer.registerCounter("Lod.BuildQueue");
-        if (DISTANT_HORIZONS) DistantHorizonsCompat.bindEvents();
+        cntResidentMib = timer.registerCounter("Lod.ResidentMiB");
+        if (CAPTURE) {
+            DistantHorizonsCompat.bindEvents();
+            apiSections = null;
+        } else if (PUBLIC_DATA) {
+            DhPublicApi.bindLitBlocks();
+            apiSections = new LodApiSections(new DhApiTerrain(), timer);
+        } else {
+            apiSections = null;
+            if (DistantHorizonsMixinPlugin.UNTESTED) {
+                LOGGER.warn("Distant Horizons' public API is not the version this mod builds on; "
+                        + "no LOD terrain is drawn with RTX on");
+            }
+        }
     }
 
     public boolean isEnabled() {
@@ -258,7 +283,10 @@ public final class LodTerrain {
 
     /** Radius of the LOD terrain being drawn, in blocks, or 0 when there is none. */
     public float radiusBlocks() {
-        return capturing ? (float) Math.min(DistantHorizonsCompat.lodRadiusChunks() * 16.0, budgetRadius) : 0f;
+        if (!capturing) return 0f;
+        double lod = CAPTURE ? DistantHorizonsCompat.lodRadiusChunks() * 16.0
+                : apiSections != null ? apiSections.radiusBlocks() : 0.0;
+        return (float) Math.min(lod, budgetRadius);
     }
 
     /**
@@ -267,7 +295,7 @@ public final class LodTerrain {
      */
     public void update(RemixAPI api, Vec3 camera, BlockTextureManager textures, boolean active, ChunkManager terrain) {
         if (DistantHorizonsMixinPlugin.UNTESTED) DistantHorizonsRasterHold.set(active);
-        boolean wanted = DISTANT_HORIZONS && enabled && active && terrain != null;
+        boolean wanted = (CAPTURE || apiSections != null) && enabled && active && terrain != null;
         if (wanted != capturing) setCapturing(wanted);
         boolean eventsPending = drainEvents(api);
         // Also frees what finishes after a stop: a stop makes every build stale.
@@ -277,6 +305,11 @@ public final class LodTerrain {
         frame++;
         cameraX = camera.x;
         cameraZ = camera.z;
+        if (apiSections != null) {
+            apiSections.update(camera, Minecraft.getInstance().level,
+                    textures != null ? textures.spriteColors() : BlockTextureManager.SpriteColors.EMPTY,
+                    ClientViewDistance.chunks());
+        }
         resolveSwaps(api, eventsPending);
         updateClip(camera, terrain);
         if (tiles != null) tiles.refresh(api);
@@ -288,13 +321,16 @@ public final class LodTerrain {
         timer.count(cntInstalls, frameInstalls);
         timer.count(cntInstallKb, (int) (frameInstallBytes >> 10));
         timer.count(cntBuildQueue, buildQueue.size() + buildsInFlight);
+        timer.count(cntResidentMib, (int) (installedBytes >> 20));
         frameInstalls = 0;
         frameInstallBytes = 0;
     }
 
     /** Render thread, after a resource reload: the LOD mod's tiles are cut again from the new packs. */
     public void reloadTextures() {
-        if (DISTANT_HORIZONS) DistantHorizonsCompat.reloadTiles();
+        if (CAPTURE) DistantHorizonsCompat.reloadTiles();
+        // This mod's own sections bake the block colours the packs paint.
+        if (apiSections != null) apiSections.rebuildAll();
         clear();
     }
 
@@ -328,6 +364,7 @@ public final class LodTerrain {
     public void destroy() {
         reset();
         builder.shutdownNow();
+        if (apiSections != null) apiSections.shutdown();
         if (groundMaterial != null && !groundMaterial.isDeleted()) groundMaterial.destroy();
         groundMaterial = null;
         if (tileMaterial != null && !tileMaterial.isDeleted()) tileMaterial.destroy();
@@ -372,7 +409,9 @@ public final class LodTerrain {
         LOGGER.info("LOD terrain capture {}", on ? "started" : "stopped");
         // Starting asks the mod to rebuild every section so the copies arrive;
         // stopping hands it back its own shading and drawing.
-        DistantHorizonsCompat.setCapturing(on);
+        if (CAPTURE) DistantHorizonsCompat.setCapturing(on);
+        // This mod's own sections are chosen afresh when capture starts again.
+        if (apiSections != null && !on) apiSections.stop();
     }
 
     /** Whether events are left for the next frame. */

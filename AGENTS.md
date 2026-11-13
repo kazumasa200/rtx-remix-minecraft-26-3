@@ -77,7 +77,10 @@ Distant Horizons is an optional compile-only dependency (Modrinth Maven, never
 shipped). Its mixins live in a separate `rtx-remix-renderer.distanthorizons.mixins.json`
 that applies only to Distant Horizons 3.3.4 (`lod/dh/`, `DistantHorizonsMixinPlugin`):
 they reach into its renderer's internals, so on any other release the plugin warns
-and neither the mixins nor the LOD terrain capture run. `DistantHorizonsRasterHold`
+and neither the mixins nor the LOD terrain capture run. Such a release whose public
+API has the major version this mod compiles against (`DhPublicApi.API_MAJOR`) gets
+LOD sections this mod builds itself from that API (`LodApiSections`, below);
+`DhApiTerrain` and `DhPublicApi` name nothing of its internals. `DistantHorizonsRasterHold`
 then cancels that release's own draws through its public API while Remix draws the
 world: they go into the main target, which is laid over the Remix image. The API has
 no switch for its fade of vanilla's terrain, so `UntestedFadeMixin`
@@ -85,6 +88,27 @@ no switch for its fade of vanilla's terrain, so `UntestedFadeMixin`
 string with `require = 0` so a release that renamed it still loads. Its
 `renderingEnabled` config is not a way to stop it: a write through the API lands in
 the saved config as `rendererMode = "DISABLED"`.
+
+On that path `LodApiSections` chooses the sections around the camera itself, a
+quadtree whose sections are 64 cells of `2^d` blocks and split while the camera is
+nearer than three widths (`LodSelection`), and reads them on two low-priority threads
+through `DhApiTerrain`: the API hands out every column at full detail, never Distant
+Horizons' own coarser copies, so a section of the finest detail reads its 64 by 64
+columns and a coarser one the column at each cell's centre. `LodColumnMesher` turns
+the runs into Distant Horizons' vertex layout, so `LodTerrain` installs them as it
+installs captured sections; air the sky's light does not reach hides the faces into
+it, since a section otherwise held every cave wall under it, 4.5 GB over the demo
+city. Colours are each face sprite's alpha-weighted average
+(`BlockTextureManager.spriteColors`) times the block's tint for the biome Distant
+Horizons recorded, read through a `BlockAndTintGetter` that answers only that biome
+(`LodBlockColors`). Blocks with no collision and no light are left out. A replaced
+section is closed once the sections over its ground are built. A chunk Distant
+Horizons saves anew (`DhApiChunkModifiedEvent`) rebuilds the sections over it. It
+reaches 4096 blocks at most (`rtxremix.lod.apiRadius`): over the demo city 414
+sections took 40 s and 1.7 GiB, against the capture's 8192 blocks in 2.2 GiB. A
+level with a ceiling builds nothing: no sky light reaches its air, and its reads
+waited minutes on Distant Horizons' generation. A stop interrupts the reads in
+flight for the same reason.
 
 Sodium 0.9.2 for 26.3 is compile-only and never bundled. Its conditional
 `rtx-remix-renderer.sodium.mixins.json` adapts section jobs under

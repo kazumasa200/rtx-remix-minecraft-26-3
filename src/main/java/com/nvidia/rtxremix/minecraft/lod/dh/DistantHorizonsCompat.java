@@ -6,19 +6,15 @@ package com.nvidia.rtxremix.minecraft.lod.dh;
 
 import com.seibel.distanthorizons.api.DhApi;
 import com.seibel.distanthorizons.api.enums.config.EDhApiLodShading;
-import com.seibel.distanthorizons.api.enums.rendering.EDhApiBlockMaterial;
 import com.seibel.distanthorizons.api.interfaces.config.IDhApiConfig;
 import com.seibel.distanthorizons.api.interfaces.config.IDhApiConfigValue;
 import com.seibel.distanthorizons.api.methods.events.abstractEvents.DhApiBeforeDeferredRenderEvent;
 import com.seibel.distanthorizons.api.methods.events.abstractEvents.DhApiBeforeRenderEvent;
-import com.seibel.distanthorizons.api.methods.events.abstractEvents.DhApiBlockStateWrapperCreatedEvent;
 import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiCancelableEventParam;
-import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiEventParam;
 import com.seibel.distanthorizons.api.methods.events.sharedParameterObjects.DhApiRenderParam;
 import com.nvidia.rtxremix.minecraft.lod.LodTiles;
 import com.nvidia.rtxremix.minecraft.lod.dh.mixin.BlockTextureRegistryAccessor;
 import com.seibel.distanthorizons.core.dataObjects.render.textures.BlockTextureRegistry;
-import net.minecraft.world.level.block.state.BlockState;
 
 /**
  * The Distant Horizons API calls the LOD capture needs. Only ever loaded with
@@ -31,7 +27,6 @@ public final class DistantHorizonsCompat {
 
     private static volatile boolean capturing;
     private static boolean eventsBound;
-    private static IDhApiConfigValue<Integer> renderDistance;
     /** Counts the times Distant Horizons has dropped its tiles and numbers them anew. */
     private static volatile int tileGeneration;
     /** Set by a resource reload: the tiles Distant Horizons holds were cut from the old packs. */
@@ -94,7 +89,7 @@ public final class DistantHorizonsCompat {
         eventsBound = true;
         DhApi.events.bind(DhApiBeforeRenderEvent.class, new CancelRender());
         DhApi.events.bind(DhApiBeforeDeferredRenderEvent.class, new CancelDeferredRender());
-        DhApi.events.bind(DhApiBlockStateWrapperCreatedEvent.class, new LitBlocksIlluminated());
+        DhPublicApi.bindLitBlocks();
     }
 
     /** Any thread. Whether Remix draws the LODs in place of Distant Horizons. */
@@ -104,14 +99,7 @@ public final class DistantHorizonsCompat {
 
     /** Distant Horizons' LOD render radius in chunks, or 0 before it has started. */
     public static int lodRadiusChunks() {
-        if (renderDistance == null) {
-            IDhApiConfig configs = DhApi.Delayed.configs;
-            if (configs == null) return 0;
-            // Cached: the config getter builds a new wrapper per call.
-            renderDistance = configs.graphics().chunkRenderDistance();
-        }
-        Integer chunks = renderDistance.getValue();
-        return chunks != null ? chunks : 0;
+        return DhPublicApi.lodRadiusChunks();
     }
 
     /** The LOD mod's block-face tiles. Its registry hands them out under its own lock. */
@@ -142,27 +130,6 @@ public final class DistantHorizonsCompat {
         @Override
         public void beforeRender(DhApiCancelableEventParam<DhApiRenderParam> event) {
             if (capturing) event.cancelEvent();
-        }
-    }
-
-    /**
-     * Distant Horizons names a block's material by its id before it asks whether
-     * the block gives off light, so glowstone and lit redstone lamps, whose ids
-     * hold "stone", come out as stone and their LODs do not glow. Any block that
-     * gives off light, lava and water aside, is marked illuminated instead, the
-     * material Distant Horizons gives every other light source; it draws those at
-     * full brightness itself too.
-     */
-    private static final class LitBlocksIlluminated extends DhApiBlockStateWrapperCreatedEvent {
-        @Override
-        public void blockStateWrapperCreated(DhApiEventParam<EventParam> event) {
-            EventParam param = event.value;
-            var wrapper = param.getBlockStateWrapper();
-            if (wrapper.isLiquid()) return;
-            if (wrapper.getWrappedMcObject() instanceof BlockState state && state.getLightEmission() > 0
-                    && wrapper.getMaterialId() != EDhApiBlockMaterial.ILLUMINATED.index) {
-                param.setBlockMaterial(EDhApiBlockMaterial.ILLUMINATED);
-            }
         }
     }
 

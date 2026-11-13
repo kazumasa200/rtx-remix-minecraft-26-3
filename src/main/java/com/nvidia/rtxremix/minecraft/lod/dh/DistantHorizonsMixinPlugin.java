@@ -38,8 +38,9 @@ public final class DistantHorizonsMixinPlugin implements IMixinConfigPlugin {
             Version version = mod.getMetadata().getVersion();
             boolean supported = supports(version);
             if (!supported) {
-                LOGGER.warn("Distant Horizons {} is untested; its LOD terrain will not be drawn with RTX on. "
-                        + "Use Distant Horizons 3.3.4 for LOD terrain.", version.getFriendlyString());
+                LOGGER.warn("Distant Horizons {} is untested; its renderer is not captured. LOD terrain is "
+                        + "built from its public data instead, nearer and without its textures. "
+                        + "Use Distant Horizons 3.3.4 for the full LOD terrain.", version.getFriendlyString());
             }
             return supported;
         }).orElse(false);

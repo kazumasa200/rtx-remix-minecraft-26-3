@@ -113,6 +113,9 @@ public class BlockTextureManager {
     private final Map<Identifier, SpriteEntry> spriteById = new HashMap<>();
     /** Sprites' colours averaged down for the puddles' copies of the ground; see {@link #spriteSamples}. */
     private final Map<Identifier, int[]> spriteSamples = new HashMap<>();
+    /** What {@link #spriteColors} hands out, made again on its first call after the atlas changes. */
+    private SpriteColors spriteColors = SpriteColors.EMPTY;
+    private boolean spriteColorsStale = true;
     private final Map<Long, RemixMaterial> materials = new HashMap<>();
     /**
      * Atlas materials by {@link RedstoneEmission}, then {@link #PLAIN} or {@link #SUBSURFACE},
@@ -424,6 +427,7 @@ public class BlockTextureManager {
                 ((SpriteAtlasAccessor) atlas).getSprites().values(), atlasW, atlasH);
         albedoRGBA = stitchAtlasRGBA(atlas);
         spriteSamples.clear();
+        spriteColorsStale = true;
         atlasAlbedo = upload(api, "block_atlas", albedoRGBA, atlasW, atlasH,
                 TextureFormat.RGBA8_UNORM, TexturePurpose.COLOR);
         LOGGER.info("Atlas {}x{} (stitched from {} sprites, {} off their own grid)",
@@ -1016,6 +1020,49 @@ public class BlockTextureManager {
         return samples;
     }
 
+    /**
+     * Every block sprite's average colour, and the sprites that read as see-through, for
+     * threads other than the render thread: the LOD terrain built from an LOD mod's block
+     * data colours its blocks with them. Immutable; made on the render thread.
+     */
+    public record SpriteColors(Map<Identifier, Integer> argb, Set<Identifier> translucent) {
+        public static final SpriteColors EMPTY = new SpriteColors(Map.of(), Set.of());
+    }
+
+    /**
+     * The sprites' colours as the atlas holds them, each averaged over its texels weighted by
+     * their alpha, so a cut-out leaf is the colour of its leaves rather than darkened by the
+     * holes; the alpha is the texels' mean. Render thread only.
+     */
+    public SpriteColors spriteColors() {
+        if (!spriteColorsStale || albedoRGBA == null) return spriteColors;
+        Map<Identifier, Integer> argb = new HashMap<>(spriteById.size() * 2);
+        java.util.HashSet<Identifier> translucent = new java.util.HashSet<>();
+        for (SpriteEntry entry : spriteById.values()) {
+            long r = 0, g = 0, bl = 0, a = 0;
+            int n = 0;
+            for (int y = 0; y < entry.pixH; y++) {
+                int row = ((entry.pixY + y) * atlasW + entry.pixX) * 4;
+                for (int x = 0; x < entry.pixW; x++) {
+                    int at = row + x * 4;
+                    int alpha = albedoRGBA[at + 3] & 0xFF;
+                    r += (long) (albedoRGBA[at] & 0xFF) * alpha;
+                    g += (long) (albedoRGBA[at + 1] & 0xFF) * alpha;
+                    bl += (long) (albedoRGBA[at + 2] & 0xFF) * alpha;
+                    a += alpha;
+                    n++;
+                }
+            }
+            if (n == 0 || a == 0) continue;
+            int mean = (int) (a / n);
+            argb.put(entry.id, mean << 24 | (int) (r / a) << 16 | (int) (g / a) << 8 | (int) (bl / a));
+            if (entry.readsAsTranslucent) translucent.add(entry.id);
+        }
+        spriteColors = new SpriteColors(Map.copyOf(argb), Set.copyOf(translucent));
+        spriteColorsStale = false;
+        return spriteColors;
+    }
+
     /** Shows the water's waves and the rain on it; see {@link WaterNormals#update}. */
     public void updateWaterSurfaces(float rain, double seconds) {
         if (waterNormals != null) waterNormals.update(rain, seconds);
@@ -1554,6 +1601,8 @@ public class BlockTextureManager {
             if (!tex.isDeleted()) tex.destroy();
         managedTextures.clear();
         materials.clear(); sprites.clear(); spriteById.clear(); spriteLightColors.clear(); spriteSamples.clear();
+        spriteColors = SpriteColors.EMPTY;
+        spriteColorsStale = true;
         for (RemixMaterial[][] byEmission : atlasMaterials) {
             for (RemixMaterial[] byLayer : byEmission) Arrays.fill(byLayer, null);
         }
