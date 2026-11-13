@@ -36,6 +36,26 @@ class CopperBeaconBlockEntityRendererTest {
     private static final float EPSILON = 1.0e-5f;
 
     @Test
+    void aFacingOnTheMountAxisTakesThePlacementForward() {
+        CopperBeaconPose.Pose parallel = new CopperBeaconPose.Pose();
+        CopperBeaconPose.Pose placed = new CopperBeaconPose.Pose();
+        for (Direction mount : Direction.values()) {
+            for (Direction facing : new Direction[] {mount, mount.getOpposite()}) {
+                Direction forward = CopperBeaconPose.forward(mount, facing);
+                String state = "mount=" + mount + ", facing=" + facing;
+                assertTrue(forward.getAxis() != mount.getAxis(), state);
+                CopperBeaconPose.evaluate(mount, facing, 30.0f, 20.0f, parallel);
+                CopperBeaconPose.evaluate(mount, forward, 30.0f, 20.0f, placed);
+                assertVector(placed.direction(), parallel.direction(), "direction " + state);
+                assertVector(placed.emitter(), parallel.emitter(), "emitter " + state);
+                Quaternionf rotation = CopperBeaconBlockEntityRenderer.mountingRotation(mount, facing);
+                assertVector(new Vector3f(0, 0, -1).rotate(placed.mountingRotation()),
+                        new Vector3f(0, 0, -1).rotate(rotation), "mounting " + state);
+            }
+        }
+    }
+
+    @Test
     void everyPlacementRotatesStaticBaseAndDynamicHeadOntoTheSameMountingBasis() {
         Map<Direction, Direction> baseDirections = readBaseDirections();
         assertEquals(Direction.values().length, baseDirections.size());

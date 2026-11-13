@@ -19,6 +19,12 @@ also part of every mod file name.
   drawing off the path-traced image, where a changed internal could stop it while
   loading
 
+### Fixed
+
+- The debug world (Debug Mode world type) renders. A copper beacon whose facing lies
+  on its mount's axis, a state only commands and the debug world make, failed every
+  frame, and the picture stayed upside down and doubled
+
 ## 0.4.0-pre.8 - 2026-11-13
 
 ### Changed

@@ -743,8 +743,8 @@ public class LightManager {
                 Mth.DEG_TO_RAD * pitch,
                 0.0f);
 
-        Direction facing = state.getValue(BlockStateProperties.FACING);
         Direction mount = state.getValue(CopperBeaconBlock.MOUNT);
+        Direction facing = CopperBeaconPose.forward(mount, state.getValue(BlockStateProperties.FACING));
         CopperBeaconPose.evaluate(
                 mount, facing, 0.0f, 0.0f, scratchDisplayBeaconPose);
 
