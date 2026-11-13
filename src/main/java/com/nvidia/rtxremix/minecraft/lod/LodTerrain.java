@@ -22,13 +22,14 @@ import com.nvidia.rtxremix.minecraft.asset.RemixMeshStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixTexture;
 import com.nvidia.rtxremix.minecraft.asset.RemixTextureStore;
 import com.nvidia.rtxremix.minecraft.lod.dh.DistantHorizonsCompat;
+import com.nvidia.rtxremix.minecraft.lod.dh.DistantHorizonsMixinPlugin;
+import com.nvidia.rtxremix.minecraft.lod.dh.DistantHorizonsRasterHold;
 import com.nvidia.rtxremix.minecraft.profiling.PerformanceTimer;
 import com.nvidia.rtxremix.minecraft.terrain.ChunkManager;
 import com.nvidia.rtxremix.minecraft.terrain.TerrainAssetRetirementQueue;
 import com.nvidia.rtxremix.minecraft.terrain.TerrainNativeCallStats;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,8 +65,7 @@ public final class LodTerrain {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LodTerrain.class);
 
-    private static final boolean DISTANT_HORIZONS =
-            FabricLoader.getInstance().isModLoaded("distanthorizons");
+    private static final boolean DISTANT_HORIZONS = DistantHorizonsMixinPlugin.SUPPORTED;
     private static final long INSTALL_BUDGET_NS = 1_000_000L;
     /** Common glass, as Minecraft's own glass takes it. */
     private static final float GLASS_IOR = 1.52f;
@@ -266,6 +266,7 @@ public final class LodTerrain {
      * world this frame; while it is false the LOD mod draws for itself.
      */
     public void update(RemixAPI api, Vec3 camera, BlockTextureManager textures, boolean active, ChunkManager terrain) {
+        if (DistantHorizonsMixinPlugin.UNTESTED) DistantHorizonsRasterHold.set(active);
         boolean wanted = DISTANT_HORIZONS && enabled && active && terrain != null;
         if (wanted != capturing) setCapturing(wanted);
         boolean eventsPending = drainEvents(api);

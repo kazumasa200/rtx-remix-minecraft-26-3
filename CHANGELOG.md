@@ -11,6 +11,14 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Changed
+
+- Distant Horizons: LOD terrain is captured only with Distant Horizons 3.3.4, the
+  release the capture was written against. With another release the game starts,
+  logs a warning, draws no LOD terrain with RTX on and keeps Distant Horizons' own
+  drawing off the path-traced image, where a changed internal could stop it while
+  loading
+
 ## 0.4.0-pre.8 - 2026-11-13
 
 ### Changed

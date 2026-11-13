@@ -75,7 +75,16 @@ for the staging inventory.
 
 Distant Horizons is an optional compile-only dependency (Modrinth Maven, never
 shipped). Its mixins live in a separate `rtx-remix-renderer.distanthorizons.mixins.json`
-that loads only when Distant Horizons is installed (`lod/dh/`).
+that applies only to Distant Horizons 3.3.4 (`lod/dh/`, `DistantHorizonsMixinPlugin`):
+they reach into its renderer's internals, so on any other release the plugin warns
+and neither the mixins nor the LOD terrain capture run. `DistantHorizonsRasterHold`
+then cancels that release's own draws through its public API while Remix draws the
+world: they go into the main target, which is laid over the Remix image. The API has
+no switch for its fade of vanilla's terrain, so `UntestedFadeMixin`
+(`rtx-remix-renderer.distanthorizons-untested.mixins.json`) stops that one, named by
+string with `require = 0` so a release that renamed it still loads. Its
+`renderingEnabled` config is not a way to stop it: a write through the API lands in
+the saved config as `rendererMode = "DISABLED"`.
 
 Sodium 0.9.2 for 26.3 is compile-only and never bundled. Its conditional
 `rtx-remix-renderer.sodium.mixins.json` adapts section jobs under
