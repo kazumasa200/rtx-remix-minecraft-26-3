@@ -11,6 +11,8 @@ also part of every mod file name.
 
 ## Unreleased
 
+## 0.4.0-pre.9 - 2026-11-13
+
 ### Added
 
 - Distant Horizons: with a release other than 3.3.4, LOD terrain is built from
