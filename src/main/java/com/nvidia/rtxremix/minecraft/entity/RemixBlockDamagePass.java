@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
+import com.nvidia.rtxremix.minecraft.util.FailureLogThrottle;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.QuadInstance;
 import com.mojang.blaze3d.vertex.VertexConsumer;

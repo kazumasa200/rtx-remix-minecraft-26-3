@@ -663,7 +663,11 @@ public class RtxRemixMod implements ClientModInitializer {
         try (ProfileScope callbackScope = ProfileScope.begin("WorldRender.END")) {
             int remixTexture;
             try {
-                renderer.renderAndSubmitFrame();
+                if (!renderer.renderAndSubmitFrame()) {
+                    // No scene this frame: the shared image still holds the last composite.
+                    // This frame presents whatever GL drew, as after a failure below.
+                    return;
+                }
                 remixTexture = renderer.blitVkImageToGL();
             } catch (RuntimeException e) {
                 // Compositing is skipped, so this frame presents whatever GL drew, which

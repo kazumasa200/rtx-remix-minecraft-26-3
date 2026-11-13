@@ -158,7 +158,11 @@ MiniHUD, Axiom), and the opaque Remix image covered them: `ModOverlayLayer`
 clears the main target's colour to transparent at the main pass's start and
 gives it the last Remix frame's depth, keeps the colour once the level render
 returns, and lays it over the image after the lens and weather. Vanilla's block
-outline is cancelled while RTX is on, since Remix draws its own.
+outline is cancelled while RTX is on, since Remix draws its own. A frame that fails
+before its Submit composites nothing (`renderAndSubmitFrame` returns false): the
+shared image still holds the composite the last present copied into it, and laying
+that over the frame again turned it upside down under the new HUD every frame. Each
+step that continues past a failure logs it once per episode (`FailureLogThrottle`).
 Thread-safe stores wrap Remix-side meshes, instances, textures, materials, and
 lights over raw `long` handles from the JNI wrapper. `JoinBurstHold` keeps
 vanilla's terrain-download screen up for a bounded wait for stable frames after

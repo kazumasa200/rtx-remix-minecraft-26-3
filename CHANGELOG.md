@@ -24,6 +24,9 @@ also part of every mod file name.
 - The debug world (Debug Mode world type) renders. A copper beacon whose facing lies
   on its mount's axis, a state only commands and the debug world make, failed every
   frame, and the picture stayed upside down and doubled
+- A frame that fails before it reaches Remix shows nothing of the world rather than
+  the previous frame turned upside down, and its error is logged once rather than
+  every frame
 
 ## 0.4.0-pre.8 - 2026-11-13
 

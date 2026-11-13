@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
+import com.nvidia.rtxremix.minecraft.util.FailureLogThrottle;
 import com.nvidia.rtxremix.InstanceCategoryBit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
