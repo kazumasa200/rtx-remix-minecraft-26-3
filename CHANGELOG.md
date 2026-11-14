@@ -16,6 +16,9 @@ also part of every mod file name.
 - With a light in hand, the player's shadow and reflection stay where the player
   is and follow the view smoothly. The hidden body was held about a third of a
   block behind and jumped in steps as the view turned (#33)
+- Item pickups, the elder guardian's warning and particles a mod draws in a group
+  of its own show with RTX on. Every particle group but the one Remix draws was
+  left out of the image
 
 ## 0.4.0-pre.9 - 2026-11-13
 

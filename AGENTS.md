@@ -743,7 +743,11 @@ toward the sun and the clouds' shadow put the web out.
 and are double buffered: the render thread publishes the previous frame's
 payload at the top of the frame and joins the worker after submit, so particles
 trail the scene by exactly one frame. Only `SINGLE_QUADS` particles are
-captured; item-atlas particles are alpha-tested. Vanilla particle colours are
+captured, and only that group's vanilla submit is skipped (`ParticleManagerMixin`
+notes its extracted state, `WorldRendererMixin` skips it): item pickups, elder
+guardians and a mod's own particle groups submit as vanilla does, and skipping
+every group had left them out of the image. Item-atlas particles are
+alpha-tested. Vanilla particle colours are
 lightmap tints, not albedos, and the runtime lights a blended particle from the
 radiance cache with no self-shadowing, so `ParticleTint` draws soot near-black
 to keep smoke dark over a lit floor.

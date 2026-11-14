@@ -4,11 +4,17 @@
  */
 package com.nvidia.rtxremix.minecraft.mixin;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import com.nvidia.rtxremix.minecraft.particle.RemixParticleRenderer;
 import com.nvidia.rtxremix.minecraft.profiling.ParticleTickProfiler;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
+import net.minecraft.client.Camera;
 import net.minecraft.client.particle.ParticleEngine;
 import net.minecraft.client.particle.ParticleGroup;
 import net.minecraft.client.particle.ParticleRenderType;
+import net.minecraft.client.renderer.culling.Frustum;
+import net.minecraft.client.renderer.state.level.ParticleGroupRenderState;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -57,6 +63,28 @@ public abstract class ParticleManagerMixin {
             ProfileScope.plot("Java.ParticleManager.collisionMs", stats.collisionNanos() / 1_000_000.0);
         }
         rtxremix$closeScope(rtxremix$tickScope);
+    }
+
+    @Inject(method = "extract", at = @At("HEAD"))
+    private void rtxremix$forgetRemixDrawnState(CallbackInfo ci) {
+        RemixParticleRenderer.noteRemixDrawnState(null);
+    }
+
+    /** Remix draws the single-quad group's particles; every other group keeps its vanilla submit. */
+    @WrapOperation(
+            method = "extract",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/particle/ParticleGroup;extractRenderState(Lnet/minecraft/client/renderer/culling/Frustum;Lnet/minecraft/client/Camera;F)Lnet/minecraft/client/renderer/state/level/ParticleGroupRenderState;"
+            ))
+    private ParticleGroupRenderState rtxremix$noteRemixDrawnState(
+            ParticleGroup<?> group, Frustum frustum, Camera camera, float partialTick,
+            Operation<ParticleGroupRenderState> original) {
+        ParticleGroupRenderState state = original.call(group, frustum, camera, partialTick);
+        if (group == particles.get(ParticleRenderType.SINGLE_QUADS)) {
+            RemixParticleRenderer.noteRemixDrawnState(state);
+        }
+        return state;
     }
 
     private static void rtxremix$openScope(ThreadLocal<ProfileScope> holder, ProfileScope scope) {
