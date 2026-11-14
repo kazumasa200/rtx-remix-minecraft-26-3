@@ -11,6 +11,8 @@ also part of every mod file name.
 
 ## Unreleased
 
+## 0.4.0-pre.10 - 2026-11-14
+
 ### Fixed
 
 - With a light in hand, the player's shadow and reflection stay where the player
