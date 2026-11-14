@@ -11,6 +11,20 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Added
+
+- HDR Output (Image & Exposure, runtime patch builds) shows the game in HDR on a
+  monitor with Windows HDR on, from the next launch. The path tracer's tone
+  curve is kept up to its shoulder, so the look stays, and bright highlights
+  reach HDR Peak; Paper White sets how bright white menus and text are. Depth of
+  field, flares, haze, glints, rain and snow are drawn over the HDR picture as
+  they are over the SDR one. The Debug page's HDR SDR Reference and HDR Test
+  Pattern help set it up.
+- Presentation Survey (Debug) writes to the log, from the next launch, how
+  RTX Remix puts its image on screen: the swapchain, the formats and colour
+  spaces the window accepts, HDR ones included, and the images it shares with
+  the mod and what touches them.
+
 ### Changed
 
 - The water's wave normals are computed when the game starts, in about a second,

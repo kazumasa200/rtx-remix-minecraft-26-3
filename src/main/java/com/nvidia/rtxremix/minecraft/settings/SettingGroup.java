@@ -15,6 +15,7 @@ public enum SettingGroup {
     TONEMAPPING(SettingCategory.IMAGE, "rtxremix.settings.group.tonemapping"),
     EYE_ADAPTATION(SettingCategory.IMAGE, "rtxremix.settings.group.eyeAdaptation"),
     LENS(SettingCategory.IMAGE, "rtxremix.settings.group.lens"),
+    HDR(SettingCategory.IMAGE, "rtxremix.settings.group.hdr"),
     MATERIALS(SettingCategory.MATERIALS, "rtxremix.settings.group.materials"),
     DEBUG_VIEWS(SettingCategory.DEBUG, "rtxremix.settings.group.debugViews");
 

@@ -46,8 +46,9 @@ public class TextureOverlay {
      * Renders a texture as a full-screen overlay.
      *
      * @param textureId The GL texture ID to render as full-screen overlay
+     * @param target the texture to fill, the main target's size, or 0 for the main target's colour
      */
-    public void render(int textureId) {
+    public void render(int textureId, int target) {
         if (textureId <= 0) {
             return;
         }
@@ -57,13 +58,13 @@ public class TextureOverlay {
         }
 
         try {
-            renderTextureOverlay(textureId);
+            renderTextureOverlay(textureId, target);
         } catch (Exception e) {
             LOGGER.error("Error rendering texture overlay", e);
         }
     }
 
-    private void renderTextureOverlay(int texId) {
+    private void renderTextureOverlay(int texId, int target) {
         RenderTarget mainTarget = client.gameRenderer.mainRenderTarget();
         GpuTexture color = mainTarget.getColorTexture();
         if (!(color instanceof GlTexture glColor)) {
@@ -71,7 +72,7 @@ public class TextureOverlay {
         }
 
         bindSource(texId);
-        bindTarget(glColor.glId());
+        bindTarget(target != 0 ? target : glColor.glId());
         int sourceWidth = GL45C.glGetTextureLevelParameteri(texId, 0, GL45C.GL_TEXTURE_WIDTH);
         int sourceHeight = GL45C.glGetTextureLevelParameteri(texId, 0, GL45C.GL_TEXTURE_HEIGHT);
 

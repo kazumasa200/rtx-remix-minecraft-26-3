@@ -35,3 +35,7 @@ GlassSaturation 240
 GlassLift 244
 PaneDepth 248
 WaterDistance 252
+HdrMode 256
+HdrPaperWhite 260
+HdrPeak 264
+HdrReserved 268

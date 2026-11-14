@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from . import clouds, glass, shadow
+from . import clouds, glass, hdr, shadow
 from .spirv import (
     OP_BRANCH_CONDITIONAL,
     OP_CONSTANT,
@@ -40,6 +40,9 @@ class Pass:
     # Whether the pass's code reads descriptor set 4, the layer's frame channel: its group is then dropped
     # where the channel could not be made, since the runtime's pipelines would have no set 4.
     channel: bool = False
+    # Whether the pass's group runs only when the mod asked for HDR output and the layer accepted it: the layer
+    # vetoes it otherwise (#hdr lines in the manifest), so the runtime then runs exactly as without it.
+    hdr: bool = False
 
     @property
     def group(self) -> str:
@@ -159,6 +162,43 @@ class PaneDepth(Pass):
         return glass.apply_pane_depth(module)
 
 
+class HdrCombine(Pass):
+    """The local tonemapper's final combine writes scRGB from the unbounded value it holds before ACES, through the
+    HDR curve or, for the SDR reference, its own curve at paper white (`hdr.apply_combine`). Reads the frame at
+    set 4, so the group needs the channel, and runs only with HDR output."""
+
+    id = "hdr-combine"
+    version = 1
+    expect = Expect(modules=range(1, 2), sites_per_module=range(1, 2))
+    channel = True
+    hdr = True
+
+    @property
+    def group(self) -> str:
+        return "hdr-output"
+
+    def apply(self, module: Module) -> int:
+        return hdr.apply_combine(module)
+
+
+class HdrEncode(Pass):
+    """The sRGB-and-dither pass passes the final combine's scRGB through, with no gamma, dither or clamp
+    (`hdr.apply_encode`)."""
+
+    id = "hdr-encode"
+    version = 1
+    expect = Expect(modules=range(1, 2), sites_per_module=range(1, 2))
+    channel = True
+    hdr = True
+
+    @property
+    def group(self) -> str:
+        return "hdr-output"
+
+    def apply(self, module: Module) -> int:
+        return hdr.apply_encode(module)
+
+
 class CloudsPrimary(Pass):
     """The Unbound clouds over the composite's primary misses, marched per pixel by the clouds library
     (`clouds.apply_primary`). Reads the frame the mod publishes at descriptor set 4, so its group applies only
@@ -223,4 +263,6 @@ PASSES: list[Pass] = [
     GlassLight(),
     ShadowAbsorption(),
     PaneDepth(),
+    HdrCombine(),
+    HdrEncode(),
 ]

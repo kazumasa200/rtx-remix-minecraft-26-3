@@ -272,6 +272,7 @@ public final class RemixWeatherRenderer {
     private int backgroundFramebuffer;
     private int backgroundWidth;
     private int backgroundHeight;
+    private int backgroundFormat;
     private int weatherSampler;
     private int colorSampler;
     private int depthSampler;
@@ -312,11 +313,11 @@ public final class RemixWeatherRenderer {
     }
 
     /**
-     * Draws the captured weather over the main render target, which the composite has just
-     * filled from {@code finalColorTexture} and the lens has drawn over. A frame draws its
-     * weather once.
+     * Draws the captured weather over the main render target, or over {@code target} when it is
+     * not 0 (HDR's image, the main target's size), which the composite has just filled from
+     * {@code finalColorTexture} and the lens has drawn over. A frame draws its weather once.
      */
-    public void render(int finalColorTexture, int depthTexture) {
+    public void render(int finalColorTexture, int depthTexture, int target) {
         int rain = rainQuads;
         int snow = snowQuads;
         beginCapture();
@@ -356,7 +357,8 @@ public final class RemixWeatherRenderer {
         }
         // Attached every frame: a resize recreates the target, and GL may hand a deleted
         // texture's name to its replacement.
-        GL45C.glNamedFramebufferTexture(framebuffer, GL45C.GL_COLOR_ATTACHMENT0, targetColor.glId(), 0);
+        int targetTexture = target != 0 ? target : targetColor.glId();
+        GL45C.glNamedFramebufferTexture(framebuffer, GL45C.GL_COLOR_ATTACHMENT0, targetTexture, 0);
 
         int previousProgram = GL45C.glGetInteger(GL45C.GL_CURRENT_PROGRAM);
         int previousVertexArray = GL45C.glGetInteger(GL45C.GL_VERTEX_ARRAY_BINDING);
@@ -387,7 +389,7 @@ public final class RemixWeatherRenderer {
             GlStateManager._blendEquationSeparate(GL45C.GL_FUNC_ADD, GL45C.GL_FUNC_ADD);
 
             if (rain > 0) {
-                copyBackground(mainTarget.width, mainTarget.height);
+                copyBackground(targetTexture, mainTarget.width, mainTarget.height);
             }
             bindTexture(UNIT_REMIX_COLOR, rain > 0 ? backgroundTexture : finalColorTexture, colorSampler);
             bindTexture(UNIT_LIGHTMAP, lightmap, colorSampler);
@@ -420,9 +422,11 @@ public final class RemixWeatherRenderer {
         }
     }
 
-    /** Copies the main target, attached to {@link #framebuffer}, into {@link #backgroundTexture}. */
-    private void copyBackground(int width, int height) {
-        if (backgroundTexture == 0 || width != backgroundWidth || height != backgroundHeight) {
+    /** Copies the target, attached to {@link #framebuffer}, into {@link #backgroundTexture}, in its format. */
+    private void copyBackground(int target, int width, int height) {
+        int format = GL45C.glGetTextureLevelParameteri(target, 0, GL45C.GL_TEXTURE_INTERNAL_FORMAT);
+        if (backgroundTexture == 0 || width != backgroundWidth || height != backgroundHeight
+                || format != backgroundFormat) {
             if (backgroundTexture != 0) {
                 GL45C.glDeleteTextures(backgroundTexture);
             }
@@ -430,10 +434,11 @@ public final class RemixWeatherRenderer {
                 backgroundFramebuffer = GL45C.glCreateFramebuffers();
             }
             backgroundTexture = GL45C.glCreateTextures(GL45C.GL_TEXTURE_2D);
-            GL45C.glTextureStorage2D(backgroundTexture, 1, GL45C.GL_RGBA8, width, height);
+            GL45C.glTextureStorage2D(backgroundTexture, 1, format, width, height);
             GL45C.glNamedFramebufferTexture(backgroundFramebuffer, GL45C.GL_COLOR_ATTACHMENT0, backgroundTexture, 0);
             backgroundWidth = width;
             backgroundHeight = height;
+            backgroundFormat = format;
         }
         GL45C.glBlitNamedFramebuffer(framebuffer, backgroundFramebuffer, 0, 0, width, height, 0, 0, width, height,
                 GL45C.GL_COLOR_BUFFER_BIT, GL45C.GL_NEAREST);

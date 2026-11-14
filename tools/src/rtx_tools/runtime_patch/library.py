@@ -29,6 +29,7 @@ SOURCES = (
     SHADERS / "rrp_clouds.comp",
     SHADERS / "rrp_cloud_pass.comp",
     SHADERS / "rrp_media.comp",
+    SHADERS / "rrp_hdr.comp",
     SHADERS / "rrp_frame.glsl",
     FIELD / "cloud_field.glsl",
 )
@@ -130,6 +131,12 @@ def clouds_library() -> Module:
 def media_library() -> Module:
     """The library the shadow-absorption group merges: rrp_media.comp."""
     return Module.from_bytes(_compiled("rrp_media", sources_digest()))
+
+
+@cache
+def hdr_library() -> Module:
+    """The library the hdr-output group merges: rrp_hdr.comp."""
+    return Module.from_bytes(_compiled("rrp_hdr", sources_digest()))
 
 
 @cache

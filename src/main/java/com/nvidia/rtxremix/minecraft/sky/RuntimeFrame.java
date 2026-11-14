@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.sky;
 
+import com.nvidia.rtxremix.minecraft.HdrOutput;
 import com.nvidia.rtxremix.minecraft.RuntimePatchLayer;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 
@@ -19,7 +20,7 @@ import java.lang.foreign.ValueLayout;
  */
 public final class RuntimeFrame {
 
-    static final int BYTES = 256;
+    static final int BYTES = 272;
     static final int ENABLED = 0;
     static final int FRAME_INDEX = 4;
     static final int MARCH_CACHE = 8;
@@ -58,6 +59,10 @@ public final class RuntimeFrame {
     static final int GLASS_LIFT = 244;
     static final int PANE_DEPTH = 248;
     static final int WATER_DISTANCE = 252;
+    static final int HDR_MODE = 256;
+    static final int HDR_PAPER_WHITE = 260;
+    static final int HDR_PEAK = 264;
+    static final int HDR_RESERVED = 268;
 
     /**
      * Glass Light Saturation: how saturated the light through stained glass is, as a multiple of the glass's own
@@ -171,6 +176,10 @@ public final class RuntimeFrame {
         BLOCK.set(ValueLayout.JAVA_FLOAT, PANE_DEPTH, paneDepth);
         BlockTextureManager textures = BlockTextureManager.get();
         BLOCK.set(ValueLayout.JAVA_FLOAT, WATER_DISTANCE, textures != null ? textures.getWaterTransmittanceDistance() : 0.0f);
+        // HDR output: 0 unless the screen is scRGB this frame, which leaves both patched passes as shipped.
+        BLOCK.set(ValueLayout.JAVA_INT, HDR_MODE, HdrOutput.frameMode());
+        BLOCK.set(ValueLayout.JAVA_FLOAT, HDR_PAPER_WHITE, HdrOutput.paperWhite());
+        BLOCK.set(ValueLayout.JAVA_FLOAT, HDR_PEAK, HdrOutput.peak());
         RuntimePatchLayer.publishFrame(BLOCK, BYTES);
         BLOCK.fill((byte) 0);
     }

@@ -241,6 +241,7 @@ def build(
     patches.mkdir(parents=True)
     lines = ["#format 2"]
     lines += [f"#channel {g}" for g in sorted({p.group for p in passes if p.channel})]
+    lines += [f"#hdr {g}" for g in sorted({p.group for p in passes if p.hdr})]
     if any(p.channel and p.group not in failed_groups for p in passes):
         # The layer's own pass, which fills the sky cache and the shadow map the channel groups read.
         program = library.cloud_pass()

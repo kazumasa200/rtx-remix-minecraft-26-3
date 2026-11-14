@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -29,7 +30,9 @@ import java.util.regex.Pattern;
  * build}). The runtime file is never written. Arming logs each patch group as ACTIVE or MISMATCH; a
  * group applies only when every one of its modules matched the shipped runtime. Render thread, once
  * per process. Never throws; a failure leaves the runtime as shipped and says why in the log.
- * {@code -Drtxremix.runtimePatches=false} runs the runtime unpatched.
+ * {@code -Drtxremix.runtimePatches=false} runs the runtime unpatched. With the Debug page's Log
+ * Presentation Survey saved on, arming also turns on the layer's record of how the runtime presents
+ * ({@code runtime-patch/layer/survey.cpp}), which {@link #logSurvey} logs.
  */
 public final class RuntimePatchLayer {
 
@@ -38,12 +41,25 @@ public final class RuntimePatchLayer {
     private static final Pattern ACTIVE_GROUP = Pattern.compile("([a-z0-9-]+) ACTIVE");
     /** The group whose shaders march the Unbound clouds in the runtime (runtime_patch/clouds.py). */
     public static final String UNBOUND_CLOUDS = "unbound-clouds";
+    /** The Debug page's Presentation Survey, read from the saved settings before the runtime starts. */
+    public static final String SURVEY_SETTING = "debug.presentationSurvey";
+    private static final int SURVEY_CHUNK = 16384;
 
     private static MethodHandle status;
     private static MethodHandle channelStatus;
     private static MethodHandle publishFrame;
     private static MethodHandle upload;
     private static MethodHandle groups;
+    /** The survey's lines; set only when arming turned the survey on. */
+    private static MethodHandle surveyTake;
+    /** What the switch asks for the next launch; the survey runs only when it was on at this launch's arming. */
+    private static volatile boolean surveyRequested;
+    /** HDR output's state (rrp_hdr_status); set only when arming asked for HDR and the layer accepted. */
+    private static MethodHandle hdrStatus;
+    private static final MemorySegment HDR_STATUS = Arena.global().allocate(ValueLayout.JAVA_INT, 6);
+    private static final MemorySegment HDR_REASON = Arena.global().allocate(256);
+    /** The HDR patch group (runtime_patch/hdr.py): the final combine and the sRGB pass write scRGB. */
+    public static final String HDR_OUTPUT = "hdr-output";
     /** The groups arming reported ACTIVE. Written once on the render thread before the runtime starts. */
     private static volatile Set<String> active = Set.of();
     private static volatile boolean shadowAbsorption;
@@ -51,8 +67,11 @@ public final class RuntimePatchLayer {
     private RuntimePatchLayer() {
     }
 
-    /** Arms the layer in {@code sdkDir}; call before {@code RemixAPI.load}. */
-    static void arm(Path sdkDir) {
+    /**
+     * Arms the layer in {@code sdkDir}; call before {@code RemixAPI.load}. window is the game window, whose
+     * monitor decides whether HDR output can be accepted.
+     */
+    static void arm(Path sdkDir, long window, boolean askHdr) {
         if (!Boolean.parseBoolean(System.getProperty("rtxremix.runtimePatches", "true"))) {
             LOGGER.info("Runtime patch layer off (rtxremix.runtimePatches=false)");
             return;
@@ -78,6 +97,22 @@ public final class RuntimePatchLayer {
                             ValueLayout.JAVA_LONG));
             groups = linker.downcallHandle(layer.find("rrp_groups").orElseThrow(),
                     FunctionDescriptor.ofVoid(ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+            if (surveyRequested) {
+                Optional<MemorySegment> on = layer.find("rrp_survey");
+                Optional<MemorySegment> take = layer.find("rrp_survey_take");
+                if (on.isPresent() && take.isPresent()) {
+                    MethodHandle survey = linker.downcallHandle(on.get(), FunctionDescriptor.ofVoid());
+                    survey.invokeExact();
+                    surveyTake = linker.downcallHandle(take.get(), FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                            ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+                    LOGGER.info("Runtime presentation survey on (Debug page)");
+                } else {
+                    LOGGER.warn("Runtime presentation survey asked for, but this layer build has none");
+                }
+            }
+            if (askHdr) {
+                askHdr(linker, layer, window);
+            }
             try (Arena arena = Arena.ofConfined()) {
                 MemorySegment report = arena.allocate(512);
                 int result = (int) arm.invokeExact(report, 512);
@@ -94,6 +129,55 @@ public final class RuntimePatchLayer {
             LOGGER.warn("Runtime patch layer not armed: {}", t.toString());
             status = null;
         }
+    }
+
+    private static void askHdr(Linker linker, SymbolLookup layer, long window) throws Throwable {
+        Optional<MemorySegment> ask = layer.find("rrp_hdr");
+        Optional<MemorySegment> state = layer.find("rrp_hdr_status");
+        if (ask.isEmpty() || state.isEmpty()) {
+            LOGGER.warn("HDR output asked for, but this layer build has none");
+            return;
+        }
+        MethodHandle request = linker.downcallHandle(ask.get(), FunctionDescriptor.of(ValueLayout.JAVA_INT,
+                ValueLayout.ADDRESS, ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment report = arena.allocate(512);
+            int accepted = (int) request.invokeExact(MemorySegment.ofAddress(window), report, 512);
+            LOGGER.info("HDR output: {}", report.getString(0, StandardCharsets.UTF_8));
+            if (accepted != 0) {
+                hdrStatus = linker.downcallHandle(state.get(), FunctionDescriptor.ofVoid(ValueLayout.ADDRESS,
+                        ValueLayout.ADDRESS, ValueLayout.JAVA_INT));
+                HdrOutput.attempted();
+            }
+        }
+    }
+
+    /** Reads HDR output's state from the layer into HdrOutput; once a frame, before the GL side uses it. */
+    static void refreshHdr() {
+        if (hdrStatus == null) {
+            return;
+        }
+        try {
+            hdrStatus.invokeExact(HDR_STATUS, HDR_REASON, 256);
+            HdrOutput.refresh(HDR_STATUS.getAtIndex(ValueLayout.JAVA_INT, 0),
+                    HDR_STATUS.getAtIndex(ValueLayout.JAVA_INT, 3) != 0, isActive(HDR_OUTPUT));
+        } catch (Throwable t) {
+            hdrStatus = null;
+            HdrOutput.refresh(0, false, false);
+        }
+    }
+
+    private static void logHdr(String when) {
+        if (hdrStatus == null) {
+            return;
+        }
+        refreshHdr();
+        LOGGER.info("HDR output ({}): {}; state={} swapchains={} widened={} interopWidened={} windowsHdr={} "
+                        + "sdrWhite={} nits; patch group {}", when, HDR_REASON.getString(0, StandardCharsets.UTF_8),
+                HDR_STATUS.getAtIndex(ValueLayout.JAVA_INT, 0), HDR_STATUS.getAtIndex(ValueLayout.JAVA_INT, 1),
+                HDR_STATUS.getAtIndex(ValueLayout.JAVA_INT, 2), HDR_STATUS.getAtIndex(ValueLayout.JAVA_INT, 3),
+                HDR_STATUS.getAtIndex(ValueLayout.JAVA_INT, 4), HDR_STATUS.getAtIndex(ValueLayout.JAVA_INT, 5),
+                isActive(HDR_OUTPUT) ? "ACTIVE" : "not active");
     }
 
     private static void setActive(String report) {
@@ -158,6 +242,44 @@ public final class RuntimePatchLayer {
                     channel.getAtIndex(ValueLayout.JAVA_INT, 6));
         } catch (Throwable t) {
             LOGGER.warn("Runtime patch layer status unavailable: {}", t.toString());
+        }
+        logHdr(when);
+    }
+
+    public static boolean isSurveyRequested() {
+        return surveyRequested;
+    }
+
+    /** Asks for the presentation survey from the next launch, when the layer is armed before the runtime starts. */
+    public static void setSurveyRequested(boolean on) {
+        surveyRequested = on;
+    }
+
+    /**
+     * Logs what the survey recorded since it was last asked, on the 120th presented frame and every 1200th,
+     * with how often each kind happened on the 1200th and every 6000th after it. Render thread; does nothing
+     * unless the survey runs.
+     */
+    static void logSurvey(int frame) {
+        if (surveyTake == null || (frame != 120 && frame % 1200 != 0)) {
+            return;
+        }
+        try (Arena arena = Arena.ofConfined()) {
+            MemorySegment out = arena.allocate(SURVEY_CHUNK);
+            int counts = frame % 6000 == 1200 ? 1 : 0;
+            for (int i = 0; i < 64; i++) {
+                int written = (int) surveyTake.invokeExact(counts, out, SURVEY_CHUNK);
+                if (written <= 0) {
+                    break;
+                }
+                counts = 0;
+                for (String line : out.getString(0, StandardCharsets.UTF_8).split("\n")) {
+                    LOGGER.info("Runtime presentation survey (frame {}): {}", frame, line);
+                }
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("Runtime presentation survey unavailable: {}", t.toString());
+            surveyTake = null;
         }
     }
 

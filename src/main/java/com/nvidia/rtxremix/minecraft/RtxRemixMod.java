@@ -37,12 +37,14 @@ import com.nvidia.rtxremix.minecraft.input.RemixMouseAccess;
 import com.nvidia.rtxremix.minecraft.input.RemixKeyboardAccess;
 import com.nvidia.rtxremix.minecraft.input.RemixInputGate;
 import com.nvidia.rtxremix.minecraft.gl.ModOverlayLayer;
+import com.nvidia.rtxremix.minecraft.gl.HdrComposite;
 import com.nvidia.rtxremix.minecraft.gl.TextureOverlay;
 import com.nvidia.rtxremix.minecraft.entity.CopperBeaconBlockEntityRenderer;
 import com.nvidia.rtxremix.minecraft.camera.CameraController;
 import com.nvidia.rtxremix.minecraft.camera.StillShot;
 import com.nvidia.rtxremix.minecraft.block.CopperBeaconScreenHandler;
 import com.nvidia.rtxremix.minecraft.block.CopperBeaconBlockEntity;
+import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
@@ -507,11 +509,15 @@ public class RtxRemixMod implements ClientModInitializer {
             
             if (remixAvailable) {
                 LOGGER.info("Initializing RTX Remix renderer...");
+                Path cfg = FabricLoader.getInstance()
+                        .getConfigDir().resolve("rtxremix.json");
+                // The layer is armed before the runtime starts, before the settings exist.
+                RtxSettingsStore saved = new RtxSettingsStore(cfg);
+                RuntimePatchLayer.setSurveyRequested(saved.savedBoolean(RuntimePatchLayer.SURVEY_SETTING));
+                HdrOutput.startup(cfg.getParent(), saved.savedBoolean(HdrOutput.SETTING));
                 initializeRemix(client);
                 if (renderer != null && renderer.isInitialized()) {
                     rtxSettings = RtxSettingsFactory.build(renderer);
-                    Path cfg = FabricLoader.getInstance()
-                            .getConfigDir().resolve("rtxremix.json");
                     rtxSettingsStore = new RtxSettingsStore(cfg);
                     rtxSettingsStore.load(rtxSettings);
                     LOGGER.info("RTX settings loaded from {}", cfg);
@@ -682,22 +688,35 @@ public class RtxRemixMod implements ClientModInitializer {
             }
             mod.frameFailureLogged = false;
             if (remixTexture > 0 && mod.textureOverlay != null && isRtxEnabled()) {
-                mod.textureOverlay.render(remixTexture);
+                // HDR: the picture is composed in HdrComposite's image instead of the main target, in the SDR
+                // picture's encoding with highlights above 1, so the lens and the weather draw as they do in
+                // SDR. The main target keeps other mods' draws over transparency and then the GUI, and is laid
+                // over the image at present.
+                boolean hdr = HdrOutput.takeWorld();
+                int scene = remixTexture;
+                int target = 0;
+                if (hdr) {
+                    HdrComposite composite = renderer.getHdrComposite();
+                    RenderTarget main = Minecraft.getInstance().gameRenderer.mainRenderTarget();
+                    scene = composite.decodeWorld(remixTexture);
+                    target = composite.image(main.width, main.height);
+                }
+                mod.textureOverlay.render(scene, target);
                 try (ProfileScope lensScope = ProfileScope.begin("Lens")) {
-                    renderer.getLensEffects().render(remixTexture, renderer.getInteropDepthTexture());
+                    renderer.getLensEffects().render(scene, renderer.getInteropDepthTexture(), target);
                 }
                 RemixWeatherRenderer weather = renderer.getWeatherRenderer();
                 if (weather != null) {
                     try (ProfileScope weatherScope = ProfileScope.begin("Weather")) {
-                        weather.render(
-                                remixTexture,
-                                renderer.getInteropDepthTexture());
+                        weather.render(scene, renderer.getInteropDepthTexture(), target);
                         weatherScope
                                 .drawCalls(weather.getLastDrawCount())
                                 .vertexCount(weather.getLastQuadCount() * 4);
                     }
                 }
-                mod.modOverlay.composite();
+                if (!hdr) {
+                    mod.modOverlay.composite();
+                }
             }
         }
     }

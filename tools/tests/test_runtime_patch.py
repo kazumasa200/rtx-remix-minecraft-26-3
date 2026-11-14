@@ -178,3 +178,32 @@ def test_clouds_primary_patches_the_composites_primary_miss_and_its_land(composi
     module = Module.from_bytes(composite)
     assert CloudsPrimary().apply(module) == 2
     module.delta(Module.from_bytes(composite))
+
+
+# The local tonemapper's final combine and the sRGB-and-dither pass of the a00da12a runtime.
+FINAL_COMBINE_OFFSET = 0x11FE5080
+SRGB_DITHER_OFFSET = 0x11FF6AD0
+
+
+def test_hdr_output_takes_over_the_value_each_finishing_pass_writes():
+    from rtx_tools.runtime_patch import merge
+    from rtx_tools.runtime_patch.passes import HdrCombine, HdrEncode
+
+    for offset, hdr_pass, export in (
+        (FINAL_COMBINE_OFFSET, HdrCombine(), "rrp_hdrCombine"),
+        (SRGB_DITHER_OFFSET, HdrEncode(), "rrp_hdrEncode"),
+    ):
+        data = _module_at(offset)
+        original = Module.from_bytes(data)
+        module = Module.from_bytes(data)
+        assert hdr_pass.apply(module) == 1
+        assert merge.function_named(module, export) is not None
+        # The written value keeps its id: only new ids are added, so no original instruction is renumbered.
+        assert module.words[3] > original.words[3]
+
+
+def test_hdr_output_leaves_every_other_module_alone(composite):
+    from rtx_tools.runtime_patch.passes import HdrCombine, HdrEncode
+
+    assert HdrCombine().apply(Module.from_bytes(composite)) == 0
+    assert HdrEncode().apply(Module.from_bytes(composite)) == 0

@@ -21,6 +21,7 @@ import static org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE;
 import static org.lwjgl.opengl.GL21.GL_SRGB8_ALPHA8;
 import static org.lwjgl.opengl.GL30.GL_COLOR_ATTACHMENT0;
 import static org.lwjgl.opengl.GL30.GL_R32F;
+import static org.lwjgl.opengl.GL30.GL_RGBA16F;
 import static org.lwjgl.opengl.GL30.glDeleteFramebuffers;
 import static org.lwjgl.opengl.GL45.*;
 
@@ -75,14 +76,18 @@ public final class GlInterop {
         return semaphore;
     }
 
-    public boolean recreateImagesIf(InteropInfo info) {
+    /**
+     * Imports the images again when Remix replaced them. wideColor: the runtime patch layer widened the colour image to
+     * fp16 for HDR output (RuntimePatchLayer, HdrOutput), whatever format Remix reports.
+     */
+    public boolean recreateImagesIf(InteropInfo info, boolean wideColor) {
         validateSemaphoreHandles(info);
         boolean recreated = colorImage.recreate(
                 info.imageMemory_Handle,
                 info.allocationSize,
                 info.width,
                 info.height,
-                glInternalFormat(info.interopImageFormat),
+                wideColor ? GL_RGBA16F : glInternalFormat(info.interopImageFormat),
                 GL_LINEAR,
                 "color");
         recreated |= depthImage.recreate(
@@ -178,6 +183,19 @@ public final class GlInterop {
 
     public int getTexture() {
         return colorImage.texture;
+    }
+
+    /** The framebuffer whose colour attachment is the colour image, or 0 before one is imported (HdrComposite). */
+    public int colorFramebuffer() {
+        return colorImage.available() ? colorImage.framebuffer() : 0;
+    }
+
+    public int colorWidth() {
+        return colorImage.width;
+    }
+
+    public int colorHeight() {
+        return colorImage.height;
     }
 
     public int getDepthTexture() {

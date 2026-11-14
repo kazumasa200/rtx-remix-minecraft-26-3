@@ -52,6 +52,12 @@ layout(set = 4, binding = 0, std140) uniform RrpFrame {
     float GlassLift;         // what a stained glass's brightest channel is raised to, per measurement distance
     float PaneDepth;         // the Glass Pane Depth setting: glass seen directly absorbs as if at least this many measurement distances thick
     float WaterDistance;     // the water surface's measurement distance, the player's water distance
+    // HDR output (rrp_hdr.comp): 0 leaves the final combine and the sRGB pass as shipped; 1 writes scRGB through
+    // the HDR curve; 2 writes scRGB through the SDR curve, the Debug page's HDR SDR Reference.
+    uint HdrMode;
+    float HdrPaperWhite;     // nits: GUI white and the world's SDR white
+    float HdrPeak;           // nits: what the brightest highlights reach
+    float HdrReserved;
 };
 
 layout(set = 4, binding = 1) uniform sampler3D Noise;           // repeat, linear, no mips, as the GL clouds'

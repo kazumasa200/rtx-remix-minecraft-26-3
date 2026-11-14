@@ -70,25 +70,8 @@ public final class RtxSettingsStore {
     }
 
     public void load(RtxSettings settings) {
-        if (!Files.exists(file)) {
-            return;
-        }
-        JsonObject values;
-        try (Reader r = new InputStreamReader(Files.newInputStream(file), StandardCharsets.UTF_8)) {
-            JsonObject root = JsonParser.parseReader(r).getAsJsonObject();
-            int version = root.has("version") ? root.get("version").getAsInt() : 0;
-            if (version != VERSION) {
-                LOGGER.warn("RTX settings file {} is version {}, expected {}; ignoring it and "
-                        + "using defaults, because a file from another version cannot be read "
-                        + "safely.", file, version, VERSION);
-                return;
-            }
-            if (!root.has("settings")) {
-                return;
-            }
-            values = root.getAsJsonObject("settings");
-        } catch (Exception e) {
-            LOGGER.warn("Failed to read RTX settings from {}, ignoring", file, e);
+        JsonObject values = readValues(true);
+        if (values == null) {
             return;
         }
         for (Map.Entry<String, JsonElement> entry : values.entrySet()) {
@@ -98,6 +81,45 @@ public final class RtxSettingsStore {
                 continue;
             }
             applyEntry(setting, entry.getValue());
+        }
+    }
+
+    /**
+     * A saved switch, read before the settings exist (the runtime patch layer is armed before the runtime
+     * starts); false when the file, its version or the value is missing or unreadable. {@link #load} warns
+     * about those later.
+     */
+    public boolean savedBoolean(String id) {
+        JsonObject values = readValues(false);
+        try {
+            return values != null && values.has(id) && values.get(id).getAsBoolean();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** The saved overrides, or null when there are none or the file cannot be read safely. */
+    private JsonObject readValues(boolean warn) {
+        if (!Files.exists(file)) {
+            return null;
+        }
+        try (Reader r = new InputStreamReader(Files.newInputStream(file), StandardCharsets.UTF_8)) {
+            JsonObject root = JsonParser.parseReader(r).getAsJsonObject();
+            int version = root.has("version") ? root.get("version").getAsInt() : 0;
+            if (version != VERSION) {
+                if (warn) {
+                    LOGGER.warn("RTX settings file {} is version {}, expected {}; ignoring it and "
+                            + "using defaults, because a file from another version cannot be read "
+                            + "safely.", file, version, VERSION);
+                }
+                return null;
+            }
+            return root.has("settings") ? root.getAsJsonObject("settings") : null;
+        } catch (Exception e) {
+            if (warn) {
+                LOGGER.warn("Failed to read RTX settings from {}, ignoring", file, e);
+            }
+            return null;
         }
     }
 

@@ -24,6 +24,7 @@ import com.nvidia.rtxremix.minecraft.asset.RemixTextureStore;
 import com.nvidia.rtxremix.minecraft.asset.SceneSpace;
 import com.nvidia.rtxremix.minecraft.benchmark.BenchmarkController;
 import com.nvidia.rtxremix.minecraft.gl.GlInterop;
+import com.nvidia.rtxremix.minecraft.gl.HdrComposite;
 import com.nvidia.rtxremix.minecraft.gl.RemixPresentationWindow;
 import com.nvidia.rtxremix.minecraft.gl.PresentationMode;
 import com.nvidia.rtxremix.minecraft.util.CleanupSteps;
@@ -155,6 +156,7 @@ public class RemixRenderer {
     private int presentationSourceHeight;
     
     private GlInterop interopGlVk = null;
+    private final HdrComposite hdrComposite = new HdrComposite();
     
     private boolean submitFrameCalled = false;
     /**
@@ -317,7 +319,7 @@ public class RemixRenderer {
             int blankedValues = RemixAPI.redactCommandLineOptions(dllPath, ACCOUNT_OPTIONS);
             LOGGER.info("Blanked {} account values in the process command line", blankedValues);
 
-            RuntimePatchLayer.arm(dll.getParent());
+            RuntimePatchLayer.arm(dll.getParent(), windowHandle, HdrOutput.asking());
             remixApi = RemixAPI.load(dllPath);
             LOGGER.info("RTX Remix API loaded successfully");
             if (!FORWARD_REMIX_FAULTS) {
@@ -1482,8 +1484,9 @@ public class RemixRenderer {
         boolean failed = false;
         try {
             GlInterop interop = requireInterop();
+            boolean hdr = false;
             try (ProfileScope ignored = ProfileScope.begin("Interop.GLToVK")) {
-                blitGlToRemix(interop);
+                hdr = blitGlToRemix(interop);
             } catch (RuntimeException e) {
                 failed = true;
                 logPresentFailureOnce("Error copying GL frame to Remix", e);
@@ -1491,7 +1494,7 @@ public class RemixRenderer {
             PresentInfo presentInfo = new PresentInfo();
             presentInfo.hwndOverride = windowHandle;
             presentInfo.skipVulkanSwapchain = 0;
-            presentInfo.interopFlipY = 1;
+            presentInfo.interopFlipY = hdr ? 0 : 1;
             presentInfo.clientDoneSemaphore_ValueToWait =
                     interop.getClientDoneSemaphoreValue();
             presentInfo.disableCpuWaitForExternalSemaphores = 0;
@@ -1505,6 +1508,8 @@ public class RemixRenderer {
             if (presentedFrames == 1200) {
                 RuntimePatchLayer.logStatus("1200 frames");
             }
+            RuntimePatchLayer.logSurvey(presentedFrames);
+            HdrOutput.presented(presentedFrames);
             submitFrameCalled = false;
         } catch (Exception e) {
             failed = true;
@@ -1549,7 +1554,8 @@ public class RemixRenderer {
         try (ProfileScope ignored = ProfileScope.begin("Interop.VKToGL")) {
             // must be called after Submit(), which allocates the image
             InteropInfo interopInfo = remixApi.dxvkGetInteropInfo();
-            interopGlVk.recreateImagesIf(interopInfo);
+            RuntimePatchLayer.refreshHdr();
+            interopGlVk.recreateImagesIf(interopInfo, HdrOutput.interopWidened());
 
             // to blit, we need to wait for VK to finish writing into GPU image
             interopGlVk.waitForVk(interopInfo);
@@ -1573,7 +1579,8 @@ public class RemixRenderer {
         return interopGlVk;
     }
 
-    private void blitGlToRemix(GlInterop interop) {
+    /** Returns whether the frame went out in HDR: the shared image then keeps the runtime's top-down rows. */
+    private boolean blitGlToRemix(GlInterop interop) {
         if (!submitFrameCalled) {
             // if there was no submitFrame, then interop image might not be allocated yet
             // we must have a image to blit into (e.g. UI if there's no world)
@@ -1582,19 +1589,29 @@ public class RemixRenderer {
 
         // must be called after Submit(), which allocates the image
         InteropInfo interopInfo = remixApi.dxvkGetInteropInfo();
-        interop.recreateImagesIf(interopInfo);
+        RuntimePatchLayer.refreshHdr();
+        interop.recreateImagesIf(interopInfo, HdrOutput.interopWidened());
 
         // Every Submit hands the shared image from Vulkan to GL. The world
         // overlay path may already have acquired this same timeline value.
         interop.waitForVk(interopInfo);
 
+        boolean world = HdrOutput.takenWorld();
+        boolean hdr = HdrOutput.active();
         if (presentationSourceFbo >= 0) {
-            interop.copyFromFramebuffer(presentationSourceFbo,
-                    presentationSourceWidth, presentationSourceHeight);
+            if (hdr) {
+                // The GUI over the HDR world the runtime left in the shared image, at paper white.
+                hdrComposite.compose(interop, presentationSourceFbo, presentationSourceWidth,
+                        presentationSourceHeight, world);
+            } else {
+                interop.copyFromFramebuffer(presentationSourceFbo,
+                        presentationSourceWidth, presentationSourceHeight);
+            }
         }
 
         // signal that GL is done copying, so VK can read the image and present
         interop.signalDone();
+        return hdr;
     }
 
     public int getInteropDepthTexture() {
@@ -1767,6 +1784,7 @@ public class RemixRenderer {
 
         cleanup.run(this::shutdownAssetStores);
 
+        cleanup.run(hdrComposite::shutdown);
         if (interopGlVk != null) {
             cleanup.run(() -> { interopGlVk.destroy(); interopGlVk = null; });
         }
@@ -1877,6 +1895,10 @@ public class RemixRenderer {
 
     public LensEffects getLensEffects() {
         return lensEffects;
+    }
+
+    public HdrComposite getHdrComposite() {
+        return hdrComposite;
     }
     
     public PerformanceTimer getPerfTimer() {

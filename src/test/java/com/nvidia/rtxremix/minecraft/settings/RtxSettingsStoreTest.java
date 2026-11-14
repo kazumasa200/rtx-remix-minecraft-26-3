@@ -162,4 +162,21 @@ class RtxSettingsStoreTest {
         assertEquals(5, i[0]);
         assertTrue(b[0]);
     }
+
+    @Test
+    void savedBooleanReadsOnlyAFileItOwns(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("rtxremix.json");
+        RtxSettingsStore store = new RtxSettingsStore(file);
+        assertFalse(store.savedBoolean("debug.x"));  // no file
+
+        Files.writeString(file, "{\"version\":2,\"settings\":{\"debug.x\":true,\"f\":2.0}}");
+        assertTrue(store.savedBoolean("debug.x"));
+        assertFalse(store.savedBoolean("debug.y"));  // absent
+        assertFalse(store.savedBoolean("f"));        // not a switch
+
+        Files.writeString(file, "{\"version\":3,\"settings\":{\"debug.x\":true}}");
+        assertFalse(store.savedBoolean("debug.x"));  // another version
+        Files.writeString(file, "not json");
+        assertFalse(store.savedBoolean("debug.x"));
+    }
 }

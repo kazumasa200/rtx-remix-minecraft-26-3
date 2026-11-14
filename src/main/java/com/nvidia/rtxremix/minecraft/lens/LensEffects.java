@@ -240,8 +240,14 @@ public final class LensEffects {
             uniform sampler2D SceneColor;
             uniform vec2 ViewportSize;
 
-            vec3 scene(vec2 uv) {
+            // In HDR a highlight is a value above 1 (HdrComposite); only what is drawn takes it.
+            vec3 sceneWide(vec2 uv) {
                 return texture(SceneColor, vec2(uv.x, 1.0 - uv.y)).rgb;
+            }
+
+            // The SDR picture, which every measure of the image is tuned on.
+            vec3 scene(vec2 uv) {
+                return min(sceneWide(uv), vec3(1.0));
             }
             """;
 
@@ -1806,7 +1812,7 @@ public final class LensEffects {
             }
 
             vec3 depthOfField(vec2 uv) {
-                vec3 centre = scene(uv);
+                vec3 centre = sceneWide(uv);
                 float distance = distanceAt(uv);
                 float radius = blurRadius(distance);
                 if (radius < 0.5) {
@@ -1826,7 +1832,7 @@ public final class LensEffects {
                     float w = sampleDistance < distance
                         ? smoothstep(r - 1.0, r + 1.0, blurRadius(sampleDistance))
                         : 1.0;
-                    sum += scene(sampleUv) * w;
+                    sum += sceneWide(sampleUv) * w;
                     weight += w;
                 }
                 return sum / weight;
@@ -2347,7 +2353,7 @@ public final class LensEffects {
 
             void main() {
                 vec2 uv = gl_FragCoord.xy / ViewportSize;
-                vec3 colour = DepthOfField > 0.0 ? depthOfField(uv) : scene(uv);
+                vec3 colour = DepthOfField > 0.0 ? depthOfField(uv) : sceneWide(uv);
                 float axial = Clouds > 0.0 || Haze > 0.0 || Caustics > 0.0 ? landDistance(uv) : 0.0;
                 if (Clouds > 0.0) {
                     colour = cloudShadows(uv, colour, axial);
@@ -2699,20 +2705,21 @@ public final class LensEffects {
     }
 
     /**
-     * Redraws the main target from {@code sceneColorTexture} with the lens applied, nothing when
-     * every effect is off, and starts the next frame's list of lights that may flare. The list
-     * is cleared here rather than with the camera, because the hand is captured before the
-     * camera arrives and offers its flame then.
+     * Redraws the main target, or {@code target} when it is not 0 (HDR's image, the main target's
+     * size), from {@code sceneColorTexture} with the lens applied, nothing when every effect is
+     * off, and starts the next frame's list of lights that may flare. The list is cleared here
+     * rather than with the camera, because the hand is captured before the camera arrives and
+     * offers its flame then.
      */
-    public void render(int sceneColorTexture, int depthTexture) {
+    public void render(int sceneColorTexture, int depthTexture, int target) {
         try {
-            draw(sceneColorTexture, depthTexture);
+            draw(sceneColorTexture, depthTexture, target);
         } finally {
             FlareSources.clear();
         }
     }
 
-    private void draw(int sceneColorTexture, int depthTexture) {
+    private void draw(int sceneColorTexture, int depthTexture, int target) {
         float depthOfField = LensLook.getDepthOfField();
         float flare = LensLook.getFlare();
         // Under water the sky shows through the waves, which the runtime refracts and a march
@@ -2937,7 +2944,8 @@ public final class LensEffects {
 
             // Attached every frame: a resize recreates the target, and GL may hand a deleted
             // texture's name to its replacement.
-            GL45C.glNamedFramebufferTexture(framebuffer, GL45C.GL_COLOR_ATTACHMENT0, targetColor.glId(), 0);
+            GL45C.glNamedFramebufferTexture(framebuffer, GL45C.GL_COLOR_ATTACHMENT0,
+                    target != 0 ? target : targetColor.glId(), 0);
             GlStateManager._viewport(0, 0, mainTarget.width, mainTarget.height);
             bindTexture(UNIT_DEPTH, depthTexture, depthSampler);
             bindTexture(UNIT_BRIGHT, brightTexture, brightSampler);

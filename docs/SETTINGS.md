@@ -143,6 +143,18 @@ Unbound clouds' shadows put it out, and it fades as the sun sets or the rain
 comes. All three are drawn by the mod, not the Remix
 runtime, and 0 turns any of them off.
 
+**HDR Output** (runtime patch builds only) shows the game in HDR from the next
+launch, on a monitor that has Windows HDR on; with Windows HDR off, or without
+the runtime patch, the picture stays as it was. The path tracer's own tone
+curve is kept below its shoulder and stretched above it, so the look stays the
+same up to bright highlights, which then reach HDR Peak. Paper White is how
+bright white menus, text and the world's ordinary white are, in nits; HDR Peak
+is what the sun and its glints reach, which should be the monitor's peak. Both
+apply as they move. Depth of field, flares, haze, glints, rain and snow are
+drawn over the HDR picture as over the SDR one; the RTX Remix menu shows dim. A
+launch with HDR Output on that does not get going holds HDR off at the next
+launch until the switch is turned off and on again.
+
 ## Materials
 
 **Block Glow Intensity** changes the light emitted by glowing block surfaces,
@@ -186,7 +198,8 @@ still. Off, they dry up about two minutes after the rain stops.
 ## Debug
 
 Views for finding rendering problems, never needed to play. Each is a switch
-and shows at once.
+and shows at once, except Presentation Survey, which applies from the next
+launch.
 
 **Show Puddle Mask** paints rain puddles red, by how much water stands there:
 where they lie and how their edges fade.
@@ -194,6 +207,34 @@ where they lie and how their edges fade.
 **Show Dome Clouds Only** leaves the Unbound clouds as the runtime draws them on
 the sky dome, without the lens drawing them again per pixel or drawing their
 shadows: whether a flaw in the clouds comes from the per-pixel clouds.
+
+**Draw Clouds in OpenGL** draws the Unbound clouds as before, on the sky dome
+and again per pixel by the lens, instead of in the path tracer through the
+runtime patch: the two side by side. It does nothing when the patch is not
+active.
+
+**Cloud Shadow Test** lets no light of the sun or moon through anywhere, as if
+a cloud covered everything, while torches, lamps and other lights keep theirs:
+that the clouds' shadows in the path tracer dim only the sun and moon.
+
+**Offset Scene Origin** moves the origin of the coordinates RTX Remix is given
+4096 blocks away, even near spawn. Anything drawn as before was converted;
+anything that disappears or moves was handed over in world coordinates.
+Turning it on or off also runs the move that happens when you travel far.
+
+**Presentation Survey** writes to the log, from the next launch, how the
+runtime puts its image on screen: the swapchain it makes, the formats and
+colour spaces the window accepts, HDR ones included, the images it shares with
+the mod and every kind of command and descriptor that touches them, each once
+and then with how often it happened. The lines start with `Runtime presentation
+survey`.
+
+**HDR SDR Reference** shows the world, in HDR output, through the SDR tone curve
+at Paper White: the look before, to compare the HDR curve with.
+
+**HDR Test Pattern** draws patches at 80 to 4000 nits across the top of the
+screen, in HDR output, over a bar at Paper White. Where they stop getting
+brighter is the monitor's peak, for HDR Peak.
 
 Add a debug view here, as a switch in `SettingGroup.DEBUG_VIEWS`, rather than as
 code put in for one investigation and taken out after it.

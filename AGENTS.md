@@ -194,7 +194,37 @@ own command buffer ahead of the runtime's, copying the block and any upload
 between barriers that cover every command before and after it on that queue, so
 every pass of a frame reads one block. A mod that stops publishing has its block
 zeroed after 30 frames. The counters are logged after startup and at 1200 frames
-(`RuntimePatchLayer.logStatus`). The
+(`RuntimePatchLayer.logStatus`). With the Debug page's Presentation Survey
+saved on, which the mod reads from `rtxremix.json` before arming, the layer also
+records how the runtime presents (`runtime-patch/layer/survey.cpp`): the swapchain
+and the window's formats and colour spaces, with `VK_EXT_swapchain_colorspace`
+enabled so HDR ones are listed, the images made for exportable memory and the
+swapchain's, and each kind of command or descriptor that touches them, with counts
+(`RuntimePatchLayer.logSurvey`). Off, it installs no hook. HDR output (the HDR page's
+HDR Output, read the same way) is asked of the layer by `rrp_hdr` with the game
+window, and accepted only when Windows HDR is on for its monitor
+(`DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2`: WCG is not HDR); a launch that does not
+reach 600 frames holds it off until the switch is turned on again (`HdrOutput`).
+Accepted, the layer (`runtime-patch/layer/hdr.cpp`) answers the surface-format
+queries with scRGB alone, so the runtime builds its swapchain and presenter for it,
+widens the interop colour image and the two D3D9 back buffers to fp16 at
+`vkCreateImage` (their views follow), and lets the `#hdr` group `hdr-output` run
+(`runtime_patch/hdr.py`, `rrp_hdr.comp`): the local tonemapper's final combine
+writes scRGB through a curve that is the runtime's own ACES below its knee, at
+Paper White, then a shoulder to HDR Peak, and the sRGB-and-dither pass passes it
+through; the frame block's `HdrMode` is 0 unless the screen is scRGB that frame.
+Not accepted, the group is vetoed and nothing changes. The GL side then composes
+the picture outside the main target (`gl/HdrComposite`): the world is brought from
+the shared image into the SDR picture's own encoding, gamma at paper white, with
+nothing clamped, so below the knee it is the image the lens and the weather are
+tuned on and a highlight is a value above 1. That scene texture stands where the
+interop texture does in SDR and an fp16 image where the main target does:
+`TextureOverlay`, the lens and the weather take the image as their target, the
+lens's measures read the scene clamped to 1 (`scene`) and only its final composite
+and depth of field the highlights (`sceneWide`). The main target keeps other mods'
+draws over transparency and then the GUI, and at present `HdrComposite` lays it
+over the image and writes scRGB, with `interopFlipY` 0 since the shared image keeps
+the runtime's top-down rows. The
 first pass, `sky-fade`: the composite faded every pixel that was not a primary
 miss into the sky, and a primary ray that crossed glass or water into the sky is
 not a miss but stores the miss view Z, so the sky seen through them lost its

@@ -21,6 +21,8 @@
 #include <windows.h>
 
 #include "channel.h"
+#include "hdr.h"
+#include "survey.h"
 #include <bcrypt.h>
 
 #pragma comment(lib, "bcrypt.lib")
@@ -46,6 +48,29 @@ constexpr const wchar_t* LAYER_NAME_W = L"VK_LAYER_RTXREMIX_spirv_patch";
 constexpr const wchar_t* MANIFEST_NAME = L"VkLayer_rtxremix_spirv_patch.json";
 
 std::atomic<uint32_t> g_armed{0}, g_hooked{0}, g_devices{0}, g_seen{0}, g_replaced{0}, g_fellBack{0};
+
+// Whether the driver lists VK_EXT_swapchain_colorspace: -1 not asked yet. Asked of the loader the runtime will load
+// (it ships none of its own) before any instance exists, by rrp_survey and rrp_hdr.
+std::atomic<int> g_colorSpaceOffered{-1};
+
+bool probeColorSpace() {
+    if (g_colorSpaceOffered >= 0) return g_colorSpaceOffered == 1;
+    HMODULE loader = LoadLibraryExW(L"vulkan-1.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    auto enumerate = loader ? (PFN_vkEnumerateInstanceExtensionProperties)GetProcAddress(
+                                  loader, "vkEnumerateInstanceExtensionProperties")
+                            : nullptr;
+    uint32_t count = 0;
+    std::vector<VkExtensionProperties> props;
+    if (enumerate && enumerate(nullptr, &count, nullptr) == VK_SUCCESS) {
+        props.resize(count);
+        if (enumerate(nullptr, &count, props.data()) < VK_SUCCESS) count = 0;
+        props.resize(count);
+    }
+    bool offered = false;
+    for (const VkExtensionProperties& p : props) offered |= !strcmp(p.extensionName, VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME);
+    g_colorSpaceOffered = offered ? 1 : 0;
+    return offered;
+}
 
 struct InstanceChain {
     PFN_vkGetInstanceProcAddr next;
@@ -139,6 +164,7 @@ struct PatchSet {
 
 std::atomic<const PatchSet*> g_set{nullptr};
 std::set<std::string> g_channelGroups;  // groups whose code reads set 4 (#channel lines in the manifest)
+std::set<std::string> g_hdrGroups;      // groups that run only with HDR output accepted (#hdr lines)
 std::vector<uint32_t> g_program;        // the layer's own pass (#program line), read at arm time
 std::string g_groupsReport;             // the published set's groups, as rrp_groups returns them
 const PatchSet* publishSet(const std::set<std::string>& vetoed, std::string& report);
@@ -224,8 +250,29 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateInstance(const VkInstanceCreateInfo* info, 
     PFN_vkGetInstanceProcAddr next = link->u.pLayerInfo->pfnNextGetInstanceProcAddr;
     link->u.pLayerInfo = link->u.pLayerInfo->pNext;
     auto create = (PFN_vkCreateInstance)next(VK_NULL_HANDLE, "vkCreateInstance");
-    VkResult result = create(info, alloc, out);
+    // The survey and HDR output need VK_EXT_swapchain_colorspace, which the runtime does not enable itself: without
+    // it the window lists no HDR colour space.
+    const char* colorSpace = "not needed";
+    VkInstanceCreateInfo widened = *info;
+    std::vector<const char*> names(info->ppEnabledExtensionNames, info->ppEnabledExtensionNames + info->enabledExtensionCount);
+    if (rrp::survey::enabled() || rrp::hdr::accepted()) {
+        bool asked = false;
+        for (const char* name : names) asked |= !strcmp(name, VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME);
+        if (asked) {
+            colorSpace = "the runtime enables it";
+        } else if (g_colorSpaceOffered == 1) {
+            names.push_back(VK_EXT_SWAPCHAIN_COLOR_SPACE_EXTENSION_NAME);
+            widened.enabledExtensionCount = (uint32_t)names.size();
+            widened.ppEnabledExtensionNames = names.data();
+            colorSpace = "the layer enabled it";
+        } else {
+            colorSpace = "not offered by the driver";
+        }
+    }
+    VkResult result = create(&widened, alloc, out);
+    if (rrp::survey::enabled()) rrp::survey::instanceCreated(info, colorSpace, result, *out, next);
     if (result != VK_SUCCESS) return result;
+    if (rrp::hdr::accepted()) rrp::hdr::instanceCreated(*out, next);
     {
         std::lock_guard<std::mutex> lock(g_chainLock);
         g_instanceChains[dispatchKey(*out)] =
@@ -299,6 +346,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateDevice(VkPhysicalDevice gpu, const VkDevice
         groups = std::string("armed ") + LAYER_NAME;
         without = publishSet(g_channelGroups, groups);
         delete g_set.exchange(without, std::memory_order_acq_rel);
+        rrp::hdr::withdraw("the device has no frame channel for the hdr-output patch group");
     }
     {
         std::lock_guard<std::mutex> lock(g_chainLock);
@@ -306,6 +354,8 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateDevice(VkPhysicalDevice gpu, const VkDevice
         g_channelReport = report;
         if (veto) g_groupsReport = groups;
     }
+    if (rrp::survey::enabled()) rrp::survey::deviceCreated(gpu, *out, info, nextDevice, nextInstance, instance);
+    if (rrp::hdr::accepted()) rrp::hdr::deviceCreated(*out, nextDevice);  // after the survey's, which it calls through
     g_devices++;
     return VK_SUCCESS;
 }
@@ -320,6 +370,8 @@ VKAPI_ATTR void VKAPI_CALL DestroyDevice(VkDevice device, const VkAllocationCall
         g_deviceChains.erase(it);
     }
     rrp::destroyChannel(chain.channel);
+    rrp::hdr::deviceDestroyed(device);
+    rrp::survey::deviceDestroyed(device);
     chain.destroy(device, alloc);
 }
 
@@ -383,6 +435,8 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetDeviceProcAddr(VkDevice device, cons
     if (!strcmp(name, "vkQueuePresentKHR")) return (PFN_vkVoidFunction)QueuePresentKHR;
     if (!strcmp(name, "vkGetDeviceQueue")) return (PFN_vkVoidFunction)GetDeviceQueue;
     if (!strcmp(name, "vkGetDeviceQueue2")) return (PFN_vkVoidFunction)GetDeviceQueue2;
+    if (PFN_vkVoidFunction hdr = rrp::hdr::deviceHook(device, name)) return hdr;
+    if (PFN_vkVoidFunction surveyed = rrp::survey::deviceHook(device, name)) return surveyed;
     PFN_vkGetDeviceProcAddr next;
     {
         std::lock_guard<std::mutex> lock(g_chainLock);
@@ -408,6 +462,8 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL GetInstanceProcAddr(VkInstance instance
     if (!strcmp(name, "vkGetDeviceQueue")) return (PFN_vkVoidFunction)GetDeviceQueue;
     if (!strcmp(name, "vkGetDeviceQueue2")) return (PFN_vkVoidFunction)GetDeviceQueue2;
     if (instance == VK_NULL_HANDLE) return nullptr;
+    if (PFN_vkVoidFunction hdr = rrp::hdr::instanceHook(instance, name)) return hdr;
+    if (PFN_vkVoidFunction surveyed = rrp::survey::instanceHook(instance, name)) return surveyed;
     PFN_vkGetInstanceProcAddr next;
     {
         std::lock_guard<std::mutex> lock(g_chainLock);
@@ -486,7 +542,8 @@ const PatchSet* publishSet(const std::set<std::string>& vetoed, std::string& rep
     int published = 0;
     for (auto& [group, ok] : g_verified) {
         if (vetoed.count(group) && ok) {
-            report += "; " + group + " OFF (no frame channel)";
+            bool hdr = g_hdrGroups.count(group) && !rrp::hdr::accepted();
+            report += "; " + group + (hdr ? " OFF (no HDR output)" : " OFF (no frame channel)");
         } else {
             report += "; " + group + (ok ? " ACTIVE (" + std::to_string(counts[group]) + " modules)" : " MISMATCH");
             published += ok ? 1 : 0;
@@ -524,6 +581,7 @@ const PatchSet* loadAndVerify(const std::wstring& dir, std::string& report) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line == "#format 2") formatSeen = true;
         if (line.rfind("#channel ", 0) == 0) g_channelGroups.insert(line.substr(9));
+        if (line.rfind("#hdr ", 0) == 0) g_hdrGroups.insert(line.substr(5));
         if (line.rfind("#program ", 0) == 0) {
             std::vector<uint8_t> bytes;
             std::wstring path = dir + L"\\patches\\" + widen(line.substr(9));
@@ -583,7 +641,8 @@ const PatchSet* loadAndVerify(const std::wstring& dir, std::string& report) {
             for (auto& g : e.groups) groups[g] = false;
         }
     }
-    return publishSet({}, report);
+    // The HDR groups write scRGB, which only an scRGB swapchain shows: without HDR output they stay out.
+    return publishSet(rrp::hdr::accepted() ? std::set<std::string>{} : g_hdrGroups, report);
 }
 
 // Appends value to the semicolon-separated variable unless it is already listed.
@@ -628,6 +687,12 @@ RRP_EXPORT int32_t rrp_arm(char* report, int32_t capacity) {
     std::string text = std::string("armed ") + LAYER_NAME;
     const PatchSet* set = loadAndVerify(dir, text);
     g_set.store(set, std::memory_order_release);
+    // HDR output needs its group, which writes scRGB: an scRGB swapchain showing the SDR encoding would be wrong.
+    if (rrp::hdr::accepted()) {
+        bool ready = set != nullptr && !g_hdrGroups.empty();
+        for (auto& g : g_hdrGroups) ready = ready && g_verified[g];
+        if (!ready) rrp::hdr::withdraw("the hdr-output patch group does not apply to this runtime");
+    }
     {
         std::lock_guard<std::mutex> lock(g_chainLock);
         g_groupsReport = text;
@@ -687,6 +752,48 @@ RRP_EXPORT void rrp_channel_status(uint32_t* out, char* report, int32_t capacity
     }
     rrp::channelStatus(channel, out);
     snprintf(report, capacity, "%s", g_channelReport.c_str());
+}
+
+// Turns on the presentation survey (survey.h) for the process; call before rrp_arm.
+RRP_EXPORT void rrp_survey() { rrp::survey::enable(probeColorSpace()); }
+
+// Asks for HDR output (hdr.h) for the monitor the window is on; call before rrp_arm. Returns 1 when accepted (Windows
+// HDR is on there), 0 when declined, and a sentence (UTF-8) in report.
+RRP_EXPORT int32_t rrp_hdr(HWND window, char* report, int32_t capacity) {
+    std::string text;
+    bool offered = probeColorSpace();
+    bool accepted = rrp::hdr::request(window, text);
+    if (accepted && !offered) text += "; the driver offers no VK_EXT_swapchain_colorspace, so no scRGB";
+    snprintf(report, capacity, "%s", text.size() > 2 ? text.c_str() + 2 : text.c_str());
+    return accepted ? 1 : 0;
+}
+
+// HDR output's state (hdr.h status: [state, swapchains, widened, interop widened, Windows HDR, SDR white nits]) into
+// out and the latest decision (UTF-8) into reason. Any thread, cheap.
+RRP_EXPORT void rrp_hdr_status(uint32_t* out, char* reason, int32_t capacity) {
+    std::string text;
+    rrp::hdr::status(out, text);
+    snprintf(reason, capacity, "%s", text.c_str());
+}
+
+// The survey's lines (UTF-8, whole lines, at most capacity - 1 bytes) into out; returns the bytes written, 0 when
+// nothing is left. With counts, the first call of a drain appends how often each kind has happened. What does not
+// fit is kept for the next call, which then ignores counts.
+RRP_EXPORT int32_t rrp_survey_take(int32_t counts, char* out, int32_t capacity) {
+    static std::mutex lock;
+    static std::string rest;
+    std::lock_guard<std::mutex> guard(lock);
+    if (capacity < 2) return 0;
+    if (rest.empty()) rest = rrp::survey::take(counts != 0);
+    size_t n = rest.size() < (size_t)capacity - 1 ? rest.size() : (size_t)capacity - 1;
+    if (n < rest.size()) {
+        size_t cut = rest.rfind('\n', n - 1);
+        if (cut != std::string::npos) n = cut + 1;
+    }
+    memcpy(out, rest.data(), n);
+    out[n] = 0;
+    rest.erase(0, n);
+    return (int32_t)n;
 }
 
 // The layer's key of a module (32 bytes into out); 0 on success. The build tool keys with this.

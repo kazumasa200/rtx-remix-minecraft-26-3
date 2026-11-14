@@ -1,0 +1,66 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+// HDR output as a library for the runtime's two image-finishing passes: the local tonemapper's final combine
+// writes scRGB (linear, 1.0 = 80 nits) from the unbounded value it holds before ACES, and the sRGB-and-dither
+// pass passes it through. The mode comes in the frame at set 4 (rrp_frame.glsl); a frame of zeros returns the
+// runtime's own values. main only calls the exports so glslang keeps them; the patch build merges an export, and
+// what it reaches, into the module that calls it (runtime_patch/hdr.py).
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "rrp_frame.glsl"
+
+#define RRP_SCRGB_NITS 80.0
+
+// Hill's RRT+ODT fit, the rational the final combine applies per channel between its ACES matrices.
+vec3 rrpRrtOdt(vec3 v) {
+    return (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081);
+}
+
+float rrpRrtOdtSlope(float v) {
+    float n = v * (v + 0.0245786) - 0.000090537;
+    float d = v * (0.983729 * v + 0.4329510) + 0.238081;
+    return ((2.0 * v + 0.0245786) * d - n * (2.0 * 0.983729 * v + 0.4329510)) / (d * d);
+}
+
+// Where the HDR curve leaves the SDR one, in the fit's working space: there the SDR curve gives about 0.62 of
+// white. Below it the HDR picture is the SDR picture at paper white, so the look already judged stays.
+#define RRP_KNEE 1.0
+
+// Display-relative light (1 = paper white) per channel. Above the knee an exponential shoulder continues the SDR
+// curve's value and slope and rises toward peak.
+vec3 rrpHdrCurve(vec3 v, float peak) {
+    float yk = rrpRrtOdt(vec3(RRP_KNEE)).x;
+    float s = rrpRrtOdtSlope(RRP_KNEE);
+    float room = max(peak - yk, 1e-3);
+    vec3 shoulder = yk + room * (1.0 - exp(-s * (v - RRP_KNEE) / room));
+    return mix(rrpRrtOdt(v), shoulder, step(vec3(RRP_KNEE), v));
+}
+
+// What the final combine stores. sdr is the runtime's own value (ACES'd and clamped), exposed the unbounded
+// value the ACES takes, acesIn and acesOut the module's own matrices, so below the knee the HDR value is the SDR
+// one at paper white by construction.
+vec3 rrp_hdrCombine(vec3 sdr, vec3 exposed, mat3 acesIn, mat3 acesOut) {
+    if (HdrMode == 0u) {
+        return sdr;
+    }
+    float white = max(HdrPaperWhite, RRP_SCRGB_NITS);
+    vec3 display = sdr;
+    if (HdrMode == 1u) {
+        float peak = max(HdrPeak, white) / white;
+        display = clamp((rrpHdrCurve(exposed * acesIn, peak)) * acesOut, 0.0, peak);
+    }
+    return display * (white / RRP_SCRGB_NITS);
+}
+
+// What the sRGB-and-dither pass writes: in HDR the final combine's scRGB goes through untouched (no gamma, no
+// dither, no clamp at 1); otherwise the pass's own result.
+vec3 rrp_hdrEncode(vec3 sdr, vec3 raw) {
+    return HdrMode != 0u ? max(raw, vec3(0.0)) : sdr;
+}
+
+layout(local_size_x = 1) in;
+void main() {
+    vec3 keep = rrp_hdrCombine(vec3(1.0), vec3(1.0), mat3(1.0), mat3(1.0)) + rrp_hdrEncode(vec3(1.0), vec3(1.0));
+}

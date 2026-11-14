@@ -15,7 +15,9 @@ import com.nvidia.rtxremix.minecraft.lod.LodTerrain;
 import com.nvidia.rtxremix.minecraft.RemixRenderer;
 import com.nvidia.rtxremix.minecraft.cloud.CloudRenderer;
 import com.nvidia.rtxremix.minecraft.cloud.CloudStyle;
+import com.nvidia.rtxremix.minecraft.HdrOutput;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
+import com.nvidia.rtxremix.minecraft.RuntimePatchLayer;
 import com.nvidia.rtxremix.minecraft.sky.RuntimeFrame;
 import com.nvidia.rtxremix.minecraft.sky.SkyLook;
 import com.nvidia.rtxremix.minecraft.lens.LensEffects;
@@ -357,6 +359,16 @@ public final class RtxSettingsFactory {
         list.add(RtxSetting.ofBool("debug.sceneOriginOffset", SettingGroup.DEBUG_VIEWS,
                 "rtxremix.setting.debug.sceneOriginOffset", "rtxremix.setting.debug.sceneOriginOffset.tip",
                 false, SceneSpace::debugOffset, SceneSpace::setDebugOffset));
+        // Read from the saved file before the runtime starts (RtxRemixMod), so it applies at the next launch.
+        list.add(RtxSetting.ofBool(RuntimePatchLayer.SURVEY_SETTING, SettingGroup.DEBUG_VIEWS,
+                "rtxremix.setting.debug.presentationSurvey", "rtxremix.setting.debug.presentationSurvey.tip",
+                false, RuntimePatchLayer::isSurveyRequested, RuntimePatchLayer::setSurveyRequested));
+        list.add(RtxSetting.ofBool("debug.hdrSdrReference", SettingGroup.DEBUG_VIEWS,
+                "rtxremix.setting.debug.hdrSdrReference", "rtxremix.setting.debug.hdrSdrReference.tip",
+                false, HdrOutput::isSdrReference, HdrOutput::setSdrReference));
+        list.add(RtxSetting.ofBool("debug.hdrTestPattern", SettingGroup.DEBUG_VIEWS,
+                "rtxremix.setting.debug.hdrTestPattern", "rtxremix.setting.debug.hdrTestPattern.tip",
+                false, HdrOutput::isTestPattern, HdrOutput::setTestPattern));
 
         // --- Tonemapping ---
         list.add(floatSetting("post.exposure", SettingGroup.TONEMAPPING,
@@ -387,6 +399,22 @@ public final class RtxSettingsFactory {
         list.add(floatSetting("lens.caustics", SettingGroup.LENS,
                 "rtxremix.setting.lens.caustics", 0.0, LensLook.MAX_CAUSTICS,
                 LensLook::getCaustics, LensLook::setCaustics));
+
+        // --- HDR output (runtime patch layer) ---
+        // Read from the saved file before the runtime starts (RtxRemixMod), so it applies at the next launch.
+        list.add(RtxSetting.ofBool(HdrOutput.SETTING, SettingGroup.HDR,
+                "rtxremix.setting.hdr.output", "rtxremix.setting.hdr.output.tip",
+                false, HdrOutput::isRequested, HdrOutput::setRequested));
+        // Read by the patched final combine from the frame, and by the GUI composite, each frame: both apply as
+        // they move.
+        list.add(RtxSetting.ofFloat("hdr.paperWhite", SettingGroup.HDR,
+                "rtxremix.setting.hdr.paperWhite", "rtxremix.setting.hdr.paperWhite.tip",
+                HdrOutput.MIN_PAPER_WHITE, HdrOutput.MAX_PAPER_WHITE, HdrOutput.DEFAULT_PAPER_WHITE,
+                () -> (double) HdrOutput.paperWhite(), v -> HdrOutput.setPaperWhite(v.floatValue())));
+        list.add(RtxSetting.ofFloat("hdr.peakBrightness", SettingGroup.HDR,
+                "rtxremix.setting.hdr.peakBrightness", "rtxremix.setting.hdr.peakBrightness.tip",
+                HdrOutput.MIN_PEAK, HdrOutput.MAX_PEAK, HdrOutput.DEFAULT_PEAK,
+                () -> (double) HdrOutput.peak(), v -> HdrOutput.setPeak(v.floatValue())));
 
         return new RtxSettings(list);
     }
