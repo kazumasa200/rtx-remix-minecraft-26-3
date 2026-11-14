@@ -33,9 +33,8 @@ import java.util.stream.Collectors;
  *
  * <p>Mirrors the runtime layout produced by the installer so existing native
  * path resolution works unchanged. The runtime textures land in
- * {@code textures/}, where {@code SkyRenderer} and {@code BlockTextureManager}
- * load them, so a JAR that a launcher drops into {@code mods/} needs nothing
- * beside it.
+ * {@code textures/}, where {@code SkyRenderer} loads them, so a JAR that a
+ * launcher drops into {@code mods/} needs nothing beside it.
  */
 public final class NativeExtractor {
 
@@ -44,6 +43,8 @@ public final class NativeExtractor {
     private static final String VERSION_MARKER = ".rtx-remix-version";
     private static final String RTX_CONF = "rtx.conf";
     private static final String TEXTURES_DIR = "textures";
+    /** Textures an earlier release shipped and this one no longer loads. */
+    private static final String[] OBSOLETE_RUNTIME_TEXTURES = {"water_normals_flipbook.dds"};
 
     /** Deletes a retired SDK on a daemon thread, off the mod-init path. */
     private static final Executor RETIRED_SDK_CLEANUP = task -> {
@@ -113,7 +114,9 @@ public final class NativeExtractor {
      *
      * <p>The runtime textures are mod-owned too, but share {@code textures/}
      * with whatever else is there, so each shipped file replaces only its own
-     * live copy, through a staging file beside it.
+     * live copy, through a staging file beside it. A texture an earlier release
+     * shipped and this one has retired is removed by its exact path on every
+     * launch until that succeeds.
      *
      * <p>A current marker skips the SDK copy only while {@code remix-sdk/d3d9.dll}
      * is present. Missing author-owned files, {@code rtx.conf}, and runtime
@@ -176,6 +179,7 @@ public final class NativeExtractor {
             String existing = Files.readString(versionFile).strip();
             if (markerMatches(existing, expectedMarker)) {
                 if (Files.isRegularFile(remixSdkDir.resolve("d3d9.dll"))) {
+                    removeObsoleteTextures(gameDir);
                     if (restoreMissingRtxConf(nativeRoot, gameDir)) {
                         LOGGER.info("Restored mod-owned {} after it was deleted since the last extraction",
                                 RTX_CONF);
@@ -243,6 +247,7 @@ public final class NativeExtractor {
                 }
             }
         }
+        removeObsoleteTextures(gameDir);
         extractTextures(nativeRoot, gameDir, false, fileCount, totalBytes);
         extractAuthorPayload(nativeRoot, gameDir, fileCount, totalBytes, keptCount);
 
@@ -277,6 +282,20 @@ public final class NativeExtractor {
                 if (Files.isDirectory(entry) && !name.startsWith("remix-sdk-") && !TEXTURES_DIR.equals(name)) {
                     extractTree(entry, gameDir.resolve(name), fileCount, totalBytes, keptCount);
                 }
+            }
+        }
+    }
+
+    /** Removes the retired textures by exact path; anything else in the folder stays. */
+    private static void removeObsoleteTextures(Path gameDir) {
+        for (String name : OBSOLETE_RUNTIME_TEXTURES) {
+            Path obsolete = gameDir.resolve(TEXTURES_DIR).resolve(name);
+            try {
+                if (Files.deleteIfExists(obsolete)) {
+                    LOGGER.info("Removed obsolete mod-owned runtime texture {}", obsolete);
+                }
+            } catch (IOException e) {
+                LOGGER.warn("Could not remove obsolete runtime texture {}; will retry next launch", obsolete, e);
             }
         }
     }

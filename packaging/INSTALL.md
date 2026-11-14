@@ -197,8 +197,8 @@ The automated uninstall removes these:
 - `remix-sdk\`
 - `rtx.conf`
 - `.rtx-remix-version`
-- `textures\water_normals_flipbook.dds` and
-  `textures\overcast_thunderstorm_bc6u.dds`
+- `textures\overcast_thunderstorm_bc6u.dds`, and
+  `textures\water_normals_flipbook.dds` if an earlier release left it behind
 - `resourcepacks\RtxRemix-LabPBR\`, if left by an earlier version
 
 Basic uninstall leaves these behind, because they are yours or they are part

@@ -145,8 +145,11 @@ the build's timestamp and commit, so every new build extracts in full once.
 Deleting `.rtx-remix-version` also forces full re-extraction. Full extraction
 replaces the mod-owned `remix-sdk/`, `rtx.conf`, and the shipped runtime
 textures in `textures/`, leaving anything else in that folder alone, so a JAR
-installed without the release installer is complete. With a matching marker and
-runtime present, launch restores a missing `rtx.conf`, a missing runtime
+installed without the release installer is complete. The water normal flipbook
+earlier releases shipped there, `textures/water_normals_flipbook.dds`, is
+retired: every launch and `tools\rtx.bat install` remove that exact path.
+With a matching marker and runtime present, launch restores a missing
+`rtx.conf`, a missing runtime
 texture, and any missing shipped files under `rtx-remix/` without replacing
 existing files. The `rtx-remix/` payload is author-owned: existing files,
 including edited confs, are never overwritten by `NativeExtractor`, even during
@@ -560,8 +563,11 @@ rings from `RainRipples` are written into it as texture content each frame by
 covers 40 blocks: the ocean flipbook, whose frame spans ten, laid three times
 over at one, two and four times its size, turned and on different frames, each
 without its longest waves, which drew a lattice of swells at whatever size a
-layer was laid. A frame is composed on a thread of its own and uploaded once
-done. `Puddles` and `PuddleMask` lay rain puddles on open ground as a decal
+layer was laid. The flipbook is no file: the JNI bridge computes its 120 frames
+on a worker at first use, about a second (`water_normals.cpp`, taken from
+upstream), and `WaterNormals` keeps them at half size for the session; shipped
+as a DDS it was 160 MB of every release. A frame is composed on a thread of its
+own and uploaded once done. `Puddles` and `PuddleMask` lay rain puddles on open ground as a decal
 (`DECAL_STATIC`, alpha-blended), which the runtime folds into the ground
 beneath: by its opacity it blends the ground's colour, reflectance, roughness
 and normal toward its own. Each tile of 16 blocks has a texture, 32 texels a
@@ -1028,8 +1034,8 @@ integration in the mod, not in the shim. Wrapper and affected mod callers
 change in the same pull request. The fork's own features add nothing to the
 wrapper: they reuse the existing batched `updateTextureFromMemory`,
 config-variable and config-layer entry points. The wrapper changes only by
-taking upstream's fixes to it (Java 8 compatibility, the `remixCall` fault
-guard, crash dumps without the sign-in token).
+taking upstream's changes to it (Java 8 compatibility, the `remixCall` fault
+guard, crash dumps without the sign-in token, the water normal generator).
 
 The wrapper's source of truth, in order, is:
 
@@ -1039,6 +1045,8 @@ The wrapper's source of truth, in order, is:
    `CommandLineRedaction`.
 2. `rtxremix-java/native/remixbridge.cpp`: loads `d3d9.dll`, calls
    `remixapi_InitializeLibrary`, stores the native interface, and forwards calls.
+   `water_normals.cpp` beside it generates the water normal flipbook and never
+   touches the runtime.
 3. `rtxremix-java/native/include/remix_c.h`: the copied C API header.
 4. `rtxremix-java/native/build_native.bat`: the MSVC bridge build.
 5. `packman/remix-sdk.packman.xml`: the published runtime pins.

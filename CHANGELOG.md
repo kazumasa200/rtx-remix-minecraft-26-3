@@ -11,6 +11,14 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Changed
+
+- The water's wave normals are computed when the game starts, in about a second,
+  and no longer shipped as a 160 MB texture: the download is about 145 MB
+  smaller, and `textures\water_normals_flipbook.dds` is removed from the game
+  folder on the next launch. The water looks the same. After upstream's
+  generator (NVIDIAGameWorks/rtx-remix-minecraft#106)
+
 ## 0.4.0-pre.10 - 2026-11-14
 
 ### Fixed

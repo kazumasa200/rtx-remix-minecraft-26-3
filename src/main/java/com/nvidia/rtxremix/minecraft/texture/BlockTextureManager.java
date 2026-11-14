@@ -844,7 +844,6 @@ public class BlockTextureManager {
     //  Custom water material (animated normals, translucent)
     // ====================================================================
 
-    private static final String WATER_NORMALS_DDS = "textures/water_normals_flipbook.dds";
     /** Blocks across the water's normal texture, which repeats this often (see {@link WaterNormals}). */
     private static final float WATER_TILE_SIZE = 40.0f;
     /** Kill switch for raindrop rings ({@code -Drtxremix.rain.ripples=false}). */
@@ -915,7 +914,6 @@ public class BlockTextureManager {
 
             waterNormals = WaterNormals.create(api,
                     (name, rgba, w, h, format, purpose) -> upload(api, name, rgba, w, h, format, purpose),
-                    Minecraft.getInstance().gameDirectory.toPath().resolve(WATER_NORMALS_DDS),
                     WATER_TILE_SIZE, RAIN_RIPPLES_ENABLED);
             if (waterNormals == null) {
                 LOGGER.warn("Failed to create the water normal texture");

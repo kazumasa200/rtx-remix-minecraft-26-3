@@ -12,12 +12,7 @@ import com.nvidia.rtxremix.TexturePatchInfo;
 import com.nvidia.rtxremix.TexturePurpose;
 import com.nvidia.rtxremix.minecraft.asset.RemixTexture;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
-import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.channels.FileChannel;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -45,9 +40,10 @@ import org.slf4j.LoggerFactory;
  * over {@link #PUDDLE_TILE_BLOCKS}: standing water in a puddle has no waves, and once the rain
  * stops it lies still.
  *
- * <p>The frames come from the flipbook's second mip level, decoded on a worker; until then
- * the water is calm. A frame is composed on a thread of its own and uploaded on the render
- * thread once it is done.
+ * <p>The flipbook is not a file: the bridge computes it on a worker, about a second's work
+ * (see {@code water_normals.cpp}), and its frames are used at half that size; until then the
+ * water is calm. The surface is the same every time, so a session computes it once. A frame
+ * is composed on a thread of its own and uploaded on the render thread once it is done.
  */
 public final class WaterNormals {
 
@@ -55,7 +51,7 @@ public final class WaterNormals {
 
     /** Texels across the texture, which covers {@link #FRAMES_ACROSS} flipbook frames each way. */
     public static final int SIZE = 1024;
-    /** Texels across a flipbook frame at its second mip level. */
+    /** Texels across a flipbook frame as it is used, half the size the bridge generates it at. */
     private static final int FRAME_SIZE = 512;
     private static final int FRAMES_ACROSS = 4;
     /** Blocks the puddles' texture spans, which the puddles' tiles match. */
@@ -86,14 +82,13 @@ public final class WaterNormals {
     private static final float SLOPE_STEP = 1f / 254f;
     /** Frames between the layers, so no two show the same waves. */
     private static final int LAYER_FRAME_STEP = 40;
-    // The flipbook's layout, as tools/src/rtx_tools/water_normals.py writes it.
+    // The flipbook's layout, as rtxremix-java/native/water_normals.cpp generates it.
     private static final int SHEET_COLS = 12;
     private static final int SHEET_ROWS = 10;
     private static final int FRAMES = SHEET_COLS * SHEET_ROWS;
     private static final int FPS = 20;
-    private static final int MIP_LEVEL = 1;
-    private static final int DXGI_FORMAT_BC5_UNORM = 83;
-    private static final int DDS_DATA_OFFSET = 4 + 124 + 20;
+    /** Of the seeds tried, 225's longest waves share the slope most like the water this replaced. */
+    private static final long OCEAN_SEED = 225L;
     private static final long RIPPLE_SEED = 0x52414E44L;
     /** Rain strength change that redraws a held frame. */
     private static final float STRENGTH_EPSILON = 0.02f;
@@ -114,6 +109,9 @@ public final class WaterNormals {
             }
         }
     }
+
+    /** The session's ocean frames, high-passed; kept across water material rebuilds. */
+    private static CompletableFuture<byte[][]> oceanFrames;
 
     private final RemixAPI api;
     private final RemixTexture texture;
@@ -150,7 +148,7 @@ public final class WaterNormals {
     private float appliedStrength;
     private boolean released;
 
-    private WaterNormals(RemixAPI api, RemixTexture texture, RemixTexture puddleTexture, Path flipbook,
+    private WaterNormals(RemixAPI api, RemixTexture texture, RemixTexture puddleTexture,
                          float tileBlocks, boolean rings) {
         this.api = api;
         this.texture = texture;
@@ -169,14 +167,7 @@ public final class WaterNormals {
         puddleEntry.patches = new TexturePatch[] {puddlePatch};
         bothInfo.entries = new TextureBatchEntry[] {entry, puddleEntry};
         waterInfo.entries = new TextureBatchEntry[] {entry};
-        ocean = CompletableFuture.supplyAsync(() -> {
-            try {
-                return highPass(decodeFrames(flipbook));
-            } catch (IOException | RuntimeException e) {
-                LOGGER.warn("Failed to read the water normal flipbook {}; the water stays calm", flipbook, e);
-                return null;
-            }
-        });
+        ocean = oceanFrames(api);
         // The rings tile a flipbook frame's span, as the nearest layer does.
         ripples = rings
                 ? CompletableFuture.supplyAsync(() -> RainRipples.generate(FRAME_SIZE, tileBlocks / FRAMES_ACROSS, RIPPLE_SEED))
@@ -192,14 +183,13 @@ public final class WaterNormals {
      * {@link #PUDDLE_TILE_BLOCKS}, or returns null when a texture fails; the uploader's owner
      * destroys any it made. {@code rings} adds raindrop rings in the rain.
      */
-    public static WaterNormals create(RemixAPI api, Uploader uploader, Path flipbook, float tileBlocks,
-                                      boolean rings) {
+    public static WaterNormals create(RemixAPI api, Uploader uploader, float tileBlocks, boolean rings) {
         RemixTexture texture = uploader.upload("water_normals", calmNormals(SIZE), SIZE, SIZE,
                 TextureFormat.RGBA8_UNORM, TexturePurpose.NORMAL_OTH);
         if (texture == null) return null;
         RemixTexture puddle = uploader.upload("puddle_normals", calmNormals(PUDDLE_SIZE), PUDDLE_SIZE, PUDDLE_SIZE,
                 TextureFormat.RGBA8_UNORM, TexturePurpose.NORMAL_OTH);
-        return puddle == null ? null : new WaterNormals(api, texture, puddle, flipbook, tileBlocks, rings);
+        return puddle == null ? null : new WaterNormals(api, texture, puddle, tileBlocks, rings);
     }
 
     /** Creates a texture the owner manages and destroys. */
@@ -455,7 +445,6 @@ public final class WaterNormals {
     public void release() {
         if (released) return;
         released = true;
-        ocean.cancel(false);
         ripples.cancel(false);
         puddleRipples.cancel(false);
         composer.shutdownNow();
@@ -463,86 +452,60 @@ public final class WaterNormals {
         DirectBufferPool.release(puddleStaging);
     }
 
-    /** Every frame of the flipbook at {@link #MIP_LEVEL}, as red-green pairs per texel. */
-    static byte[][] decodeFrames(Path flipbook) throws IOException {
-        try (FileChannel channel = FileChannel.open(flipbook, StandardOpenOption.READ)) {
-            ByteBuffer header = ByteBuffer.allocate(DDS_DATA_OFFSET).order(ByteOrder.LITTLE_ENDIAN);
-            readFully(channel, header, 0L);
-            int height = header.getInt(12);
-            int width = header.getInt(16);
-            boolean dx10 = header.get(84) == 'D' && header.get(85) == 'X' && header.get(86) == '1'
-                    && header.get(87) == '0';
-            if (header.getInt(0) != 0x20534444 || !dx10 || header.getInt(128) != DXGI_FORMAT_BC5_UNORM
-                    || width != SHEET_COLS * FRAME_SIZE * 2 || height != SHEET_ROWS * FRAME_SIZE * 2) {
-                throw new IOException("Expected a " + SHEET_COLS * FRAME_SIZE * 2 + "x" + SHEET_ROWS * FRAME_SIZE * 2
-                        + " BC5 sheet, found " + width + "x" + height);
-            }
-            long level0Bytes = (long) (width / 4) * (height / 4) * 16;
-            int levelWidth = width >> MIP_LEVEL;
-            int levelHeight = height >> MIP_LEVEL;
-            ByteBuffer blocks = ByteBuffer.allocate((levelWidth / 4) * (levelHeight / 4) * 16);
-            readFully(channel, blocks, DDS_DATA_OFFSET + level0Bytes);
-            return splitFrames(blocks.array(), levelWidth, levelHeight);
+    /** The session's ocean frames, started on first use and again after a failure. */
+    private static synchronized CompletableFuture<byte[][]> oceanFrames(RemixAPI api) {
+        if (oceanFrames == null || (oceanFrames.isDone() && oceanFrames.getNow(null) == null)) {
+            oceanFrames = CompletableFuture.supplyAsync(() -> {
+                try {
+                    return highPass(generateFrames(api));
+                } catch (RuntimeException | LinkageError | OutOfMemoryError e) {
+                    // A bridge without the generator (a stale development copy) is a LinkageError.
+                    LOGGER.warn("Failed to generate the water normal flipbook; the water stays calm", e);
+                    return null;
+                }
+            });
+        }
+        return oceanFrames;
+    }
+
+    /** Every frame of the flipbook at {@link #FRAME_SIZE}, as red-green pairs per texel. */
+    private static byte[][] generateFrames(RemixAPI api) {
+        // The whole sheet at the bridge's size, 240 MiB, held only until its frames are halved.
+        ByteBuffer sheet = DirectBufferPool.acquire(api.waterNormalsTextureSize());
+        try {
+            double seconds = api.generateWaterNormals(sheet, OCEAN_SEED);
+            LOGGER.info("Generated the water normal flipbook in {} s", String.format("%.2f", seconds));
+            return halveFrames(sheet, FRAME_SIZE * 2);
+        } finally {
+            DirectBufferPool.release(sheet);
         }
     }
 
-    /** Decodes a BC5 sheet of {@link #SHEET_COLS} by {@link #SHEET_ROWS} frames, row by row. */
-    static byte[][] splitFrames(byte[] blocks, int width, int height) {
-        int frameSize = width / SHEET_COLS;
-        byte[][] frames = new byte[SHEET_COLS * SHEET_ROWS][frameSize * frameSize * 2];
-        byte[] red = new byte[16];
-        byte[] green = new byte[16];
-        int blocksAcross = width / 4;
-        for (int by = 0; by < height / 4; by++) {
-            for (int bx = 0; bx < blocksAcross; bx++) {
-                int offset = (by * blocksAcross + bx) * 16;
-                decodeBc4(blocks, offset, red);
-                decodeBc4(blocks, offset + 8, green);
-                for (int t = 0; t < 16; t++) {
-                    int x = bx * 4 + (t & 3);
-                    int y = by * 4 + (t >> 2);
-                    byte[] frame = frames[(y / frameSize) * SHEET_COLS + x / frameSize];
-                    int i = ((y % frameSize) * frameSize + x % frameSize) * 2;
-                    frame[i] = red[t];
-                    frame[i + 1] = green[t];
+    /**
+     * Splits a sheet of {@link #SHEET_COLS} by {@link #SHEET_ROWS} red-green frames, row by row,
+     * into frames half {@code frameSize} across, each texel the mean of two by two.
+     */
+    static byte[][] halveFrames(ByteBuffer sheet, int frameSize) {
+        int half = frameSize / 2;
+        int sheetPitch = SHEET_COLS * frameSize * 2;
+        byte[][] frames = new byte[FRAMES][half * half * 2];
+        byte[] upper = new byte[frameSize * 2];
+        byte[] lower = new byte[frameSize * 2];
+        for (int f = 0; f < FRAMES; f++) {
+            byte[] frame = frames[f];
+            int origin = (f / SHEET_COLS) * frameSize * sheetPitch + (f % SHEET_COLS) * frameSize * 2;
+            for (int y = 0; y < half; y++) {
+                sheet.get(origin + 2 * y * sheetPitch, upper);
+                sheet.get(origin + (2 * y + 1) * sheetPitch, lower);
+                for (int i = 0; i < half * 2; i++) {
+                    // Channel i & 1 of the texel pair starting at texel i / 2 * 2.
+                    int at = (i >> 1) * 4 + (i & 1);
+                    int sum = (upper[at] & 0xFF) + (upper[at + 2] & 0xFF) + (lower[at] & 0xFF) + (lower[at + 2] & 0xFF);
+                    frame[y * half * 2 + i] = (byte) ((sum + 2) >> 2);
                 }
             }
         }
         return frames;
-    }
-
-    /** One BC4 block's sixteen values, in row order. */
-    static void decodeBc4(byte[] data, int offset, byte[] out) {
-        int e0 = data[offset] & 0xFF;
-        int e1 = data[offset + 1] & 0xFF;
-        long indices = 0L;
-        for (int b = 0; b < 6; b++) {
-            indices |= (long) (data[offset + 2 + b] & 0xFF) << (8 * b);
-        }
-        for (int t = 0; t < 16; t++) {
-            int index = (int) (indices >>> (3 * t)) & 7;
-            int value;
-            if (index == 0) {
-                value = e0;
-            } else if (index == 1) {
-                value = e1;
-            } else if (e0 > e1) {
-                value = ((8 - index) * e0 + (index - 1) * e1) / 7;
-            } else if (index < 6) {
-                value = ((6 - index) * e0 + (index - 1) * e1) / 5;
-            } else {
-                value = index == 6 ? 0 : 255;
-            }
-            out[t] = (byte) value;
-        }
-    }
-
-    private static void readFully(FileChannel channel, ByteBuffer buffer, long position) throws IOException {
-        while (buffer.hasRemaining()) {
-            int read = channel.read(buffer, position + buffer.position());
-            if (read < 0) throw new IOException("The water normal flipbook ends early");
-        }
-        buffer.flip();
     }
 
     private static byte encode(float component) {

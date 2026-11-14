@@ -17,8 +17,8 @@ How to build and run the mod from source. If you only want to play, read
   workload (MSVC v143). Cross-building the ARM64 bridge additionally needs the
   MSVC ARM64 build tools for some installed toolset; `build_native.bat` uses
   the default toolset when it has them, otherwise the newest one that does.
-- **Git.** Everything is in the clone except the native runtime and the two
-  large runtime textures, which the build pulls through Packman on first use.
+- **Git.** Everything is in the clone except the native runtime and the
+  runtime textures, which the build pulls through Packman on first use.
 - **uv 0.13 or newer and Python 3.15 or newer**, for the developer tools that
   launch the mod. The first `tools\rtx.bat` command installs
   [uv](https://docs.astral.sh/uv/) for your user when it is missing, and uv
@@ -152,13 +152,16 @@ cd rtx-remix-minecraft-26-3
 .\tools\rtx.bat launch
 ```
 
-The two large runtime textures are not in git: the first build pulls them
-through Packman into `remix-runtime/textures/`, the same way the runtime is
-fetched, and later builds reuse the cached copy. The build checks that both
-files arrived. The pin lives in
-`packman/textures.packman.xml`. The water normals in the package are generated
-by `tools\rtx.bat textures water-normals`. The build automatically fetches
-`rtx_remix_minecraft_runtime_textures` version `1.1.0` through Packman.
+The runtime textures are not in git: the first build pulls them through
+Packman into `remix-runtime/textures/`, the same way the runtime is fetched,
+and later builds reuse the cached copy. The build checks that the overcast sky
+texture arrived, the one file the mod still loads from there. The pin lives in
+`packman/textures.packman.xml`, and the build automatically fetches
+`rtx_remix_minecraft_runtime_textures` version `1.1.0` through Packman. That
+package also holds `water_normals_flipbook.dds`, which nothing ships or loads
+any more: the JNI bridge generates the water normals at startup, and
+`tools\rtx.bat textures water-normals` writes the same surface as a reference
+file.
 
 The Java wrapper and JNI bridge are tracked under `rtxremix-java/` and arrive
 with the clone; no recursive checkout or hook setup is needed.
