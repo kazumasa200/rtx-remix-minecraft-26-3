@@ -11,6 +11,12 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Fixed
+
+- With a light in hand, the player's shadow and reflection stay where the player
+  is and follow the view smoothly. The hidden body was held about a third of a
+  block behind and jumped in steps as the view turned (#33)
+
 ## 0.4.0-pre.9 - 2026-11-13
 
 ### Added

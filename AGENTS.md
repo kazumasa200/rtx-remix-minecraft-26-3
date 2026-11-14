@@ -816,10 +816,16 @@ turned white with each strike. A
 hand-held item whose placed block shows a lit particle gets the same element in
 hand, emitted once the item's pose is on the matrix stack
 (`ItemLayerRenderStateMixin`), so first person, the hidden shadow model, and
-other players share one hook. `HeldLightState` is the one decision on whether a
-held item's lit element is burning: the local player's Toggle Held Lights key
-puts out everything in their own hands, and by default an open flame goes out
-for any holder whose eyes are under water. When the time of day jumps by more
+other players share one hook. The local first-person held light stands on the
+camera centreline just outside the hidden model's head clearance
+(`HeldLightPlacement`), so in the open the hidden model stays under the player;
+when a wall pulls the light in, the model moves straight away from it through a
+spring (`FirstPersonShadowModelPlacement`), since its arm and held item in the
+light lay a hand's shadow ahead of the player. `HeldLightState` is the one
+decision on whether a held item's lit element is burning: the local player's
+Toggle Held Lights key puts out everything in their own hands, and by default an
+open flame goes out for any holder whose eyes are under water. When the time of
+day jumps by more
 than a hundredth of a day in one frame, `LightManager` clears the runtime's
 radiance caches (`rtx.spatiallyHashedRadianceCache.resetHistory`, and
 `rtx.neuralRadianceCache.resetHistory` for the presets that use it), which would
