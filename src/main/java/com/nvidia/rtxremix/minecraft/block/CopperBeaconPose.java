@@ -16,16 +16,23 @@ public final class CopperBeaconPose {
 
     private CopperBeaconPose() {}
 
+    /**
+     * The direction a beacon's idle head points along. A block state whose facing lies on its
+     * mount's axis is a state of the block all the same, though no placement makes one: the
+     * debug world holds every state, and commands and structures can set one. It takes the
+     * forward a placement would have given it, rather than failing every frame it is drawn.
+     */
+    public static Direction forward(Direction mount, Direction facing) {
+        return CopperBeaconState.orthogonalForward(facing, Direction.NORTH, mount);
+    }
+
     public static void evaluate(
             Direction mount,
             Direction neutralForward,
             float yawDegrees,
             float pitchDegrees,
             Pose destination) {
-        if (mount.getAxis() == neutralForward.getAxis()) {
-            throw new IllegalArgumentException("Mount and forward directions must be orthogonal");
-        }
-
+        neutralForward = forward(mount, neutralForward);
         mountingRotation(
                 mount,
                 neutralForward,
@@ -90,10 +97,7 @@ public final class CopperBeaconPose {
             Vector3f cross,
             Quaternionf upRotation) {
         direction(upDirection, up);
-        direction(forwardDirection, forward);
-        if (Math.abs(up.dot(forward)) > 0.5f) {
-            throw new IllegalArgumentException("Mount and forward directions must be orthogonal");
-        }
+        direction(forward(upDirection, forwardDirection), forward);
 
         upRotation.rotationTo(0.0f, 1.0f, 0.0f, up.x, up.y, up.z);
         rotatedForward.set(0.0f, 0.0f, -1.0f).rotate(upRotation);

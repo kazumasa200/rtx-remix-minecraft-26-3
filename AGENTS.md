@@ -75,7 +75,40 @@ for the staging inventory.
 
 Distant Horizons is an optional compile-only dependency (Modrinth Maven, never
 shipped). Its mixins live in a separate `rtx-remix-renderer.distanthorizons.mixins.json`
-that loads only when Distant Horizons is installed (`lod/dh/`).
+that applies only to Distant Horizons 3.3.4 (`lod/dh/`, `DistantHorizonsMixinPlugin`):
+they reach into its renderer's internals, so on any other release the plugin warns
+and neither the mixins nor the LOD terrain capture run. Such a release whose public
+API has the major version this mod compiles against (`DhPublicApi.API_MAJOR`) gets
+LOD sections this mod builds itself from that API (`LodApiSections`, below);
+`DhApiTerrain` and `DhPublicApi` name nothing of its internals. `DistantHorizonsRasterHold`
+then cancels that release's own draws through its public API while Remix draws the
+world: they go into the main target, which is laid over the Remix image. The API has
+no switch for its fade of vanilla's terrain, so `UntestedFadeMixin`
+(`rtx-remix-renderer.distanthorizons-untested.mixins.json`) stops that one, named by
+string with `require = 0` so a release that renamed it still loads. Its
+`renderingEnabled` config is not a way to stop it: a write through the API lands in
+the saved config as `rendererMode = "DISABLED"`.
+
+On that path `LodApiSections` chooses the sections around the camera itself, a
+quadtree whose sections are 64 cells of `2^d` blocks and split while the camera is
+nearer than three widths (`LodSelection`), and reads them on two low-priority threads
+through `DhApiTerrain`: the API hands out every column at full detail, never Distant
+Horizons' own coarser copies, so a section of the finest detail reads its 64 by 64
+columns and a coarser one the column at each cell's centre. `LodColumnMesher` turns
+the runs into Distant Horizons' vertex layout, so `LodTerrain` installs them as it
+installs captured sections; air the sky's light does not reach hides the faces into
+it, since a section otherwise held every cave wall under it, 4.5 GB over the demo
+city. Colours are each face sprite's alpha-weighted average
+(`BlockTextureManager.spriteColors`) times the block's tint for the biome Distant
+Horizons recorded, read through a `BlockAndTintGetter` that answers only that biome
+(`LodBlockColors`). Blocks with no collision and no light are left out. A replaced
+section is closed once the sections over its ground are built. A chunk Distant
+Horizons saves anew (`DhApiChunkModifiedEvent`) rebuilds the sections over it. It
+reaches 4096 blocks at most (`rtxremix.lod.apiRadius`): over the demo city 414
+sections took 40 s and 1.7 GiB, against the capture's 8192 blocks in 2.2 GiB. A
+level with a ceiling builds nothing: no sky light reaches its air, and its reads
+waited minutes on Distant Horizons' generation. A stop interrupts the reads in
+flight for the same reason.
 
 Sodium 0.9.2 for 26.3 is compile-only and never bundled. Its conditional
 `rtx-remix-renderer.sodium.mixins.json` adapts section jobs under
@@ -112,8 +145,11 @@ the build's timestamp and commit, so every new build extracts in full once.
 Deleting `.rtx-remix-version` also forces full re-extraction. Full extraction
 replaces the mod-owned `remix-sdk/`, `rtx.conf`, and the shipped runtime
 textures in `textures/`, leaving anything else in that folder alone, so a JAR
-installed without the release installer is complete. With a matching marker and
-runtime present, launch restores a missing `rtx.conf`, a missing runtime
+installed without the release installer is complete. The water normal flipbook
+earlier releases shipped there, `textures/water_normals_flipbook.dds`, is
+retired: every launch and `tools\rtx.bat install` remove that exact path.
+With a matching marker and runtime present, launch restores a missing
+`rtx.conf`, a missing runtime
 texture, and any missing shipped files under `rtx-remix/` without replacing
 existing files. The `rtx-remix/` payload is author-owned: existing files,
 including edited confs, are never overwritten by `NativeExtractor`, even during
@@ -247,7 +283,11 @@ MiniHUD, Axiom), and the opaque Remix image covered them: `ModOverlayLayer`
 clears the main target's colour to transparent at the main pass's start and
 gives it the last Remix frame's depth, keeps the colour once the level render
 returns, and lays it over the image after the lens and weather. Vanilla's block
-outline is cancelled while RTX is on, since Remix draws its own.
+outline is cancelled while RTX is on, since Remix draws its own. A frame that fails
+before its Submit composites nothing (`renderAndSubmitFrame` returns false): the
+shared image still holds the composite the last present copied into it, and laying
+that over the frame again turned it upside down under the new HUD every frame. Each
+step that continues past a failure logs it once per episode (`FailureLogThrottle`).
 Thread-safe stores wrap Remix-side meshes, instances, textures, materials, and
 lights over raw `long` handles from the JNI wrapper. `JoinBurstHold` keeps
 vanilla's terrain-download screen up for a bounded wait for stable frames after
@@ -553,7 +593,13 @@ draws nothing while capture is on, so its uploads complete without filling GPU
 buffers (`LodBufferContainerMixin`), and stopping capture rebuilds them. Its
 vanilla fade is skipped then too (`ClientApiFadeMixin`): fading the main
 target's terrain toward its empty textures drew black wherever the main target's
-depth held land.
+depth held land. Zoomed in by half or more, the LOD mod raises the detail of every
+section in a cone about the view and lowers it when the zoom ends; here each is a
+mesh handed to Remix, 1.8 GiB in twelve seconds for a pistol's sight across a
+city, so while capturing a zoom reaches the terrain only once it has been held for
+two and a half seconds and the detail stays ten seconds past its end (`ZoomHold`,
+`CameraZoomMixin`). `Lod.Installs` and `Lod.InstallKB` in the performance report
+count what a frame handed over.
 LOD quads carry the LOD mod's one averaged colour per block, which lights the
 ground as vertex colour. With the LOD mod's LOD textures on, a quad near enough
 also names a 16-texel tile of the face's colour against that average, which the
@@ -561,21 +607,30 @@ LOD mod draws as colour times twice the tile. `LodTiles` copies the tiles into o
 texture, each divided by its largest factor, and the quad carries its colour
 times that factor, since the runtime multiplies a vertex colour by a texture that
 holds at most 1; the coordinates repeat the tile once a block in the LOD mod's
-orientation, wrapped within its bounds. Tile 0, the untextured one, is white. The runtime takes emission and a
+orientation, wrapped within its bounds. Tile 0, the untextured one, is white.
+The LOD mod cuts a tile when it first meets a block and drops its tiles only when
+a world loads, so a resource reload has it drop them and rebuild every section
+(`DistantHorizonsCompat.reloadTiles`), and `LodTiles` starts its copy over
+whenever they are dropped (`BlockTextureRegistryMixin`), not only when their
+count falls. The runtime takes emission and a
 translucent surface's transmittance only from textures, so lava and glowing
 blocks (the LOD mod's `LAVA` and `ILLUMINATED` materials) and its translucent
 buffer (glass, ice) carry their colour as coordinates into a palette texture of
 every colour at five bits a channel (`LodPalette`): lava glows at the terrain's
-emission and the other glowing blocks at a fifth of it (`LodTerrain.LAMP_EMISSION`),
+emission and the other glowing blocks at the LOD Light Glow setting's share of it, a fifth by default (`LodTerrain.getLampGlow`),
 and the translucent buffer is thin-walled glass tinted by the block's hue. Drawn as plain
 ground, glass stood as pale solid blocks and lava did not glow. The LOD mod
 draws an area of many blocks as one of them, so a rooftop torch became a box
 several blocks across, which at the full emission lit the roofs around and
-bloomed to white. That fifth holds where a cell is one block; a coarser
+bloomed to white. That share holds where a cell is one block; a coarser
 section's lamps glow over the area of their box less (`LodSection.blocksPerCell`),
 so a lamp gives off one block's light at any detail and distant ones fade. The
 vertex says only that a block glows, not which block or how large its flame
-is, so the rule is the same for every block and mod.
+is, so the rule is the same for every block and mod. Seen from above, the
+faded lights leave a far city dark, so the LOD Light Fade setting turns the
+fade off and every detail level glows alike (#23). Changing either setting
+installs every section again (`LodTerrain.clear`), since a lamp material holds
+its strength.
 The LOD mod names a material by block id before it asks about light, so
 glowstone and lit redstone lamps came out as stone; every block that gives off
 light, liquids aside, is marked illuminated through its block-state event
@@ -617,6 +672,12 @@ generation and resource/world teardown invalidate prepared glyphs. Text and
 layout jointly identify cache entries; cache-hit lookup reuses a probe whose
 miss key is snapshotted before reentrant font preparation. `TextGlyphCapture`
 owns preparation and emission for both cached and ordinary text.
+An entity layer's texture is read from its pack file, or from the snapshot taken
+when a `DynamicTexture` uploads; a texture with neither, which another mod keeps
+its own way (a Figura avatar's lives in a `SimpleTexture` with no file behind
+it), is read back from the GPU once, when a material first needs it, and again
+after anything writes to that GPU texture (`GpuTextureReadback`,
+`CommandEncoderGlyphMirrorMixin`). Its layers had no material and were dropped.
 `BlockTextureManager` keeps only mostly translucent
 sprites translucent; doors, flowers and the like become cutout. Only terrain
 whose sprite has texels in the emissive atlas takes an atlas material that
@@ -632,8 +693,11 @@ rings from `RainRipples` are written into it as texture content each frame by
 covers 40 blocks: the ocean flipbook, whose frame spans ten, laid three times
 over at one, two and four times its size, turned and on different frames, each
 without its longest waves, which drew a lattice of swells at whatever size a
-layer was laid. A frame is composed on a thread of its own and uploaded once
-done. `Puddles` and `PuddleMask` lay rain puddles on open ground as a decal
+layer was laid. The flipbook is no file: the JNI bridge computes its 120 frames
+on a worker at first use, about a second (`water_normals.cpp`, taken from
+upstream), and `WaterNormals` keeps them at half size for the session; shipped
+as a DDS it was 160 MB of every release. A frame is composed on a thread of its
+own and uploaded once done. `Puddles` and `PuddleMask` lay rain puddles on open ground as a decal
 (`DECAL_STATIC`, alpha-blended), which the runtime folds into the ground
 beneath: by its opacity it blends the ground's colour, reflectance, roughness
 and normal toward its own. Each tile of 16 blocks has a texture, 32 texels a
@@ -815,13 +879,38 @@ toward the sun and the clouds' shadow put the web out.
 and are double buffered: the render thread publishes the previous frame's
 payload at the top of the frame and joins the worker after submit, so particles
 trail the scene by exactly one frame. Only `SINGLE_QUADS` particles are
-captured; item-atlas particles are alpha-tested. Vanilla particle colours are
+captured, and only that group's vanilla submit is skipped (`ParticleManagerMixin`
+notes its extracted state, `WorldRendererMixin` skips it): item pickups, elder
+guardians and a mod's own particle groups submit as vanilla does, and skipping
+every group had left them out of the image. Item-atlas particles are
+alpha-tested. Vanilla particle colours are
 lightmap tints, not albedos, and the runtime lights a blended particle from the
 radiance cache with no self-shadowing, so `ParticleTint` draws soot near-black
 to keep smoke dark over a lit floor.
 
-**Entities.** Entities and block entities that vanilla already draws are
-captured in place, so a model is evaluated once rather than once for OpenGL and
+**Entities.** A renderer's submits are captured after vanilla's own storage and
+feature renderers have had them (`VanillaFeatureCapture`): the capture passes hand
+a renderer vanilla's `SubmitNodeStorage` itself, then have vanilla's feature
+renderers build each submit, and only the vertex builder those ask for is the
+capture's (`RenderTypeFeatureRendererMixin`, the one place a feature renderer takes
+it from). Whatever another mod puts into the storage or a feature renderer
+therefore runs, with no code written for the mod: Figura's avatars and the
+callbacks that hide the vanilla player,
+Entity Model Features' animation, a renderer that fills its buffer after
+submitting it. The port first gave renderers a collector of its own that redid
+each feature renderer, and none of that ran (#29, #30). Submits are
+built in the order they arrived, not grouped as vanilla groups them, since a
+layer's index is its first use and an overlay is painted onto the layer before it.
+Text submits go to the capture's own layout and the End portal's faces to
+`EndPortalFaces` (`SpecialSubmits`); blob shadows, outlines, crumbling overlays, the water mask and
+gizmos are left unbuilt. `ModelPart.translateAndRotate` is vanilla's too: the
+capture once replaced it with pooled arithmetic on its own pose stack, which
+dropped what Entity Model Features adds there. Vertices a renderer transformed
+itself are streamed as a new mesh each frame until a part comes back unchanged,
+when it takes a pooled mesh like any other (an item frame's model through Fabric's
+renderer). Code that asks whether a collector is a capture's asks
+`VanillaFeatureCapture.provider`. Entities and block entities that vanilla already
+draws are captured in place, so a model is evaluated once rather than once for OpenGL and
 again for Remix; entities outside vanilla's frustum are swept up closest-first
 under a budget, because a path tracer needs them for shadows and reflections,
 and an entity that owns a Remix light this frame is swept at any distance so
@@ -831,7 +920,15 @@ hidden body is captured nowhere else. Rigid occurrences retain instances
 keyed by owner, category, layer, and part; strips and beams stream transient
 meshes per frame. `OverlayComposite` paints cutout overlay layers, such as a
 villager's profession, a sheep's wool or a GeckoLib model's layer drawn again
-vertex by vertex, into a copy of the body texture so they do not render black. `RemixBlockDamagePass` submits static terrain damage
+vertex by vertex, into a copy of the body texture so they do not render black.
+A vertex written without a
+pose is one its writer transformed: it sits under the capture's root, the
+first-person pass gives it an identity bone so the view correction reaches it
+(`EntityRenderContext.boneUnposedVertices`), a layer grows from 4096 vertices to
+65,536 for such vertices alone, and their mesh is rebuilt every frame instead of
+pooled, as a streamed layer's is. A mesh rebuilt every frame takes its shell offset
+by welding the corners its faces share, not by the search for faces a vertex
+stands on, which is quadratic in quads (#29). `RemixBlockDamagePass` submits static terrain damage
 decals. Vanilla draws the End portal's and gateway's starfield in a shader from
 screen position, with position-only faces; `EndPortalFaces` lays vanilla's layers
 along the face in world space instead, the stars glowing over a dark sky and
@@ -859,10 +956,16 @@ turned white with each strike. A
 hand-held item whose placed block shows a lit particle gets the same element in
 hand, emitted once the item's pose is on the matrix stack
 (`ItemLayerRenderStateMixin`), so first person, the hidden shadow model, and
-other players share one hook. `HeldLightState` is the one decision on whether a
-held item's lit element is burning: the local player's Toggle Held Lights key
-puts out everything in their own hands, and by default an open flame goes out
-for any holder whose eyes are under water. When the time of day jumps by more
+other players share one hook. The local first-person held light stands on the
+camera centreline just outside the hidden model's head clearance
+(`HeldLightPlacement`), so in the open the hidden model stays under the player;
+when a wall pulls the light in, the model moves straight away from it through a
+spring (`FirstPersonShadowModelPlacement`), since its arm and held item in the
+light lay a hand's shadow ahead of the player. `HeldLightState` is the one
+decision on whether a held item's lit element is burning: the local player's
+Toggle Held Lights key puts out everything in their own hands, and by default an
+open flame goes out for any holder whose eyes are under water. When the time of
+day jumps by more
 than a hundredth of a day in one frame, `LightManager` clears the runtime's
 radiance caches (`rtx.spatiallyHashedRadianceCache.resetHistory`, and
 `rtx.neuralRadianceCache.resetHistory` for the presets that use it), which would
@@ -876,8 +979,16 @@ clouds went orange and blue, then white.
 
 Terrain block lights are per-frame draws, not retained instances: every frame
 `ChunkManager.draw` submits each surviving `TerrainLight` (the `RemixLight`
-plus its position, power, rule output, and last drawn frame), so not drawing a
-light is a complete cull. Culling applies the column Chebyshev box and the
+plus its position, power, rule output, and last drawn frame). Not drawing a light
+does not make it free: the runtime walks every light that exists each frame, and
+290,000 created and undrawn in a city took the frame from 8 ms to 27. So a
+terrain light is registered asleep, with a hash and no native light
+(`RemixLight.isAsleepFast`); the draw loop wakes it when it first passes the cull,
+at most 128 a frame, building it from its rule output at the current scene
+origin, and a light undrawn for 240 frames sleeps again (`ChunkManager.sleepIdleLights`,
+`Chunk.LightsAwake`). Registering costs no native call, so the light budget's
+call cap leaves it to the time budget and a city's lights are all known within
+seconds. Culling applies the column Chebyshev box and the
 section connectivity flood in `TerrainState`, then a power-aware reach test with
 hysteresis. When more lights pass than `ChunkManager.MAX_DRAWN_LIGHTS`, the next
 frames raise the reach test's weight floor for every light alike until the
@@ -998,8 +1109,11 @@ diluting the sampler's candidate pool.
 - Whether a held item's lit element burns is decided once, in `HeldLightState`;
   the flame, the smoke, the hand light, and the held beam all consult it
   (`HeldItemEffectsRenderer`, `LightManager`).
-- A terrain light's cull is the decision not to draw it this frame, never a
-  destroy; the radius `TerrainState` holds is finite and pushed only on
+- A terrain light's cull is the decision not to draw it this frame, never the
+  end of the light: its registration and hash stand until its block goes, and
+  only its native light comes and goes with being drawn, so ReSTIR meets the
+  same source each time (`RemixLight.wake`, `RemixLight.sleep`). The radius
+  `TerrainState` holds is finite and pushed only on
   change, because a changed radius dirties the whole flood, and the draw
   budget raises the weight floor, never that radius (`ChunkManager`,
   `TerrainState`).
@@ -1050,8 +1164,8 @@ integration in the mod, not in the shim. Wrapper and affected mod callers
 change in the same pull request. The fork's own features add nothing to the
 wrapper: they reuse the existing batched `updateTextureFromMemory`,
 config-variable and config-layer entry points. The wrapper changes only by
-taking upstream's fixes to it (Java 8 compatibility, the `remixCall` fault
-guard, crash dumps without the sign-in token).
+taking upstream's changes to it (Java 8 compatibility, the `remixCall` fault
+guard, crash dumps without the sign-in token, the water normal generator).
 
 The wrapper's source of truth, in order, is:
 
@@ -1061,6 +1175,8 @@ The wrapper's source of truth, in order, is:
    `CommandLineRedaction`.
 2. `rtxremix-java/native/remixbridge.cpp`: loads `d3d9.dll`, calls
    `remixapi_InitializeLibrary`, stores the native interface, and forwards calls.
+   `water_normals.cpp` beside it generates the water normal flipbook and never
+   touches the runtime.
 3. `rtxremix-java/native/include/remix_c.h`: the copied C API header.
 4. `rtxremix-java/native/build_native.bat`: the MSVC bridge build.
 5. `packman/remix-sdk.packman.xml`: the published runtime pins.

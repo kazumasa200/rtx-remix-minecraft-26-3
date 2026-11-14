@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
+import com.nvidia.rtxremix.minecraft.util.FailureLogThrottle;
 import com.nvidia.rtxremix.InstanceCategoryBit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,7 +66,7 @@ public final class RemixBlockEntityPass {
 
     private final RecyclingMatrixStack matrices = new RecyclingMatrixStack();
     private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
-    private final RemixSubmitCollector collector = new RemixSubmitCollector(provider);
+    private final VanillaFeatureCapture featureCapture = new VanillaFeatureCapture(provider);
     private final IdentityHashMap<BlockEntityType<?>, String> typeKeyCache = new IdentityHashMap<>();
     private final FailureLogThrottle failures = new FailureLogThrottle(LOGGER, "Block entity");
     // One buffer suffices: the submit consumes the bones before the next capture
@@ -81,7 +82,7 @@ public final class RemixBlockEntityPass {
      *
      * <p>Submitting before the next block entity renders is what lets the provider's
      * consumers recycle: a layer's data is consumed before anything can overwrite it.
-     * The collector drops blob shadows, as for entities, so a spawner's display entity
+     * The capture leaves blob shadows unbuilt, as for entities, so a spawner's display entity
      * casts only the shadow Remix traces.
      */
     public void capture(BlockEntity be, BlockEntityRenderState state, CameraRenderState camera,
@@ -93,8 +94,9 @@ public final class RemixBlockEntityPass {
         ctx.begin(true);
         List<RemixVertexConsumerProvider.CapturedLayer> layers;
         try {
-            collector.setBlockOrigin(be.getBlockPos());
-            dispatcher.submit(state, matrices, collector, camera);
+            featureCapture.setBlockOrigin(be.getBlockPos());
+            dispatcher.submit(state, matrices, featureCapture.begin(), camera);
+            featureCapture.drain();
             layers = provider.endEntity();
         } catch (Exception e) {
             failures.noteFailure("capturing", "block entity " + typeKey(be), be.getBlockPos(), e);
@@ -105,7 +107,8 @@ public final class RemixBlockEntityPass {
             // one look nested. The bone count stays readable for the snapshot below.
             matrices.reset();
             ctx.reset();
-            collector.setBlockOrigin(BlockPos.ZERO);
+            featureCapture.discard();
+            featureCapture.setBlockOrigin(BlockPos.ZERO);
         }
         frameCaptureNanos += System.nanoTime() - captureStart;
         if (layers.isEmpty()) {

@@ -38,6 +38,16 @@ or render distance draws it less far. Raise it to see further if video memory
 allows, or lower it if video memory runs short. Unlimited, past 4096 MiB, sets
 no cap at all; Remix then holds everything Distant Horizons shows.
 
+**LOD Light Glow** sets how strongly blocks that give off light, such as
+torches and lamps, glow in Distant Horizons' terrain, as a share of how they
+glow nearby: 0.2 by default, and 0 draws them as plain blocks. Lava always
+glows in full. **LOD Light Fade** dims those lights the coarser the terrain's
+detail, a quarter at each coarser level: Distant Horizons draws a far torch as
+a box several blocks wide, which glowed white on distant rooftops. It is on by
+default. Off, lights glow the same at every distance, so a city seen from
+above keeps its lights, but far ones show as glowing boxes. Changing either
+installs the LOD terrain again, which takes a moment.
+
 The background frame cap only lowers Minecraft's own Max Framerate;
 Unlimited leaves that setting in charge. A running benchmark is never capped,
 since it measures the renderer.

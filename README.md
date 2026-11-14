@@ -56,7 +56,8 @@ in other worlds and resource packs.
 - **Rain.** Puddles form on open ground, and distant land fades into the
   overcast.
 - **Distant terrain.** With Distant Horizons 3.3.4 installed, its terrain
-  beyond the render distance is path traced too (experimental).
+  beyond the render distance is path traced too (experimental). Other releases
+  get a nearer, plainer LOD terrain built from Distant Horizons' public data.
 - **Lighter in busy places.** Where thousands of lights are in reach, as in a
   city lit by sea lanterns, about 4,000 are drawn, so the frame rate holds.
 

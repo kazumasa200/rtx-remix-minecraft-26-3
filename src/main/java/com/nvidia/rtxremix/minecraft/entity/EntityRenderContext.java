@@ -40,6 +40,8 @@ public final class EntityRenderContext {
     /** {@link #getBlockItemLayer()} outside the render of a block item. */
     public static final int NO_BLOCK_ITEM = -1;
 
+    private static final Matrix4fc IDENTITY = new Matrix4f();
+
     /** Open capture boundaries; the capture is active while this is positive. */
     private int depth;
 
@@ -58,6 +60,11 @@ public final class EntityRenderContext {
 
     /** Current bone index counter (incremented per ModelPart.render). */
     private int boneCounter;
+
+    /** Bone of the vertices written without a pose, or -1 while they sit under the capture's root. */
+    private int unposedBone = -1;
+    /** See {@link #unposedVerticesStreamed}. */
+    private boolean unposedStreamed = true;
 
     /** Rigid pivot transforms collected during this capture.
      *  Pre-allocated Matrix4f objects are reused across captures to avoid GC pressure. */
@@ -90,6 +97,8 @@ public final class EntityRenderContext {
         this.blockItemLayer = NO_BLOCK_ITEM;
         this.eyeKnown = false;
         this.boneCounter = 0;
+        this.unposedBone = -1;
+        this.unposedStreamed = true;
         // Bone transforms are not cleared: the pre-allocated Matrix4f objects are
         // reused and boneCounter bounds the valid range [0, boneCounter).
     }
@@ -123,6 +132,8 @@ public final class EntityRenderContext {
         this.heldItemHolder = null;
         this.blockItemLayer = NO_BLOCK_ITEM;
         this.eyeKnown = false;
+        this.unposedBone = -1;
+        this.unposedStreamed = true;
     }
 
     /** Whether a capture boundary is open at any depth. */
@@ -189,6 +200,37 @@ public final class EntityRenderContext {
             bonePoolHighWater = boneCounter;
         }
         return index;
+    }
+
+    /**
+     * Gives the vertices written without a pose a bone of their own, the identity, so
+     * that what the capture owner does to every bone reaches them. The first-person
+     * pass needs it: its bones carry the view correction, and a mod that transforms
+     * its own vertices, as TACZ does a gun's, drew ten times too large and turned with
+     * the camera (#29).
+     */
+    public void boneUnposedVertices() {
+        unposedBone = pushBone(IDENTITY);
+    }
+
+    /** The bone of a vertex written without a pose, or -1 for none. */
+    public int unposedBone() {
+        return unposedBone;
+    }
+
+    /**
+     * Whether vertices written without a pose are taken as transformed afresh every
+     * frame, so the submitter keeps their mesh out of its pool. They are another mod's
+     * renderer at work wherever vanilla's renderers run, and an animated model's hash
+     * never repeats: the pool would keep every stale mesh of a gun's 18,000 vertices.
+     */
+    public boolean unposedVerticesStreamed() {
+        return unposedStreamed;
+    }
+
+    /** For a capture whose owner writes unposed vertices itself and they hold still. */
+    public void poolUnposedVertices() {
+        unposedStreamed = false;
     }
 
     /**

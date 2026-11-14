@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
+import com.nvidia.rtxremix.minecraft.util.FailureLogThrottle;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.QuadInstance;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -80,6 +81,8 @@ public final class RemixBlockDamagePass {
         provider.beginEntity();
         matrices.pushPose();
         ctx.begin(true);
+        // The crack's vertices are this pass's own and hold still, so their mesh pools.
+        ctx.poolUnposedVertices();
         List<RemixVertexConsumerProvider.CapturedLayer> layers;
         try {
             VertexConsumer crack = projector.target(provider.getBuffer(

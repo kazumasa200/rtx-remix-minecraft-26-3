@@ -16,10 +16,13 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 /**
  * Places local first-person item lights on the camera centerline while keeping
  * their emitter sphere out of nearby block collision geometry.
+ *
+ * <p>The light stands as far ahead as {@link FirstPersonShadowModelPlacement}
+ * keeps lights from the hidden model's head, so the model needs no offset until a
+ * wall pulls the light closer.
  */
 final class HeldLightPlacement {
 
-    static final double PREFERRED_DISTANCE = 0.72;
     static final double WALL_CLEARANCE = 0.02;
     static final double OUTWARD_SPEED = 3.0;
     static final float MAX_FRAME_DT_SECONDS = 0.1f;
@@ -39,7 +42,7 @@ final class HeldLightPlacement {
                 source,
                 origin,
                 forward,
-                PREFERRED_DISTANCE,
+                preferredDistance(emitterRadius),
                 expansion);
         Double previousDistance = previousDistances.get(slot);
         double distance = previousDistance == null
@@ -47,6 +50,12 @@ final class HeldLightPlacement {
                 : advanceDistance(previousDistance, targetDistance, dtSeconds);
         previousDistances.put(slot, distance);
         return origin.add(forward.scale(distance));
+    }
+
+    /** The distance ahead of the camera at which the light clears the hidden model's head. */
+    static double preferredDistance(double emitterRadius) {
+        return FirstPersonShadowModelPlacement.clearCenterDistance(
+                Math.max(0.0, emitterRadius), FirstPersonShadowModelPlacement.TARGET_LIGHT_GAP);
     }
 
     void reset(EquipmentSlot slot) {

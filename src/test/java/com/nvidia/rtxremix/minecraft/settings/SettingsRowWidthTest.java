@@ -77,6 +77,8 @@ class SettingsRowWidthTest {
             entry("rtxremix.setting.dist.autoFade", "OFF"),
             entry("rtxremix.setting.dist.lod", "OFF"),
             entry("rtxremix.setting.dist.lodMemory", "4096 MiB"),
+            entry("rtxremix.setting.dist.lodLightGlow", "1.00"),
+            entry("rtxremix.setting.dist.lodLightFade", "OFF"),
             entry("rtxremix.setting.dist.light", "Auto"),
             entry("rtxremix.setting.dist.entity", "Auto"),
             entry("rtxremix.setting.light.reach", "256"),

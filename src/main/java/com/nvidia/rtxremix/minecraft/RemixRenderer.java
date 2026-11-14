@@ -13,6 +13,7 @@ import com.nvidia.rtxremix.PresentInfo;
 import com.nvidia.rtxremix.RemixAPI;
 import com.nvidia.rtxremix.RemixException;
 import com.nvidia.rtxremix.StartupInfo;
+import com.nvidia.rtxremix.minecraft.util.FailureLogThrottle;
 import com.nvidia.rtxremix.minecraft.asset.RemixInstanceStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixLightStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixMaterial;
@@ -81,6 +82,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.material.FogType;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Vector3fc;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GLCapabilities;
 import org.lwjgl.sdl.SDLProperties;
@@ -155,6 +157,22 @@ public class RemixRenderer {
     private GlInterop interopGlVk = null;
     
     private boolean submitFrameCalled = false;
+    /**
+     * One per step of the frame that continues past a failure, and one for the frame itself:
+     * a persistent failure logs once rather than every frame (a broken light logged 4,000
+     * traces in a minute).
+     */
+    private final FailureLogThrottle lightFailures = new FailureLogThrottle(LOGGER, "Light update");
+    private final FailureLogThrottle chunkFailures = new FailureLogThrottle(LOGGER, "Chunk update");
+    private final FailureLogThrottle lodFailures = new FailureLogThrottle(LOGGER, "LOD terrain update");
+    private final FailureLogThrottle entityFailures = new FailureLogThrottle(LOGGER, "Entity rendering");
+    private final FailureLogThrottle outlineFailures = new FailureLogThrottle(LOGGER, "Block outline rendering");
+    private final FailureLogThrottle skyFailures = new FailureLogThrottle(LOGGER, "Sky rendering");
+    private final FailureLogThrottle cloudFailures = new FailureLogThrottle(LOGGER, "Cloud rendering");
+    private final FailureLogThrottle frameFailures = new FailureLogThrottle(LOGGER, "Frame rendering");
+    private final FailureLogThrottle[] failureLogs = {
+            lightFailures, chunkFailures, lodFailures, entityFailures,
+            outlineFailures, skyFailures, cloudFailures, frameFailures};
     private boolean presentFailureLogged = false;
     private int presentedFrames = 0;
 
@@ -624,7 +642,7 @@ public class RemixRenderer {
         if (weatherRenderer != null) weatherRenderer.cleanup();
         puddles.destroy();
         if (chunkManager != null) chunkManager.clear();
-        if (lodTerrain != null) lodTerrain.clear();
+        if (lodTerrain != null) lodTerrain.reloadTextures();
         if (textureManager != null) textureManager.reload();
         if (skyRenderer != null) skyRenderer.reloadResources();
         if (cloudRenderer != null) {
@@ -826,9 +844,16 @@ public class RemixRenderer {
         LOGGER.info("Scene origin moved to ({}, {})", origin.x(), origin.z());
     }
 
-    public void renderAndSubmitFrame() {
+    /**
+     * Builds and submits this frame's scene.
+     *
+     * @return whether the scene was submitted. When it was not, the shared image still holds
+     *     the composite the last present copied into it, and compositing that again turned it
+     *     upside down under the new HUD every frame, so the caller composites nothing.
+     */
+    public boolean renderAndSubmitFrame() {
         if (!initialized || remixApi == null) {
-            return;
+            return false;
         }
 
         joinBurstHold.onFrame(System.nanoTime());
@@ -843,6 +868,7 @@ public class RemixRenderer {
 
         CompletableFuture<ParticleRenderResult> particleFuture = null;
         boolean entityFrameClosed = false;
+        boolean submitted = false;
         try (ProfileScope frameScope = ProfileScope.begin("renderAndSubmitFrame")) {
             Minecraft client = Minecraft.getInstance();
             ClientLevel world = client.level;
@@ -854,7 +880,7 @@ public class RemixRenderer {
                 // Closed by the finally, like the RTX-disabled branch below. endFrame is not
                 // idempotent: it re-adds elapsed from the same frame start and refolds min,
                 // max and the frame count.
-                return;
+                return false;
             }
 
             // RTX disabled: hand all rendering back to vanilla's GL path. Skip every
@@ -871,7 +897,7 @@ public class RemixRenderer {
                 // A payload prepared before the toggle holds world-space vertices from the
                 // old camera position; publishing it on re-enable would draw stale geometry.
                 discardPendingParticleFrame();
-                return;
+                return false;
             }
 
             // Submit the prepared frame from the previous render call before dispatching
@@ -905,6 +931,8 @@ public class RemixRenderer {
                 // one-frame lag between a spinning beacon and its beam.
                 lightManager.updateEntityLights(world, camera, tickDelta);
                 lightManager.updateLights(world);
+            } catch (RuntimeException e) {
+                lightFailures.noteFailure("updating lights", e);
             } finally {
                 perfTimer.end(perfLights);
             }
@@ -913,12 +941,12 @@ public class RemixRenderer {
                 try {
                     chunkManager.updateVisibleChunks(world, cameraPos, perfTimer, perfChunkGen, perfChunkDraw);
                 } catch (Exception e) {
-                    LOGGER.error("Error updating chunks", e);
+                    chunkFailures.noteFailure("updating chunks", e);
                 }
                 try (ProfileScope lodScope = ProfileScope.begin("LOD terrain")) {
                     lodTerrain.update(remixApi, cameraPos, textureManager, true, chunkManager);
                 } catch (Exception e) {
-                    LOGGER.error("Error updating LOD terrain", e);
+                    lodFailures.noteFailure("updating LOD terrain", e);
                 }
                 if (textureManager != null) {
                     rainSurfaces.update(world, tickDelta, textureManager);
@@ -960,7 +988,7 @@ public class RemixRenderer {
                         perfTimer.count(cntEntOffReused, stats.offFrustumReused());
                         perfTimer.count(cntEntPoolSize, stats.poolSize());
                     } catch (Exception e) {
-                        LOGGER.error("Error rendering entities", e);
+                        entityFailures.noteFailure("rendering entities", e);
                     } finally {
                         perfTimer.end(perfEntities);
                     }
@@ -986,7 +1014,7 @@ public class RemixRenderer {
                 try (ProfileScope blockOutlineScope = ProfileScope.begin("BlockOutline")) {
                     blockOutlinePass.submit();
                 } catch (Exception e) {
-                    LOGGER.error("Error rendering targeted-block outline", e);
+                    outlineFailures.noteFailure("rendering the targeted-block outline", e);
                 }
             }
 
@@ -996,7 +1024,7 @@ public class RemixRenderer {
                 try (ProfileScope skyScope = ProfileScope.begin("Sky")) {
                     skyRenderer.render(world, cameraPos, tickDelta);
                 } catch (Exception e) {
-                    LOGGER.error("Error rendering sky", e);
+                    skyFailures.noteFailure("rendering the sky", e);
                 } finally {
                     perfTimer.end(perfSky);
                 }
@@ -1019,7 +1047,7 @@ public class RemixRenderer {
                             .drawCalls(cloudRenderer.getLastDrawCount())
                             .vertexCount(cloudRenderer.getLastVertexCount());
                 } catch (Exception e) {
-                    LOGGER.error("Error rendering clouds", e);
+                    cloudFailures.noteFailure("rendering clouds", e);
                 } finally {
                     perfTimer.end(perfClouds);
                 }
@@ -1058,6 +1086,7 @@ public class RemixRenderer {
             try (ProfileScope submitScope = ProfileScope.begin("Submit")) {
                 submitFrame();
                 submitFrameCalled = true;
+                submitted = true;
             } finally {
                 perfTimer.end(perfSubmit);
             }
@@ -1068,10 +1097,9 @@ public class RemixRenderer {
             particleFuture = null;
 
         } catch (RemixException e) {
-            LOGGER.error("Remix error during frame render: {} (code: {})",
-                e.getMessage(), e.getErrorCode(), e);
+            frameFailures.noteFailure("in Remix during frame render (code " + e.getErrorCode() + ")", e);
         } catch (Exception e) {
-            LOGGER.error("Error during frame render", e);
+            frameFailures.noteFailure("during frame render; the frame is not submitted", e);
         } finally {
             // In-place capture during vanilla's world render opens the entity frame before
             // this method runs, so a frame that aborts above the bracket would otherwise
@@ -1093,7 +1121,9 @@ public class RemixRenderer {
             }
             perfTimer.endFrame();
             benchmarkController.onFrameEnd(perfTimer);
+            for (FailureLogThrottle log : failureLogs) log.endFrame();
         }
+        return submitted;
     }
 
     /**
@@ -1303,24 +1333,12 @@ public class RemixRenderer {
     private void updateCamera(Camera camera, float tickDelta) {
         try {
             Vec3 pos = camera.position();
-            float pitch = camera.xRot();
-            float yaw = camera.yRot();
-    
-            float yawRad = (float) Math.toRadians(-yaw);
-            float pitchRad = (float) Math.toRadians(pitch);
-    
-            float forwardX = (float) (Math.sin(yawRad) * Math.cos(pitchRad));
-            float forwardY = (float) (-Math.sin(pitchRad));
-            float forwardZ = (float) (Math.cos(yawRad) * Math.cos(pitchRad));
-    
-            float rightX = (float) (-Math.cos(yawRad));
-            float rightY = 0.0f;
-            float rightZ = (float) (Math.sin(yawRad));
-    
-            float upX = rightY * forwardZ - rightZ * forwardY;
-            float upY = rightZ * forwardX - rightX * forwardZ;
-            float upZ = rightX * forwardY - rightY * forwardX;
-    
+            // The camera's own axes, not ones rebuilt from its yaw and pitch: a mod that rolls the
+            // camera turns its rotation, which yaw and pitch do not show (#28).
+            Vector3fc forward = camera.forwardVector();
+            Vector3fc up = camera.upVector();
+            Vector3fc left = camera.leftVector();
+
             Minecraft client = Minecraft.getInstance();
             float worldFov = camera.getFov();
             int width = client.getWindow().getWidth();
@@ -1346,9 +1364,9 @@ public class RemixRenderer {
     
             CameraInfoParameterizedEXT worldCameraParams = CameraInfoParameterizedEXT.builder()
                 .position(SceneSpace.x(pos.x), SceneSpace.y(pos.y), SceneSpace.z(pos.z))
-                .forward(forwardX, forwardY, forwardZ)
-                .up(upX, upY, upZ)
-                .right(rightX, rightY, rightZ)
+                .forward(forward.x(), forward.y(), forward.z())
+                .up(up.x(), up.y(), up.z())
+                .right(-left.x(), -left.y(), -left.z())
                 .fovYInDegrees(worldFov)
                 .aspect(aspect)
                 .nearPlane(0.05f)

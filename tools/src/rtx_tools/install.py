@@ -12,7 +12,9 @@ from pathlib import Path
 from .benchmark import util
 
 # The runtime textures the mod loads from <gameDir>/textures/. build.gradle checks the same files after every pull.
-RUNTIME_TEXTURE_FILES = ("overcast_thunderstorm_bc6u.dds", "water_normals_flipbook.dds")
+RUNTIME_TEXTURE_FILES = ("overcast_thunderstorm_bc6u.dds",)
+# Shipped by earlier builds; the bridge generates the water normals at startup now.
+OBSOLETE_RUNTIME_TEXTURE_FILES = ("water_normals_flipbook.dds",)
 
 
 def runtime_source(project_dir: Path, arch: str) -> Path:
@@ -129,7 +131,15 @@ def install_development_build(project_dir: Path, *, game_dir: Path | None = None
     shutil.copy2(packaging / "rtx.conf", game_dir / "rtx.conf")
     # Shipped profiles are refreshed; extra author-created files stay intact.
     shutil.copytree(packaging / "rtx-remix", game_dir / "rtx-remix", dirs_exist_ok=True)
-    shutil.copytree(textures, game_dir / "textures", dirs_exist_ok=True)
+    (game_dir / "textures").mkdir(exist_ok=True)
+    for name in OBSOLETE_RUNTIME_TEXTURE_FILES:
+        obsolete = game_dir / "textures" / name
+        if obsolete.is_file():
+            obsolete.unlink()
+            print(f"Removed obsolete runtime texture {obsolete}")
+    # By name: the Packman package still holds the retired water normals.
+    for name in RUNTIME_TEXTURE_FILES:
+        shutil.copy2(textures / name, game_dir / "textures" / name)
     migration = util.run(
         [
             "powershell",

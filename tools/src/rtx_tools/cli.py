@@ -820,8 +820,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser(
         "textures",
-        help="generate the runtime textures",
-        description="Generates the runtime textures the mod loads from <gameDir>/textures/.",
+        help="generate texture references",
+        description="Generates developer reference textures.",
         formatter_class=HelpFormatter,
     )
     textures_sub = p.add_subparsers(dest="textures_command", required=True, metavar="textures-command")
@@ -831,7 +831,8 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Writes water_normals_flipbook.dds: 120 frames of a looping, tiling ocean surface,\n"
             "packed 12 x 10 into one BC5 texture with mips. A seed always produces the same surface.\n"
-            "Publishing the result to Packman is a separate step."
+            "The game does not load this file: the JNI bridge generates the same frames at startup,\n"
+            "and this one is the reference to compare them with."
         ),
         epilog="""examples:
   tools\\rtx.bat textures water-normals

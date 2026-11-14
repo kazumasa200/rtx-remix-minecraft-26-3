@@ -11,6 +11,8 @@ import com.nvidia.rtxremix.minecraft.profiling.WorldRendererProfilingAccess;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.minecraft.RemixRenderer;
 import com.nvidia.rtxremix.minecraft.RtxRemixMod;
+import net.minecraft.client.renderer.state.level.ParticleGroupRenderState;
+import com.nvidia.rtxremix.minecraft.particle.RemixParticleRenderer;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
@@ -327,7 +329,12 @@ public abstract class WorldRendererMixin
         rtxremix$transitionProfilerPhase(name);
     }
 
-    /** Remix draws the particles; vanilla would only write them into the frame Remix replaces. */
+    /**
+     * Remix draws the single-quad particles; vanilla would only write them into the frame
+     * Remix replaces. Every other group still submits: item pickups and elder guardians
+     * are models, which reach the scene like other submitted models, and a mod's own
+     * group is drawn as the mod draws it. Skipping them all left them out of the image.
+     */
     @WrapOperation(
             method = "submitFeatures",
             at = @At(
@@ -341,6 +348,14 @@ public abstract class WorldRendererMixin
             Operation<Void> original) {
         if (!RtxRemixMod.isRemixWorldRendering()) {
             original.call(particles, collector, camera);
+            return;
+        }
+        List<ParticleGroupRenderState> groups = particles.particles;
+        for (int i = 0; i < groups.size(); i++) {
+            ParticleGroupRenderState group = groups.get(i);
+            if (!RemixParticleRenderer.isRemixDrawn(group)) {
+                group.submit(collector, camera);
+            }
         }
     }
 

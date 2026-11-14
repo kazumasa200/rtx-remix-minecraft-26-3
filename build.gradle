@@ -383,10 +383,11 @@ def copyRuntimeConfigTask = tasks.register('copyRuntimeConfig') {
 // junctions beside it, it sits where git has never tracked a file, so no
 // checkout can write or delete through it into the cache.
 def runtimeTexturesDir = 'remix-runtime/textures'
-// The files the mod loads from <gameDir>/textures/ (SkyRenderer and
-// BlockTextureManager), which the distributable JAR carries for
-// NativeExtractor and the installer's uninstall removes.
-def runtimeTextureFiles = ['overcast_thunderstorm_bc6u.dds', 'water_normals_flipbook.dds']
+// The files the mod loads from <gameDir>/textures/ (SkyRenderer), which the
+// distributable JAR carries for NativeExtractor and the installer's uninstall
+// removes. The Packman package still holds water_normals_flipbook.dds, which
+// the bridge now generates at startup, so nothing below copies the folder whole.
+def runtimeTextureFiles = ['overcast_thunderstorm_bc6u.dds']
 def fetchRuntimeTexturesTask = tasks.register('fetchRuntimeTextures', Exec) {
     description = 'Pulls the runtime textures pinned in packman/textures.packman.xml'
     group = 'build setup'
@@ -430,7 +431,9 @@ def fetchRuntimeTexturesTask = tasks.register('fetchRuntimeTextures', Exec) {
 
 def syncRuntimeTexturesTask = tasks.register('syncRuntimeTextures', Sync) {
     dependsOn fetchRuntimeTexturesTask
-    from runtimeTexturesDir
+    from(runtimeTexturesDir) {
+        include runtimeTextureFiles
+    }
     into 'run/textures'
 }
 
@@ -491,6 +494,8 @@ tasks.register('compileNativeWin64', Exec) {
     commandLine 'cmd', '/c', file('rtxremix-java/native/build_native.bat').absolutePath, 'x64'
     inputs.files file('rtxremix-java/native/build_native.bat'),
                  file('rtxremix-java/native/remixbridge.cpp'),
+                 file('rtxremix-java/native/water_normals.cpp'),
+                 file('rtxremix-java/native/water_normals.h'),
                  file('rtxremix-java/native/include/remix_c.h')
     outputs.files file('build/native/win64/remixbridge.dll'),
                   file('build/native/win64/remixbridge.pdb')
@@ -503,6 +508,8 @@ tasks.register('compileNativeArm64', Exec) {
     commandLine 'cmd', '/c', file('rtxremix-java/native/build_native.bat').absolutePath, 'arm64'
     inputs.files file('rtxremix-java/native/build_native.bat'),
                  file('rtxremix-java/native/remixbridge.cpp'),
+                 file('rtxremix-java/native/water_normals.cpp'),
+                 file('rtxremix-java/native/water_normals.h'),
                  file('rtxremix-java/native/include/remix_c.h')
     outputs.files file('build/native/arm64/remixbridge.dll'),
                   file('build/native/arm64/remixbridge.pdb')

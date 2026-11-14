@@ -13,6 +13,83 @@ also part of every mod file name.
 
 ### Changed
 
+- The water's wave normals are computed when the game starts, in about a second,
+  and no longer shipped as a 160 MB texture: the download is about 145 MB
+  smaller, and `textures\water_normals_flipbook.dds` is removed from the game
+  folder on the next launch. The water looks the same. After upstream's
+  generator (NVIDIAGameWorks/rtx-remix-minecraft#106)
+
+## 0.4.0-pre.10 - 2026-11-14
+
+### Fixed
+
+- With a light in hand, the player's shadow and reflection stay where the player
+  is and follow the view smoothly. The hidden body was held about a third of a
+  block behind and jumped in steps as the view turned (#33)
+- Item pickups, the elder guardian's warning and particles a mod draws in a group
+  of its own show with RTX on. Every particle group but the one Remix draws was
+  left out of the image
+
+## 0.4.0-pre.9 - 2026-11-13
+
+### Added
+
+- Distant Horizons: with a release other than 3.3.4, LOD terrain is built from
+  Distant Horizons' public data, out to 4096 blocks and coloured by block and biome
+  rather than with its textures, instead of none at all. 3.3.4 keeps the full LOD
+  terrain
+
+### Changed
+
+- Distant Horizons: its renderer is captured only with Distant Horizons 3.3.4, the
+  release the capture was written against. With another release the game starts,
+  logs a warning and keeps Distant Horizons' own drawing off the path-traced image,
+  where a changed internal could stop it while loading
+
+### Fixed
+
+- The debug world (Debug Mode world type) renders. A copper beacon whose facing lies
+  on its mount's axis, a state only commands and the debug world make, failed every
+  frame, and the picture stayed upside down and doubled
+- A frame that fails before it reaches Remix shows nothing of the world rather than
+  the previous frame turned upside down, and its error is logged once rather than
+  every frame
+
+## 0.4.0-pre.8 - 2026-11-13
+
+### Changed
+
+- Entities, block entities and the first-person hand are captured after vanilla's
+  own render queue and feature renderers have processed them, so what another mod
+  adds there is drawn without code written for that mod
+
+### Fixed
+
+- With Entity Model Features and a player model pack such as FA+Player, the
+  player's body animates with RTX on as it does without, and a held gun sits in
+  the animated hand (#29, #30)
+
+- Distant Horizons: LODs take the textures of a resource pack chosen inside a
+  world. They kept the old pack's until the world was entered again, and could
+  show the wrong texture on a block (#25)
+
+## 0.4.0-pre.7 - 2026-11-12
+
+### Fixed
+
+- A Figura avatar (NoFigura) shows in the path-traced world, with the text,
+  items and blocks a script attaches to it, and hides the vanilla player where
+  it asks to. With RTX on, the player drew with the vanilla model and skin and
+  the avatar did not draw at all (#30)
+
+## 0.4.0-pre.6 - 2026-11-12
+
+Tagged but not published; its change is in 0.4.0-pre.7.
+
+## 0.4.0-pre.5 - 2026-11-11
+
+### Changed
+
 - The recommended JVM arguments run ZGC on the fixed 16 GB heap, touched up
   front, with compact object headers and string deduplication. Over a 4K city
   flight on an RTX 5090 the slowest frame fell from 77 ms to 51 ms and the 99th
@@ -51,6 +128,17 @@ also part of every mod file name.
   image, so their web falls into shadow with the rest of the light and shows
   in reflections, on a pool's floor and walls alike, whatever water distance
   `/rtx water distance` sets.
+- A world with very many lights no longer slows down as they load. In a city
+  of some 290,000 light blocks the frame time climbed from 8 ms to about 27 ms
+  over the first four minutes and stayed there, with the GPU a third idle;
+  it now holds at 8 ms. The lights drawn are the same, and all of them are
+  known within seconds of arriving instead of over minutes.
+- With Distant Horizons, a short look through a sight, spyglass or zoom no
+  longer rebuilds the distant terrain in view. Its finer detail for a zoomed
+  view arrives once the zoom has been held for two and a half seconds and
+  stays for ten seconds after.
+- With Distant Horizons' LOD terrain, the sky seen through stained glass or
+  water keeps its tint instead of showing through untinted.
 - The Unbound clouds seen through stained glass, ice or water show as the
   runtime draws them, tinted with the sky behind, instead of white over it.
 - Under water, the caustics on a pool's walls no longer break into fine vertical
@@ -62,9 +150,24 @@ also part of every mod file name.
   view through a glass tank of water no longer breaks into dark patches and
   folded sky, and a stack of different colours tints with every one of them.
   After PurrsianMilkman's Glass Layer Gap.
+- A mod that rolls the camera, such as Do a Barrel Roll in elytra flight, rolls
+  the path-traced world as well; the world used to stay level while the clouds
+  turned (#28).
+- A first-person model another mod draws with its own renderer, such as a gun
+  from Timeless and Classics Zero, shows in the hand as it does without RTX. It
+  was missing or drew many times too large and turned with the view, and a
+  model of more than about a thousand faces was cut short. Such a gun also
+  shows in the hands of players seen from outside (#29).
 
 ### Added
 
+- LOD Light Glow and LOD Light Fade (Performance) set how lights in distant
+  Distant Horizons terrain glow. Glow is how strongly torches, lamps and other
+  lights glow there, 0.2 of their glow nearby as before, down to none. Fade is
+  the dimming of far lights that 0.4.0-pre.4 brought, now a switch: off,
+  lights glow the same at every distance, so a city seen from above keeps its
+  lights, while far ones show as glowing boxes again (#23). Glow replaces the
+  `rtxremix.lod.lampEmission` JVM property.
 - Sun Size (Lighting) widens the light of the sun and the moon so the edges
   of their shadows soften, without lighting more. Glass Block Depth
   (Materials) sets how strongly a block of glass tints what lies behind it.

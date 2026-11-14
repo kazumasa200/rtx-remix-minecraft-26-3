@@ -121,6 +121,29 @@ class ChunkManagerLightBudgetTest {
         }
     }
 
+    @Test
+    void theAwakeListForgetsLightsThatWereRemovedOrSleep() throws Exception {
+        ChunkManager manager = new ChunkManager(null);
+        try {
+            @SuppressWarnings("unchecked")
+            java.util.ArrayList<TerrainLight> awake = field(manager, "awakeLights", java.util.ArrayList.class);
+            RemixLight removed = new RemixLight(null, null);
+            removed.destroy();
+            // Never given a native light, so it reads as asleep.
+            RemixLight asleep = new RemixLight(null, null);
+            assertTrue(asleep.isAsleepFast());
+            assertFalse(removed.isAsleepFast());
+            awake.add(new TerrainLight(removed));
+            awake.add(new TerrainLight(asleep));
+
+            invoke(manager, "sleepIdleLights", new Class<?>[0]);
+
+            assertTrue(awake.isEmpty());
+        } finally {
+            manager.destroy();
+        }
+    }
+
     private static RemixLight[] lights(int count) {
         RemixLight[] lights = new RemixLight[count];
         Arrays.setAll(lights, ignored -> new RemixLight(null, null));

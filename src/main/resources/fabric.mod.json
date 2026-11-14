@@ -28,6 +28,7 @@
     "mixins": [
         "rtx-remix-renderer.mixins.json",
         "rtx-remix-renderer.distanthorizons.mixins.json",
+        "rtx-remix-renderer.distanthorizons-untested.mixins.json",
         "rtx-remix-renderer.sodium.mixins.json",
         "rtx-remix-renderer.immediatelyfast.mixins.json"
     ],

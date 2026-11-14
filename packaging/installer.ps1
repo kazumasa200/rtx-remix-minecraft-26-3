@@ -130,7 +130,7 @@ param(
 $ErrorActionPreference = 'Continue'
 
 # --- Constants (kept in sync with build.gradle / rtxremix-java) ---
-$script:APP_VERSION          = '0.4.0-pre.4'
+$script:APP_VERSION          = '0.4.0-pre.10'
 $script:PRISM_INSTANCE_NAME  = 'NVIDIA RTX Remix for Minecraft'
 # Legacy instance names kept for backward detection only; prior installs
 # used shorter / differently-worded names. Ordered newest-to-oldest.
@@ -3016,7 +3016,7 @@ function Invoke-Uninstall {
         Write-Host "    - $($script:C_DIM)<mc>/mods/rtx-remix-renderer-*.jar$($script:C_RESET)"
         Write-Host "    - $($script:C_DIM)<mc>/mods/fabric-api-$($script:FABRIC_API_VERSION).jar$($script:C_RESET) (Microsoft: only our exact version; Prism: all fabric-api-*)"
         Write-Host "    - $($script:C_DIM)<mc>/remix-sdk/, <mc>/rtx.conf, <mc>/.rtx-remix-version$($script:C_RESET)"
-        Write-Host "    - $($script:C_DIM)<mc>/textures/water_normals_flipbook.dds, <mc>/textures/overcast_thunderstorm_bc6u.dds$($script:C_RESET)"
+        Write-Host "    - $($script:C_DIM)<mc>/textures/overcast_thunderstorm_bc6u.dds and any water_normals_flipbook.dds an earlier release left$($script:C_RESET)"
         Write-Host "    - $($script:C_DIM)<mc>/resourcepacks/RtxRemix-LabPBR/$($script:C_RESET) (if left by an earlier version)"
         Write-Host "  Preserved: $($script:C_DIM)<mc>/rtx-remix/mods/minecraft-logic/$($script:C_RESET) (authored profiles)"
         if (-not (Confirm-YesNo -Prompt 'Proceed?' -DefaultNo)) {

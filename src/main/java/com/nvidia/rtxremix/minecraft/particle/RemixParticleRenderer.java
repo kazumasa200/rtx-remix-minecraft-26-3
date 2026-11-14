@@ -29,6 +29,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleGroup;
 import net.minecraft.client.particle.ParticleRenderType;
+import net.minecraft.client.renderer.state.level.ParticleGroupRenderState;
 import net.minecraft.client.particle.SingleQuadParticle;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -52,6 +53,20 @@ import java.util.Map;
  * submit only the active particle range instead of the high-water capacity.
  */
 public class RemixParticleRenderer {
+    /**
+     * The extracted state of the single-quad group, the one group whose particles this
+     * renderer draws; written on the render thread by the particle engine's extract.
+     */
+    private static ParticleGroupRenderState remixDrawnState;
+
+    public static void noteRemixDrawnState(ParticleGroupRenderState state) {
+        remixDrawnState = state;
+    }
+
+    /** Whether Remix draws this group's particles, so vanilla's submit of it must be skipped. */
+    public static boolean isRemixDrawn(ParticleGroupRenderState state) {
+        return state == remixDrawnState;
+    }
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RemixParticleRenderer.class);
     private static final int INITIAL_CAPACITY = 2048;

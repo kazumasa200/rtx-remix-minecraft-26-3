@@ -17,9 +17,9 @@ import net.minecraft.resources.Identifier;
 /**
  * The {@link MultiBufferSource} every Remix capture pass renders into.
  *
- * <p>Stands in for vanilla's feature renderers while an entity, the first-person
- * model or a block entity is submitted for Remix: {@link RemixSubmitCollector}
- * draws each submit straight into it. For each
+ * <p>Takes the vertices vanilla's feature renderers build while an entity, the
+ * first-person model or a block entity is captured for Remix
+ * ({@link VanillaFeatureCapture}). For each
  * {@link RenderType} requested via {@link #getBuffer(RenderType)}, it returns a
  * part-recording {@link RemixCapturingConsumer} that records vertices alongside the
  * layer's texture {@link Identifier}.
@@ -27,7 +27,7 @@ import net.minecraft.resources.Identifier;
  * <h3>Usage per capture</h3>
  * <ol>
  *   <li>Call {@link #beginEntity()} before rendering</li>
- *   <li>Submit through a {@link RemixSubmitCollector} over this provider</li>
+ *   <li>Submit to {@link VanillaFeatureCapture#begin()} and drain it</li>
  *   <li>Call {@link #endEntity()} after rendering; it returns all captured layers</li>
  * </ol>
  */
@@ -89,6 +89,11 @@ public class RemixVertexConsumerProvider {
     }
 
     // ---- Buffers by layer ----
+
+    /** A consumer that drops what is drawn into it, for a layer the caller knows Remix has no use for. */
+    static VertexConsumer discarded() {
+        return NoOpVertexConsumer.INSTANCE;
+    }
 
     /** Returns the consumer that captures geometry drawn with {@code layer}. */
     public VertexConsumer getBuffer(RenderType layer) {

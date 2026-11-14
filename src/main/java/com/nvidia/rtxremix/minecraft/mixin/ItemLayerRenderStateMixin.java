@@ -7,7 +7,8 @@ package com.nvidia.rtxremix.minecraft.mixin;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.nvidia.rtxremix.minecraft.entity.HeldItemEffectsRenderer;
 import com.nvidia.rtxremix.minecraft.entity.ItemRenderSource;
-import com.nvidia.rtxremix.minecraft.entity.RemixSubmitCollector;
+import com.nvidia.rtxremix.minecraft.entity.RemixVertexConsumerProvider;
+import com.nvidia.rtxremix.minecraft.entity.VanillaFeatureCapture;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
 import net.minecraft.client.resources.model.cuboid.ItemTransform;
@@ -38,7 +39,8 @@ public abstract class ItemLayerRenderStateMixin {
                     shift = At.Shift.AFTER))
     private void rtxremix$submitHeldEffects(PoseStack poseStack, SubmitNodeCollector collector, int lightCoords,
                                             int overlayCoords, int outlineColor, CallbackInfo ci) {
-        if (!(collector instanceof RemixSubmitCollector remix)) {
+        RemixVertexConsumerProvider provider = VanillaFeatureCapture.provider(collector);
+        if (provider == null) {
             return;
         }
         ItemStackRenderState owner = this$0;
@@ -47,6 +49,6 @@ public abstract class ItemLayerRenderStateMixin {
             return;
         }
         HeldItemEffectsRenderer.render(stack, ((ItemStackRenderStateAccessor) owner).rtxremix$displayContext(),
-                ((ItemRenderSource) owner).rtxremix$holder(), poseStack, remix.provider(), itemTransform.scale().x());
+                ((ItemRenderSource) owner).rtxremix$holder(), poseStack, provider, itemTransform.scale().x());
     }
 }

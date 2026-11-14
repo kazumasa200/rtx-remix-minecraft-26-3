@@ -21,14 +21,18 @@ import com.nvidia.rtxremix.minecraft.asset.RemixMesh;
 import com.nvidia.rtxremix.minecraft.asset.RemixMeshStore;
 import com.nvidia.rtxremix.minecraft.asset.RemixTexture;
 import com.nvidia.rtxremix.minecraft.asset.RemixTextureStore;
+import com.nvidia.rtxremix.minecraft.lod.dh.DhApiTerrain;
+import com.nvidia.rtxremix.minecraft.lod.dh.DhPublicApi;
 import com.nvidia.rtxremix.minecraft.lod.dh.DistantHorizonsCompat;
+import com.nvidia.rtxremix.minecraft.lod.dh.DistantHorizonsMixinPlugin;
+import com.nvidia.rtxremix.minecraft.lod.dh.DistantHorizonsRasterHold;
 import com.nvidia.rtxremix.minecraft.profiling.PerformanceTimer;
 import com.nvidia.rtxremix.minecraft.terrain.ChunkManager;
 import com.nvidia.rtxremix.minecraft.terrain.TerrainAssetRetirementQueue;
 import com.nvidia.rtxremix.minecraft.terrain.TerrainNativeCallStats;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
-import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.Minecraft;
 import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,8 +49,11 @@ import java.util.concurrent.Executors;
  * Far terrain from an LOD mod, as retained Remix instances beyond Minecraft's
  * own terrain.
  *
- * <p>The LOD mod decides which sections exist, at what detail, and which are
- * drawn; {@link LodSection} carries those decisions over. Here, on the render
+ * <p>With the release of Distant Horizons the capture is written against, the LOD mod decides
+ * which sections exist, at what detail, and which are drawn; {@link LodSection} carries those
+ * decisions over. With another release whose public API matches, {@link LodApiSections} makes
+ * those decisions here and builds the sections from the LOD mod's block data instead, nearer
+ * and without its textures, rather than drawing no LOD terrain at all. Here, on the render
  * thread, a section's copied geometry is sent to the builder threads with the
  * current clip, and the finished mesh is installed under a frame budget as one
  * instance, submitted where it is created and again only when the mod shows or
@@ -64,16 +71,21 @@ public final class LodTerrain {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LodTerrain.class);
 
-    private static final boolean DISTANT_HORIZONS =
-            FabricLoader.getInstance().isModLoaded("distanthorizons");
+    /** The installed Distant Horizons is the release whose renderer is captured. */
+    private static final boolean CAPTURE = DistantHorizonsMixinPlugin.SUPPORTED;
+    /** Another release, whose public API this mod can build its own LOD sections from. */
+    private static final boolean PUBLIC_DATA = DistantHorizonsMixinPlugin.UNTESTED && DhApiTerrain.available();
     private static final long INSTALL_BUDGET_NS = 1_000_000L;
     /** Common glass, as Minecraft's own glass takes it. */
     private static final float GLASS_IOR = 1.52f;
     /** A glass face's thickness; its transmittance is measured over the same, so a face passes its tint once. */
     private static final float GLASS_WALL = 0.05f;
-    /** Share of the terrain's emission at which blocks that give off light, lava aside, glow. */
-    private static final float LAMP_EMISSION = Math.max(0f,
-            Float.parseFloat(System.getProperty("rtxremix.lod.lampEmission", "0.2")));
+    /**
+     * The LOD Light Glow setting: the share of the terrain's emission at which blocks that give
+     * off light, lava aside, glow. 0 draws them as plain blocks.
+     */
+    public static final float DEFAULT_LAMP_GLOW = 0.2f;
+    public static final float MAX_LAMP_GLOW = 1.0f;
     /**
      * Low-priority threads building meshes. One fell some eighty sections behind a camera
      * flying across the city, and the sections it had not reached showed LOD ground over
@@ -133,6 +145,13 @@ public final class LodTerrain {
     private final int cntAwaited;
     private final int cntLingering;
     private final int cntHeld;
+    private final int cntInstalls;
+    private final int cntInstallKb;
+    private final int cntBuildQueue;
+    private final int cntResidentMib;
+    /** Meshes handed to Remix this frame, and their bytes. */
+    private int frameInstalls;
+    private long frameInstallBytes;
 
     private boolean enabled = true;
     private int frame;
@@ -143,6 +162,8 @@ public final class LodTerrain {
     private int memoryMib = DEFAULT_MEMORY_MIB;
     private long maxInstalledBytes = (long) DEFAULT_MEMORY_MIB << 20;
     private boolean budgetWarned;
+    private float lampGlow = DEFAULT_LAMP_GLOW;
+    private boolean lampFade = true;
     /**
      * Blocks from the camera past which no section is drawn, shrunk from infinity when the mesh
      * budget fills so that it is spent on the ground nearest the camera.
@@ -160,20 +181,38 @@ public final class LodTerrain {
     private int clipCenterZ = Integer.MIN_VALUE;
     private RemixMaterial groundMaterial;
     /** The LOD mod's block-face tiles, when it is installed (#25). */
-    private final LodTiles tiles = DISTANT_HORIZONS ? new LodTiles(DistantHorizonsCompat.TILES) : null;
+    private final LodTiles tiles = CAPTURE ? new LodTiles(DistantHorizonsCompat.TILES) : null;
     private RemixMaterial tileMaterial;
     private RemixTexture palette;
     private RemixMaterial glassMaterial;
     private RemixMaterial glowMaterial;
     /** Indexed by the LOD's detail level: 0 draws a block as one block, each level doubles it. */
     private final RemixMaterial[] lampMaterials = new RemixMaterial[32];
+    /** The sections this mod builds itself, when the LOD mod's renderer is not captured. */
+    private final LodApiSections apiSections;
 
     public LodTerrain(PerformanceTimer timer) {
         this.timer = timer;
         cntAwaited = timer.registerCounter("Lod.Awaited");
         cntLingering = timer.registerCounter("Lod.Lingering");
         cntHeld = timer.registerCounter("Lod.Held");
-        if (DISTANT_HORIZONS) DistantHorizonsCompat.bindEvents();
+        cntInstalls = timer.registerCounter("Lod.Installs");
+        cntInstallKb = timer.registerCounter("Lod.InstallKB");
+        cntBuildQueue = timer.registerCounter("Lod.BuildQueue");
+        cntResidentMib = timer.registerCounter("Lod.ResidentMiB");
+        if (CAPTURE) {
+            DistantHorizonsCompat.bindEvents();
+            apiSections = null;
+        } else if (PUBLIC_DATA) {
+            DhPublicApi.bindLitBlocks();
+            apiSections = new LodApiSections(new DhApiTerrain(), timer);
+        } else {
+            apiSections = null;
+            if (DistantHorizonsMixinPlugin.UNTESTED) {
+                LOGGER.warn("Distant Horizons' public API is not the version this mod builds on; "
+                        + "no LOD terrain is drawn with RTX on");
+            }
+        }
     }
 
     public boolean isEnabled() {
@@ -208,9 +247,46 @@ public final class LodTerrain {
         }
     }
 
+    /** The LOD Light Glow setting. */
+    public float getLampGlow() {
+        return lampGlow;
+    }
+
+    /** Render thread. Every section is installed again, with lamps of the new strength. */
+    public void setLampGlow(float glow) {
+        float clamped = Math.max(0f, Math.min(MAX_LAMP_GLOW, glow));
+        if (clamped == lampGlow) return;
+        lampGlow = clamped;
+        relight();
+    }
+
+    /** The LOD Light Fade setting: whether a coarser section's lamps glow less (#23). */
+    public boolean isLampFade() {
+        return lampFade;
+    }
+
+    /** Render thread. Every section is installed again. */
+    public void setLampFade(boolean fade) {
+        if (fade == lampFade) return;
+        lampFade = fade;
+        relight();
+    }
+
+    /** The lamp materials hold their strength, so the sections that use them are installed again. */
+    private void relight() {
+        if (capturing) {
+            clear();
+        } else {
+            destroyPaletteMaterials();
+        }
+    }
+
     /** Radius of the LOD terrain being drawn, in blocks, or 0 when there is none. */
     public float radiusBlocks() {
-        return capturing ? (float) Math.min(DistantHorizonsCompat.lodRadiusChunks() * 16.0, budgetRadius) : 0f;
+        if (!capturing) return 0f;
+        double lod = CAPTURE ? DistantHorizonsCompat.lodRadiusChunks() * 16.0
+                : apiSections != null ? apiSections.radiusBlocks() : 0.0;
+        return (float) Math.min(lod, budgetRadius);
     }
 
     /**
@@ -218,7 +294,8 @@ public final class LodTerrain {
      * world this frame; while it is false the LOD mod draws for itself.
      */
     public void update(RemixAPI api, Vec3 camera, BlockTextureManager textures, boolean active, ChunkManager terrain) {
-        boolean wanted = DISTANT_HORIZONS && enabled && active && terrain != null;
+        if (DistantHorizonsMixinPlugin.UNTESTED) DistantHorizonsRasterHold.set(active);
+        boolean wanted = (CAPTURE || apiSections != null) && enabled && active && terrain != null;
         if (wanted != capturing) setCapturing(wanted);
         boolean eventsPending = drainEvents(api);
         // Also frees what finishes after a stop: a stop makes every build stale.
@@ -228,6 +305,11 @@ public final class LodTerrain {
         frame++;
         cameraX = camera.x;
         cameraZ = camera.z;
+        if (apiSections != null) {
+            apiSections.update(camera, Minecraft.getInstance().level,
+                    textures != null ? textures.spriteColors() : BlockTextureManager.SpriteColors.EMPTY,
+                    ClientViewDistance.chunks());
+        }
         resolveSwaps(api, eventsPending);
         updateClip(camera, terrain);
         if (tiles != null) tiles.refresh(api);
@@ -236,6 +318,20 @@ public final class LodTerrain {
         timer.count(cntAwaited, awaited.size());
         timer.count(cntLingering, lingering.size());
         timer.count(cntHeld, held.size());
+        timer.count(cntInstalls, frameInstalls);
+        timer.count(cntInstallKb, (int) (frameInstallBytes >> 10));
+        timer.count(cntBuildQueue, buildQueue.size() + buildsInFlight);
+        timer.count(cntResidentMib, (int) (installedBytes >> 20));
+        frameInstalls = 0;
+        frameInstallBytes = 0;
+    }
+
+    /** Render thread, after a resource reload: the LOD mod's tiles are cut again from the new packs. */
+    public void reloadTextures() {
+        if (CAPTURE) DistantHorizonsCompat.reloadTiles();
+        // This mod's own sections bake the block colours the packs paint.
+        if (apiSections != null) apiSections.rebuildAll();
+        clear();
     }
 
     /**
@@ -268,6 +364,7 @@ public final class LodTerrain {
     public void destroy() {
         reset();
         builder.shutdownNow();
+        if (apiSections != null) apiSections.shutdown();
         if (groundMaterial != null && !groundMaterial.isDeleted()) groundMaterial.destroy();
         groundMaterial = null;
         if (tileMaterial != null && !tileMaterial.isDeleted()) tileMaterial.destroy();
@@ -312,7 +409,9 @@ public final class LodTerrain {
         LOGGER.info("LOD terrain capture {}", on ? "started" : "stopped");
         // Starting asks the mod to rebuild every section so the copies arrive;
         // stopping hands it back its own shading and drawing.
-        DistantHorizonsCompat.setCapturing(on);
+        if (CAPTURE) DistantHorizonsCompat.setCapturing(on);
+        // This mod's own sections are chosen afresh when capture starts again.
+        if (apiSections != null && !on) apiSections.stop();
     }
 
     /** Whether events are left for the next frame. */
@@ -700,6 +799,8 @@ public final class LodTerrain {
             section.shown = visible;
             section.installedBytes = bytes;
             installedBytes += bytes;
+            frameInstalls++;
+            frameInstallBytes += bytes;
         } catch (RuntimeException e) {
             LOGGER.error("LOD terrain install failed at {}, {}", section.minX, section.minZ, e);
             if (instance != null) {
@@ -834,19 +935,21 @@ public final class LodTerrain {
     }
 
     /**
-     * Other blocks that give off light glow at {@link #LAMP_EMISSION} of the terrain's emission
-     * where the LOD draws a block as one block; the block's own texture glows only where its
-     * flame is. Farther out the LOD mod draws an area of many blocks as one of them, so a rooftop
-     * torch became a box several blocks across, which lit the roofs around and bloomed to white
-     * (#23). The glow is spread over that box, so a lamp gives off one block's light at any
-     * detail and the far ones fade, whatever block or mod they come from.
+     * Other blocks that give off light glow at the LOD Light Glow setting's share of the terrain's
+     * emission where the LOD draws a block as one block; the block's own texture glows only where
+     * its flame is. Farther out the LOD mod draws an area of many blocks as one of them, so a
+     * rooftop torch became a box several blocks across, which lit the roofs around and bloomed to
+     * white (#23). With LOD Light Fade on, the glow is spread over that box, so a lamp gives off
+     * one block's light at any detail and the far ones fade, whatever block or mod they come
+     * from. Seen from above the far lights then go dim, so the fade can be turned off: every
+     * detail level then glows alike.
      */
     private RemixMaterial lampMaterial(float intensity, LodSection section) {
-        int cell = section.blocksPerCell();
+        int cell = lampFade ? section.blocksPerCell() : 1;
         int level = Math.min(lampMaterials.length - 1, Integer.numberOfTrailingZeros(cell));
         RemixMaterial lamp = lampMaterials[level];
         if (lamp != null && !lamp.isDeleted()) return lamp;
-        lamp = paletteGlow(intensity * LAMP_EMISSION / ((float) cell * cell), "lamp");
+        lamp = paletteGlow(intensity * lampGlow / ((float) cell * cell), "lamp");
         lampMaterials[level] = lamp;
         return lamp;
     }

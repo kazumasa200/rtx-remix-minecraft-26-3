@@ -13,6 +13,7 @@ import com.nvidia.rtxremix.minecraft.lens.FlareSources;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
+import org.joml.Vector3fc;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -56,7 +57,7 @@ public final class RemixFirstPersonPass implements AutoCloseable {
     public static final float VIEW_MODEL_SCALE = 0.1f;
 
     private final RemixVertexConsumerProvider provider = new RemixVertexConsumerProvider();
-    private final RemixSubmitCollector collector = new RemixSubmitCollector(provider);
+    private final VanillaFeatureCapture featureCapture = new VanillaFeatureCapture(provider);
     private final Transform cameraToWorld = new Transform();
     private final Transform heldLightTransform = new Transform();
     private final Matrix4f correctedBone = new Matrix4f();
@@ -71,7 +72,7 @@ public final class RemixFirstPersonPass implements AutoCloseable {
 
     /**
      * Submits the hands vanilla extracted through its own first-person renderer into
-     * a Remix-only collector.
+     * the capture ({@link VanillaFeatureCapture}).
      */
     public void capture(FirstPersonHandsAndItemsRenderer handsRenderer,
                         float tickDelta,
@@ -100,8 +101,16 @@ public final class RemixFirstPersonPass implements AutoCloseable {
             Matrix4f modelView = new Matrix4f(RenderSystem.getModelViewStack());
             modelView.invert(inverseModelView).transformPosition(eye.set(0.0f, 0.0f, 0.0f));
             context.setEye(eye.x, eye.y, eye.z);
+            // The view correction rides on the bones, so vertices a mod has transformed
+            // itself need one too (#29).
+            context.boneUnposedVertices();
 
-            handsRenderer.submitHandsWithItems(tickDelta, matrices, collector, playerState, handsState);
+            try {
+                handsRenderer.submitHandsWithItems(tickDelta, matrices, featureCapture.begin(), playerState, handsState);
+                featureCapture.drain();
+            } finally {
+                featureCapture.discard();
+            }
 
             List<RemixVertexConsumerProvider.CapturedLayer> layers = provider.endEntity();
             if (layers.isEmpty()) {
@@ -321,36 +330,27 @@ public final class RemixFirstPersonPass implements AutoCloseable {
     /**
      * Builds an object-to-world transform whose local axes match Minecraft's
      * camera space: +X right, +Y up, and -Z forward. Its translation is in scene
-     * space ({@link SceneSpace}), as everything handed to Remix is.
+     * space ({@link SceneSpace}), as everything handed to Remix is. The axes are
+     * the camera's own, which carry a roll another mod gives it (#28), as the
+     * world camera's do ({@code RemixRenderer.updateCamera}).
      */
     private static void setCameraToWorld(Camera camera, Transform transform) {
         Vec3 pos = camera.position();
-        float yawRad = (float) Math.toRadians(-camera.yRot());
-        float pitchRad = (float) Math.toRadians(camera.xRot());
+        Vector3fc forward = camera.forwardVector();
+        Vector3fc up = camera.upVector();
+        Vector3fc left = camera.leftVector();
 
-        float forwardX = (float) (Math.sin(yawRad) * Math.cos(pitchRad));
-        float forwardY = (float) (-Math.sin(pitchRad));
-        float forwardZ = (float) (Math.cos(yawRad) * Math.cos(pitchRad));
-
-        float rightX = (float) (-Math.cos(yawRad));
-        float rightY = 0.0f;
-        float rightZ = (float) Math.sin(yawRad);
-
-        float upX = rightY * forwardZ - rightZ * forwardY;
-        float upY = rightZ * forwardX - rightX * forwardZ;
-        float upZ = rightX * forwardY - rightY * forwardX;
-
-        transform.set(0, 0, rightX);
-        transform.set(0, 1, upX);
-        transform.set(0, 2, -forwardX);
+        transform.set(0, 0, -left.x());
+        transform.set(0, 1, up.x());
+        transform.set(0, 2, -forward.x());
         transform.set(0, 3, SceneSpace.x(pos.x));
-        transform.set(1, 0, rightY);
-        transform.set(1, 1, upY);
-        transform.set(1, 2, -forwardY);
+        transform.set(1, 0, -left.y());
+        transform.set(1, 1, up.y());
+        transform.set(1, 2, -forward.y());
         transform.set(1, 3, SceneSpace.y(pos.y));
-        transform.set(2, 0, rightZ);
-        transform.set(2, 1, upZ);
-        transform.set(2, 2, -forwardZ);
+        transform.set(2, 0, -left.z());
+        transform.set(2, 1, up.z());
+        transform.set(2, 2, -forward.z());
         transform.set(2, 3, SceneSpace.z(pos.z));
     }
 

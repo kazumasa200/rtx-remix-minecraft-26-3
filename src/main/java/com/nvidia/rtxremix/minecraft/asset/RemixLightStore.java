@@ -31,6 +31,16 @@ public class RemixLightStore extends RemixAssetStore<RemixLight> {
         light.update(api, newInfo);
     }
 
+    /** Gives a light registered without properties, or put to sleep, its native light. */
+    public void wake(RemixLight light, LightInfo info) {
+        light.wake(api, info);
+    }
+
+    /** Gives up a light's native light until it is next woken. */
+    public void sleep(RemixLight light) {
+        light.sleep(api);
+    }
+
     public static void shutdown() {
         if (INSTANCE == null) return;
         INSTANCE.destroyAll();

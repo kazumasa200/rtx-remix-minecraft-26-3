@@ -869,4 +869,71 @@ class RemixCapturingConsumerTest {
 
         assertNotNull(consumer.acquireSingletonCuboidIterator(cuboid()));
     }
+
+    // ---- vertices another renderer has transformed itself (#29) ----
+
+    @Test
+    void anUnposedVertexSitsUnderTheRootUnlessTheCaptureGivesItABone() {
+        EntityRenderContext context = EntityRenderContext.get();
+        context.begin(true);
+        RemixCapturingConsumer underRoot = new RemixCapturingConsumer(null, true);
+        writeUnposedQuads(underRoot, 1);
+        underRoot.finishOpenVertex();
+        assertEquals(-1, underRoot.getPartBone(0));
+        context.reset();
+
+        context.begin(true);
+        context.boneUnposedVertices();
+        RemixCapturingConsumer boned = new RemixCapturingConsumer(null, true);
+        writeUnposedQuads(boned, 1);
+        boned.finishOpenVertex();
+
+        assertEquals(0, boned.getPartBone(0));
+        assertEquals(new Matrix4f(), context.getBoneTransforms().get(0));
+    }
+
+    @Test
+    void unposedVerticesGrowPastTheLayerCapAndPosedOnesDoNot() {
+        EntityRenderContext.get().begin(true);
+        int quads = RemixCapturingConsumer.MAX_VERTICES / 4 + 100;
+
+        RemixCapturingConsumer unposed = new RemixCapturingConsumer(null, true);
+        writeUnposedQuads(unposed, quads);
+        unposed.finishOpenVertex();
+        assertEquals(quads * 4, unposed.getVertexCount());
+        assertEquals(1, unposed.getPartCount(), "one run under one bone is one part");
+        assertEquals(quads * 4, unposed.getPartVertexCount(0));
+        assertEquals(quads - 1 + 0.5f, unposed.getPx()[quads * 4 - 1]);
+        assertTrue(unposed.isPartStreamed(0));
+
+        RemixCapturingConsumer posed = new RemixCapturingConsumer(null, true);
+        Matrix4f pose = new Matrix4f();
+        for (int i = 0; i < quads * 4; i++) {
+            posed.addVertex(pose, i, 0f, 0f).setUv(0f, 0f).setNormal(0f, 1f, 0f);
+        }
+        posed.finishOpenVertex();
+        assertEquals(RemixCapturingConsumer.MAX_VERTICES, posed.getVertexCount());
+        assertFalse(posed.isPartStreamed(0));
+    }
+
+    @Test
+    void aCaptureThatWritesItsOwnUnposedVerticesKeepsThemPooled() {
+        EntityRenderContext context = EntityRenderContext.get();
+        context.begin(true);
+        context.poolUnposedVertices();
+        RemixCapturingConsumer consumer = new RemixCapturingConsumer(null, true);
+        writeUnposedQuads(consumer, 1);
+        consumer.finishOpenVertex();
+
+        assertFalse(consumer.isPartStreamed(0));
+    }
+
+    private static void writeUnposedQuads(RemixCapturingConsumer consumer, int quads) {
+        for (int q = 0; q < quads; q++) {
+            consumer.addVertex(q, 0f, 0f).setUv(0f, 0f).setNormal(0f, 1f, 0f);
+            consumer.addVertex(q, 0f, 1f).setUv(0f, 1f).setNormal(0f, 1f, 0f);
+            consumer.addVertex(q + 0.5f, 0f, 1f).setUv(1f, 1f).setNormal(0f, 1f, 0f);
+            consumer.addVertex(q + 0.5f, 0f, 0f).setUv(1f, 0f).setNormal(0f, 1f, 0f);
+        }
+    }
 }

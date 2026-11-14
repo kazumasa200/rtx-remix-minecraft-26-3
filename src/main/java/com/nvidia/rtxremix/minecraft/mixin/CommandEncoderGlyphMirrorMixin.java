@@ -9,6 +9,7 @@ import com.mojang.renderpearl.api.buffers.GpuBufferSlice;
 import com.mojang.renderpearl.api.textures.GpuTexture;
 import com.mojang.renderpearl.frontend.FrontendCommandEncoder;
 import com.nvidia.rtxremix.minecraft.texture.GlyphPageMirror;
+import com.nvidia.rtxremix.minecraft.texture.GpuTextureReadback;
 import java.nio.ByteBuffer;
 import org.lwjgl.system.MemoryUtil;
 import org.spongepowered.asm.mixin.Mixin;
@@ -32,6 +33,7 @@ public abstract class CommandEncoderGlyphMirrorMixin {
             at = @At("HEAD"))
     private void rtxremix$mirrorImageGlyph(GpuTexture destination, NativeImage source, int mipLevel,
                                            int depthOrLayer, int destX, int destY, CallbackInfo ci) {
+        GpuTextureReadback.written(destination);
         GlyphPageMirror page = GlyphPageMirror.uploadTarget();
         if (page == null || mipLevel != 0) {
             return;
@@ -52,6 +54,7 @@ public abstract class CommandEncoderGlyphMirrorMixin {
     private void rtxremix$mirrorBufferGlyph(GpuTexture destination, ByteBuffer source, int mipLevel,
                                             int depthOrLayer, int destX, int destY, int width, int height,
                                             CallbackInfo ci) {
+        GpuTextureReadback.written(destination);
         GlyphPageMirror page = GlyphPageMirror.uploadTarget();
         if (page == null || mipLevel != 0 || width <= 0 || height <= 0) {
             return;
@@ -66,6 +69,7 @@ public abstract class CommandEncoderGlyphMirrorMixin {
                                             int sourceWidth, int sourceHeight, GpuTexture destination,
                                             int destinationX, int destinationY, int copyWidth, int copyHeight,
                                             int mipLevel, int arrayLayer, CallbackInfo ci) {
+        GpuTextureReadback.written(destination);
         if (mipLevel == 0) {
             GlyphPageMirror.blitFromStaging(source.buffer(), sourceX, sourceY,
                     destinationX, destinationY, copyWidth, copyHeight);

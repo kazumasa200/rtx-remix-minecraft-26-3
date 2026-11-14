@@ -82,8 +82,9 @@ per-frame budgets.
 | Key | Effect | Owner |
 |---|---|---|
 | `rtxremix.chunk.meshBuildThreads` | Threads in the column merge executor | `ChunkManager` |
-| `rtxremix.lod.lampEmission` | Share of the terrain's emission at which LOD blocks that give off light glow, lava aside, 0.2 by default; coarser LOD sections divide it by the area each cell covers | `LodTerrain` |
 | `rtxremix.lod.buildThreads` | Low-priority threads building LOD terrain meshes against the current clip, 3 by default | `LodTerrain` |
+| `rtxremix.lod.apiRadius` | Blocks out to which LOD sections are built from Distant Horizons' public data, with a release whose renderer is not captured; 4096 by default, and never past Distant Horizons' own radius | `LodApiSections` |
+| `rtxremix.lod.apiThreads` | Low-priority threads reading and meshing those sections, 2 by default | `LodApiSections` |
 | `rtxremix.chunk.maxPendingBuilds` | Merges outstanding at once | `ChunkManager` |
 | `rtxremix.chunk.maxPendingMeshBytes` | Bytes of merged but not yet installed geometry | `ChunkManager` |
 | `rtxremix.chunk.captureDrainBudgetNs` | Render-thread time per frame spent taking section captures, in `blockDataQueue.maxDrainItems` batches, 2 ms by default | `ChunkManager` |
@@ -128,8 +129,8 @@ lights too dim to matter at their distance.
 
 | Key | Effect | Owner |
 |---|---|---|
-| `rtxremix.chunk.maxLightOpsPerFrame` | Light create, update, and destroy calls per frame | `ChunkManager` |
-| `rtxremix.chunk.lightBudgetNs` | Render-thread time per frame for those calls | `ChunkManager` |
+| `rtxremix.chunk.maxLightOpsPerFrame` | Native light update and destroy calls per frame; registering a light makes none | `ChunkManager` |
+| `rtxremix.chunk.lightBudgetNs` | Render-thread time per frame for light registration, updates, and removals | `ChunkManager` |
 | `rtxremix.chunk.maxPendingLightOps` | Queued light work before backpressure | `ChunkManager` |
 | `rtxremix.chunk.maxDrawnLights` | Terrain lights drawn per frame. Past it the light reach shrinks for every light alike until the count fits, and eases back once it is well under; the runtime drops every light past 65,535 and samples its whole list evenly | `ChunkManager` |
 | `rtxremix.light.floodSliceNs` | Render-thread time per frame a connectivity rebuild may take. The rebuild fills a second set across frames and swaps it in when complete, so a larger slice finishes sooner and a smaller one costs less per frame | `TerrainState` |

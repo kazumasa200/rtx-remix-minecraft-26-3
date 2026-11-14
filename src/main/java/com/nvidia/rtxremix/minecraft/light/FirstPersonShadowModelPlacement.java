@@ -15,6 +15,14 @@ import net.minecraft.world.phys.Vec3;
 /**
  * Applies a render-only offset to the hidden local-player model so first-person
  * analytic lights have clear space around their emitter.
+ *
+ * <p>Without it the hidden model's arm and held item stand in the light and lay a
+ * shadow of a hand ahead of the player. {@link HeldLightPlacement} puts the light
+ * just outside that clearance, so in the open the model stays where the player is;
+ * near a wall, which pulls the light in, the model moves straight away from the
+ * light. The offset follows that one direction through the spring: chosen among
+ * fixed candidates and snapped to, the model held still while the view turned and
+ * then jumped, which drew the player's shadow and reflection in steps.
  */
 final class FirstPersonShadowModelPlacement {
 
@@ -23,7 +31,6 @@ final class FirstPersonShadowModelPlacement {
     static final double MAX_MODEL_OFFSET = 0.40;
     static final double COLLISION_EPSILON = 1.0e-4;
     static final double SPRING_ANGULAR_FREQUENCY = 14.0;
-    static final double TARGET_CLEARANCE_HYSTERESIS = 0.01;
 
     private static final double DIRECTION_EPSILON_SQ = 1.0e-10;
 
@@ -32,10 +39,12 @@ final class FirstPersonShadowModelPlacement {
 
     Vec3 resolve(ClientLevel world, Camera camera, Entity player,
                   List<LightConstraint> lights, float dtSeconds) {
-        Vec3 headCenter = camera.position();
         Vec3 target = lights.isEmpty()
                 ? Vec3.ZERO
-                : chooseTargetOffset(world, camera, player, headCenter, lights, offset);
+                : clampToBlockCollisions(world, player, targetOffset(
+                        camera.position(),
+                        lights,
+                        HeldLightPlacement.horizontalForward(camera.yRot()).reverse()));
 
         SpringStep spring = advanceSpring(
                 offset,
@@ -44,117 +53,46 @@ final class FirstPersonShadowModelPlacement {
                 dtSeconds,
                 SPRING_ANGULAR_FREQUENCY);
         Vec3 collisionSafeOffset = clampToBlockCollisions(world, player, spring.position);
-        boolean constrained = collisionSafeOffset.distanceToSqr(spring.position)
-                > DIRECTION_EPSILON_SQ;
-
-        // Clearance is unilateral: a new occlusion constraint pushes the
-        // hidden model immediately, while the spring governs its relaxation.
-        if (!lights.isEmpty()) {
-            GapDeficit springDeficit = gapDeficit(headCenter.add(collisionSafeOffset), lights);
-            GapDeficit targetDeficit = gapDeficit(headCenter.add(target), lights);
-            if (isBetter(targetDeficit, springDeficit)) {
-                collisionSafeOffset = target;
-                constrained = true;
-            }
-        }
-
-        if (constrained) {
-            velocity = Vec3.ZERO;
-        } else {
-            velocity = spring.velocity;
-        }
+        velocity = collisionSafeOffset.distanceToSqr(spring.position) > DIRECTION_EPSILON_SQ
+                ? Vec3.ZERO
+                : spring.velocity;
         offset = collisionSafeOffset;
         return offset;
+    }
+
+    /**
+     * The horizontal offset that clears every light, along the mean horizontal
+     * direction away from them, or along {@code fallback} when a light stands
+     * straight above or below the head. It turns continuously with the lights.
+     */
+    static Vec3 targetOffset(Vec3 headCenter, List<LightConstraint> lights, Vec3 fallback) {
+        Vec3 away = Vec3.ZERO;
+        for (LightConstraint light : lights) {
+            Vec3 fromLight = horizontal(headCenter.subtract(light.position));
+            if (fromLight.lengthSqr() > DIRECTION_EPSILON_SQ) {
+                away = away.add(fromLight.normalize());
+            }
+        }
+        Vec3 direction = away.lengthSqr() > DIRECTION_EPSILON_SQ ? away.normalize() : fallback;
+
+        double length = 0.0;
+        for (LightConstraint light : lights) {
+            length = Math.max(length, requiredTranslation(
+                    headCenter.subtract(light.position),
+                    direction,
+                    clearCenterDistance(light.emitterRadius, light.targetGap)));
+        }
+        return direction.scale(Math.min(length, MAX_MODEL_OFFSET));
+    }
+
+    /** How far a light's centre must stand from the head's centre to keep its gap. */
+    static double clearCenterDistance(double emitterRadius, double targetGap) {
+        return HEAD_KEEP_OUT_RADIUS + emitterRadius + targetGap;
     }
 
     void clear() {
         offset = Vec3.ZERO;
         velocity = Vec3.ZERO;
-    }
-
-    private static Vec3 chooseTargetOffset(
-            ClientLevel world, Camera camera, Entity player, Vec3 headCenter,
-            List<LightConstraint> lights, Vec3 currentOffset) {
-        List<Vec3> directions = new ArrayList<>(lights.size() + 7);
-        Vec3 currentDirection = horizontal(currentOffset);
-        if (currentDirection.lengthSqr() > DIRECTION_EPSILON_SQ) {
-            addUniqueDirection(directions, currentDirection.normalize());
-        }
-
-        Vec3 averageAway = Vec3.ZERO;
-        for (LightConstraint light : lights) {
-            Vec3 away = horizontal(headCenter.subtract(light.position));
-            if (away.lengthSqr() > DIRECTION_EPSILON_SQ) {
-                away = away.normalize();
-                addUniqueDirection(directions, away);
-                averageAway = averageAway.add(away);
-            }
-        }
-        if (averageAway.lengthSqr() > DIRECTION_EPSILON_SQ) {
-            addUniqueDirection(directions, averageAway.normalize());
-        }
-        Vec3 backward = HeldLightPlacement.horizontalForward(camera.yRot()).reverse();
-        addUniqueDirection(directions, backward);
-
-        // A wall can block the preferred backward displacement without
-        // blocking either direction along its face. These alternatives keep
-        // the hidden model away from the light through concave corners.
-        Vec3 tangent = new Vec3(-backward.z, 0.0, backward.x);
-        addUniqueDirection(directions, backward.add(tangent).normalize());
-        addUniqueDirection(directions, backward.subtract(tangent).normalize());
-        addUniqueDirection(directions, tangent);
-        addUniqueDirection(directions, tangent.reverse());
-
-        List<Vec3> candidates = new ArrayList<>(directions.size() + 1);
-        candidates.add(clampToBlockCollisions(world, player, currentOffset));
-        for (Vec3 direction : directions) {
-            double requiredLength = 0.0;
-            for (LightConstraint light : lights) {
-                double requiredCenterDistance = HEAD_KEEP_OUT_RADIUS
-                        + light.emitterRadius + light.targetGap;
-                requiredLength = Math.max(
-                        requiredLength,
-                        requiredTranslation(
-                                headCenter.subtract(light.position),
-                                direction,
-                                requiredCenterDistance));
-            }
-
-            Vec3 desired = direction.scale(Math.min(requiredLength, MAX_MODEL_OFFSET));
-            candidates.add(clampToBlockCollisions(world, player, desired));
-        }
-        return selectContinuousCandidate(currentOffset, headCenter, lights, candidates);
-    }
-
-    static Vec3 selectContinuousCandidate(
-            Vec3 currentOffset, Vec3 headCenter,
-            List<LightConstraint> lights, List<Vec3> candidates) {
-        GapDeficit optimum = new GapDeficit(
-                Double.POSITIVE_INFINITY, Double.POSITIVE_INFINITY);
-        for (Vec3 candidate : candidates) {
-            GapDeficit deficit = gapDeficit(headCenter.add(candidate), lights);
-            if (isBetter(deficit, optimum)) {
-                optimum = deficit;
-            }
-        }
-
-        Vec3 selected = candidates.getFirst();
-        double selectedMotion = Double.POSITIVE_INFINITY;
-        double totalHysteresis = TARGET_CLEARANCE_HYSTERESIS * lights.size();
-        for (Vec3 candidate : candidates) {
-            GapDeficit deficit = gapDeficit(headCenter.add(candidate), lights);
-            if (deficit.max > optimum.max + TARGET_CLEARANCE_HYSTERESIS
-                    || deficit.total > optimum.total + totalHysteresis) {
-                continue;
-            }
-
-            double motion = candidate.distanceToSqr(currentOffset);
-            if (motion < selectedMotion) {
-                selected = candidate;
-                selectedMotion = motion;
-            }
-        }
-        return selected;
     }
 
     static double requiredTranslation(
@@ -277,37 +215,8 @@ final class FirstPersonShadowModelPlacement {
         return firstMax > secondMin && firstMin < secondMax;
     }
 
-    private static GapDeficit gapDeficit(
-            Vec3 displacedHeadCenter, List<LightConstraint> lights) {
-        double max = 0.0;
-        double total = 0.0;
-        for (LightConstraint light : lights) {
-            double gap = displacedHeadCenter.distanceTo(light.position)
-                    - HEAD_KEEP_OUT_RADIUS
-                    - light.emitterRadius;
-            double deficit = Math.max(0.0, light.targetGap - gap);
-            max = Math.max(max, deficit);
-            total += deficit;
-        }
-        return new GapDeficit(max, total);
-    }
-
-    private static boolean isBetter(GapDeficit candidate, GapDeficit reference) {
-        return candidate.max < reference.max
-                || (candidate.max == reference.max && candidate.total < reference.total);
-    }
-
     private static Vec3 horizontal(Vec3 vector) {
         return new Vec3(vector.x, 0.0, vector.z);
-    }
-
-    private static void addUniqueDirection(List<Vec3> directions, Vec3 direction) {
-        for (Vec3 existing : directions) {
-            if (existing.dot(direction) > 0.999) {
-                return;
-            }
-        }
-        directions.add(direction);
     }
 
     record LightConstraint(Vec3 position, double emitterRadius, double targetGap) {
@@ -319,6 +228,4 @@ final class FirstPersonShadowModelPlacement {
     record SpringStep(Vec3 position, Vec3 velocity) {
     }
 
-    private record GapDeficit(double max, double total) {
-    }
 }

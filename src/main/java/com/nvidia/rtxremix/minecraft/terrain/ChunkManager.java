@@ -149,6 +149,22 @@ public class ChunkManager {
     static final int MAX_DRAWN_LIGHTS = Math.max(256,
             Integer.getInteger("rtxremix.chunk.maxDrawnLights", 4096));
 
+    /**
+     * Sleeping lights given their native light per frame. A jump into a city leaves 4,096
+     * to wake; they light up over half a second instead of stalling one frame on them all.
+     */
+    private static final int MAX_LIGHT_WAKES_PER_FRAME = 128;
+    /** Frames a light goes undrawn before it sleeps, so one at the edge of reach is not built over and over. */
+    private static final int LIGHT_SLEEP_AFTER_FRAMES = 240;
+    private static final int LIGHT_SLEEP_CHECKS_PER_FRAME = 256;
+    /**
+     * The lights that hold a native light: those drawn, and those drawn lately. The runtime
+     * walks every light that exists each frame whether it is drawn or not, so only these
+     * exist for it; the rest are registrations ({@link RemixLight#isAsleepFast}).
+     */
+    private final ArrayList<TerrainLight> awakeLights = new ArrayList<>();
+    private int sleepCursor;
+
     private record LightSectionKey(int cx, int sy, int cz) {}
 
     private enum LightMutationKind { CREATE, UPDATE, REMOVE }
@@ -157,7 +173,12 @@ public class ChunkManager {
                                  LightEntry incoming, RemixLight existing,
                                  int fingerprint) {
         int nativeCallCost() {
-            return kind == LightMutationKind.UPDATE ? 2 : 1;
+            // A light is registered asleep, which reaches no native code.
+            return switch (kind) {
+                case CREATE -> 0;
+                case UPDATE -> 2;
+                case REMOVE -> 1;
+            };
         }
     }
 
@@ -275,8 +296,8 @@ public class ChunkManager {
             if (entry.lights().containsKey(mutation.key())) return;
             LightEntry incoming = mutation.incoming();
             BlockLightRadiance radiance = blockLightRadiance(incoming, textures);
-            LightInfo info = buildBlockLightInfo(incoming, radiance);
-            RemixLight light = new RemixLight(info, null);
+            // Asleep: the draw loop wakes it when it is first drawn.
+            RemixLight light = new RemixLight(null, null);
             RemixLightStore.get().create(light);
             TerrainLight record = new TerrainLight(light);
             record.place(incoming, LightPower.of(incoming, radiance.r(), radiance.g(), radiance.b()));
@@ -576,7 +597,7 @@ public class ChunkManager {
     }
 
     private int cntRemixMeshes, cntRemixInstances, cntRemixMaterials;
-    private int cntCap = -1, cntLightsCulled, cntLightsDrawn, cntLightsBeyondReach, cntReachable, cntWorkerMem, cntPooledDirectMB,
+    private int cntCap = -1, cntLightsCulled, cntLightsDrawn, cntLightsAwake, cntLightsBeyondReach, cntReachable, cntWorkerMem, cntPooledDirectMB,
             cntBucketGrows, cntBucketGrowKB, cntDroppedQuads, cntPendingBuilds, cntPendingMeshMB, cntCaptureQueue,
             cntCaptureQueueMB, cntCaptureBackpressure, cntCaptureEvicted, cntLightRebuildsSkipped, cntPacedChunks,
             cntPacedBacklog, cntChunkApplyUs, cntPacedUnloads, cntPacedUnloadBacklog, cntChunkUnloadUs,
@@ -785,6 +806,7 @@ public class ChunkManager {
                 cntCap     = timer.registerCounter("Chunk.Captures");
                 cntLightsCulled = timer.registerCounter("Chunk.LightsCulled");
                 cntLightsDrawn = timer.registerCounter("Chunk.LightsDrawn");
+                cntLightsAwake = timer.registerCounter("Chunk.LightsAwake");
                 cntLightsBeyondReach = timer.registerCounter("Chunk.LightsBeyondReach");
                 cntReachable = timer.registerCounter("Chunk.Reachable");
                 cntFloodIncrementalUs = timer.registerCounter("Chunk.FloodIncrementalUs");
@@ -1161,9 +1183,9 @@ public class ChunkManager {
         while (true) {
             LightWorkItem task = lightWorkQueue.peekFirst();
             if (task == null) return;
-            int nextCost = Math.max(1, task.nextNativeCallCost());
-            if (inspected > 0 && (inspected >= MAX_LIGHT_OPS_PER_FRAME
-                    || System.nanoTime() >= deadline)) {
+            // Operations that make no native call are held by the deadline alone.
+            int nextCost = task.nextNativeCallCost();
+            if (inspected > 0 && System.nanoTime() >= deadline) {
                 return;
             }
             if (nativeCalls > 0 && nativeCalls + nextCost > MAX_LIGHT_OPS_PER_FRAME) return;
@@ -2050,6 +2072,7 @@ public class ChunkManager {
         int lightsCulled = 0;
         int lightsDrawn = 0;
         int lightsBeyondReach = 0;
+        int lightsWoken = 0;
 
         try (ProfileScope traversalScope = ProfileScope.begin("draw traversal")) {
             // Remix keeps a scene instance until it is explicitly removed, and every terrain
@@ -2102,7 +2125,15 @@ public class ChunkManager {
                             // runtime cannot move one, so it is built again once the origin has moved;
                             // only the lights drawn pay, the rest when they are next drawn.
                             LightEntry source = light.source();
-                            if (source != null && light.behindOrigin()) {
+                            if (light.light.isAsleepFast()) {
+                                // Past the frame's share it waits for the next and is drawn then.
+                                if (source == null || lightsWoken >= MAX_LIGHT_WAKES_PER_FRAME) continue;
+                                BlockLightRadiance radiance = blockLightRadiance(source, textures);
+                                RemixLightStore.get().wake(light.light, buildBlockLightInfo(source, radiance));
+                                light.place(source, light.power());
+                                awakeLights.add(light);
+                                lightsWoken++;
+                            } else if (source != null && light.behindOrigin()) {
                                 BlockLightRadiance radiance = blockLightRadiance(source, textures);
                                 RemixLightStore.get().update(light.light, buildBlockLightInfo(source, radiance));
                                 light.place(source, light.power());
@@ -2119,6 +2150,8 @@ public class ChunkManager {
             traversalScope.drawCalls(drawCalls);
         }
         budgetThreshold = nextBudgetThreshold(budgetThreshold, lightReachThreshold, lightsDrawn, MAX_DRAWN_LIGHTS);
+        sleepIdleLights();
+        t.count(cntLightsAwake, awakeLights.size());
 
         t.count(cntLightsCulled, lightsCulled);
         t.count(cntLightsDrawn, lightsDrawn);
@@ -2126,6 +2159,29 @@ public class ChunkManager {
         t.count(cntReachable, terrain.reachableCount());
         t.count(cntFloodIncrementalUs, terrain.takeIncrementalFloodNanos() / 1_000L);
         return drawCalls;
+    }
+
+    /**
+     * Puts to sleep the lights that have gone undrawn for a while, a share of the awake
+     * list each frame, and forgets the ones removed since they woke.
+     */
+    private void sleepIdleLights() {
+        for (int checked = Math.min(awakeLights.size(), LIGHT_SLEEP_CHECKS_PER_FRAME); checked > 0; checked--) {
+            if (sleepCursor >= awakeLights.size()) sleepCursor = 0;
+            TerrainLight light = awakeLights.get(sleepCursor);
+            boolean gone = light.light.isDeletedFast() || light.light.isAsleepFast();
+            if (!gone && light.idleFor(terrainFrame, LIGHT_SLEEP_AFTER_FRAMES)) {
+                RemixLightStore.get().sleep(light.light);
+                gone = true;
+            }
+            if (gone) {
+                // The last takes its place and is checked next.
+                TerrainLight last = awakeLights.remove(awakeLights.size() - 1);
+                if (last != light) awakeLights.set(sleepCursor, last);
+            } else {
+                sleepCursor++;
+            }
+        }
     }
 
     /** Hides retained terrain instances while preserving cached meshes. */
@@ -2253,6 +2309,8 @@ public class ChunkManager {
         pendingColumnUnloads.clear();
         framesSinceAudit = 0;
         terrainFrame = 0;
+        awakeLights.clear();
+        sleepCursor = 0;
         budgetThreshold = 0.0f;
         maxTerrainLightPower = 0.0f;
         zombieAuditColumns = null;
