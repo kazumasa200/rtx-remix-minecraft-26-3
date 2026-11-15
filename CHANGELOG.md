@@ -11,6 +11,8 @@ also part of every mod file name.
 
 ## Unreleased
 
+## 0.4.0-pre.11 - 2026-11-15
+
 ### Added
 
 - An orthographic view from another mod, such as OrthoCamera, shows with RTX
