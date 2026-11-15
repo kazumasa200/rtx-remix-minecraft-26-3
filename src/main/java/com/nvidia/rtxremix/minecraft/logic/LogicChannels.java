@@ -9,11 +9,12 @@ package com.nvidia.rtxremix.minecraft.logic;
  * weights by ZONE_PREFIX + name (ZoneDefinition / ZoneRegistry) and
  * ConfLayerDriver maps those names onto the zone confs; the remaining
  * constants are the driver's internal layer/trigger names for water,
- * automatic view distance and its LOD extension, volumetric settling, biomes,
- * weather, and fixed time-of-day confs.
+ * an orthographic view, automatic view distance and its LOD extension,
+ * volumetric settling, biomes, weather, and fixed time-of-day confs.
  */
 public final class LogicChannels {
     public static final String UNDERWATER = "mc.underwater";
+    public static final String ORTHOGRAPHIC = "mc.orthographic";
     public static final String VIEW_DISTANCE = "mc.view_distance";
     public static final String VIEW_DISTANCE_LOD = "mc.view_distance.lod";
     public static final String VIEW_DISTANCE_LOD_MODE = "mc.view_distance.lod_mode";

@@ -317,13 +317,13 @@ class ConfLayerDriverTest {
     // --- layer table invariants ---
 
     @Test
-    void staticTableHasTwelveUniqueRows() {
-        // 1 water + 3 view-distance controllers + 1 volumetric settling
-        // controller + 2 weather + 1 lightning + 4 time profiles. Optional
+    void staticTableHasThirteenUniqueRows() {
+        // 1 water + 1 orthographic view + 3 view-distance controllers + 1 volumetric
+        // settling controller + 2 weather + 1 lightning + 4 time profiles. Optional
         // biome and zone rows are discovered from disk.
         assertEquals(67, ConfLayerDriver.vanillaBiomeNames().size(),
                 "vanilla 26.3 biome count (Biomes)");
-        assertEquals(12, ConfLayerDriver.STATIC_LAYER_TABLE.size());
+        assertEquals(13, ConfLayerDriver.STATIC_LAYER_TABLE.size());
         Set<String> names = new HashSet<>();
         Set<String> paths = new HashSet<>();
         for (var spec : ConfLayerDriver.STATIC_LAYER_TABLE) {
@@ -398,6 +398,8 @@ class ConfLayerDriverTest {
                 expected = 11000f;
             } else if (spec.name().startsWith(LogicChannels.BIOME_PREFIX)) {
                 expected = 6000f;
+            } else if (spec.name().equals(LogicChannels.ORTHOGRAPHIC)) {
+                expected = 15000f;
             } else if (spec.name().equals(LogicChannels.WEATHER_LIGHTNING)) {
                 expected = 5600f;
             } else if (spec.name().equals(LogicChannels.WEATHER_THUNDER)) {
@@ -428,6 +430,7 @@ class ConfLayerDriverTest {
             // The fade mode switches as soon as any LOD terrain draws past Minecraft's own.
             float expected = spec.name().equals(LogicChannels.VIEW_DISTANCE_LOD_MODE) ? 0.0001f
                     : spec.name().equals(LogicChannels.UNDERWATER)
+                    || spec.name().equals(LogicChannels.ORTHOGRAPHIC)
                     || spec.name().startsWith(LogicChannels.TIME_PREFIX) ? 0.5f : 0.01f;
             assertEquals(expected, spec.blendThreshold(), spec.name());
         }

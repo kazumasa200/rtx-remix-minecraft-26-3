@@ -137,9 +137,9 @@ per option by priority.
 
 Two limits come with map profiles. They are read when you join a world and
 dropped when you leave, so one map's look never bleeds into the next. And only
-zone and biome profiles are read from a map: water, weather, time of day,
-automatic view distance, and volumetric settling are global looks rather than
-map content.
+zone and biome profiles are read from a map: water, the orthographic view,
+weather, time of day, automatic view distance, and volumetric settling are
+global looks rather than map content.
 
 `/rtx conf reload` always reads the copy belonging to the Minecraft instance
 that is running. In Prism, `<gameDir>` is the instance's own `.minecraft`
@@ -241,6 +241,7 @@ from several places with a shared channel.
 | Profile | What drives its strength | Priority | Discrete threshold | Timing |
 |---|---|---:|---:|---|
 | `confs/water.conf` | Camera underwater: 0 or 1 | 20000 | 0.50 | Immediate |
+| `confs/orthographic.conf` | Another mod has made the view orthographic: 0 or 1 | 15000 | 0.50 | Immediate |
 | Map `zones/<name>.conf` | Distance falloff: 0 to 1 | 11500 | 0.01 | Half-second half-life |
 | `confs/zones/<name>.conf` | Distance falloff: 0 to 1 | 11000 | 0.01 | Half-second half-life |
 | Map `biomes/<biome>.conf` | Camera is in that biome: 0 or 1 | 6500 | 0.01 | Half-second half-life |
@@ -402,6 +403,17 @@ not a separately lit volume. A light can illuminate the seabed through colored
 water while the water column itself stays dark and its reflected beam is
 absent. This is a runtime limitation, not a broken conf. Neither an underwater
 fog adjustment nor a brighter light creates that missing above-water volume.
+
+### Orthographic View
+
+With a mod that makes the view orthographic, such as OrthoCamera, the mod draws
+the scene from a camera hundreds or thousands of blocks behind the game's, with
+a field of view narrow enough to look parallel. Fog and the view-distance fade
+are measured from the camera, so from there they would cover the whole scene.
+`confs/orthographic.conf` is full while the view is orthographic and pushes
+both out of reach. It sits above every zone, biome, weather, and time profile,
+because a fog any of them sets would white the view out; only water is above
+it, and the mod never reports that view as underwater.
 
 ### Automatic View Distance
 

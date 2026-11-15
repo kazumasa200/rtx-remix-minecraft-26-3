@@ -213,6 +213,8 @@ public class RemixRenderer {
     private RemixWeatherRenderer weatherRenderer;
     private final LensEffects lensEffects = new LensEffects();
     private float farPlane = 1000.0f;
+    private float nearPlane = 0.05f;
+    private final OrthographicView orthographicView = new OrthographicView();
     private final RainSurfaces rainSurfaces = new RainSurfaces();
     private final Puddles puddles = new Puddles();
     private final ExecutorService particleExecutor = Executors.newSingleThreadExecutor(runnable -> {
@@ -1349,7 +1351,6 @@ public class RemixRenderer {
                         aspect);
             }
             float farPlane = Math.max(1000.0f, lodRadius * 1.25f);
-            this.farPlane = farPlane;
             LightManager.SkyLightState sky = lightManager != null
                     ? lightManager.getSkyLightState() : LightManager.SkyLightState.empty();
             // Only a sky with a lit sun draws its starburst; the empty state's sun points up.
@@ -1358,15 +1359,37 @@ public class RemixRenderer {
                 lensEffects.setWaterIor(textureManager.getWaterIor());
             }
             lensEffects.updateCamera(camera, client.level, worldFov, aspect, farPlane, sunDirection);
-    
+
+            // An orthographic view is drawn from far behind the game's camera (OrthographicView).
+            // The lens and the weather above keep the game's camera: neither draws in that view.
+            orthographicView.update(camera);
+            float nearPlane = 0.05f;
+            double x = pos.x;
+            double y = pos.y;
+            double z = pos.z;
+            if (orthographicView.active()) {
+                float back = orthographicView.distance();
+                float right = orthographicView.centerX();
+                float above = orthographicView.centerY();
+                x += -forward.x() * back - left.x() * right + up.x() * above;
+                y += -forward.y() * back - left.y() * right + up.y() * above;
+                z += -forward.z() * back - left.z() * right + up.z() * above;
+                worldFov = orthographicView.fovYDegrees();
+                aspect = orthographicView.aspect();
+                nearPlane = orthographicView.nearPlane();
+                farPlane += back;
+            }
+            this.farPlane = farPlane;
+            this.nearPlane = nearPlane;
+
             CameraInfoParameterizedEXT worldCameraParams = CameraInfoParameterizedEXT.builder()
-                .position(SceneSpace.x(pos.x), SceneSpace.y(pos.y), SceneSpace.z(pos.z))
+                .position(SceneSpace.x(x), SceneSpace.y(y), SceneSpace.z(z))
                 .forward(forward.x(), forward.y(), forward.z())
                 .up(up.x(), up.y(), up.z())
                 .right(-left.x(), -left.y(), -left.z())
                 .fovYInDegrees(worldFov)
                 .aspect(aspect)
-                .nearPlane(0.05f)
+                .nearPlane(nearPlane)
                 .farPlane(farPlane)
                 .build();
     
@@ -1433,7 +1456,9 @@ public class RemixRenderer {
     
             // Submersion is read before material readiness so the driver sees
             // it on early frames.
-            boolean underwater = camera.getFluidInCamera() == FogType.WATER;
+            // The Remix camera of an orthographic view stands far behind the game's, out of its fluid.
+            boolean orthographic = orthographicView.active();
+            boolean underwater = !orthographic && camera.getFluidInCamera() == FogType.WATER;
             long materialHandle = 0;
             if (underwater && textureManager != null) {
                 RemixMaterial cameraMediumMaterial = textureManager.getWaterCameraMediumMaterial();
@@ -1447,7 +1472,7 @@ public class RemixRenderer {
             // fade. A driver left inactive by a failed reload drives nothing
             // until the next successful /rtx conf reload.
             if (confLayerDriver != null && confLayerDriver.isActive() && world != null) {
-                confLayerDriver.update(world, cameraPos, underwater,
+                confLayerDriver.update(world, cameraPos, underwater, orthographic,
                         viewDistanceStrength, lodFadeStrength, tickDelta, zoneRegistry);
             }
             if (materialHandle != lastCameraMediumHandle) {
@@ -1596,6 +1621,16 @@ public class RemixRenderer {
     /** The far plane of the last world camera given to Remix, which its depth is written against. */
     public float getFarPlane() {
         return farPlane;
+    }
+
+    /** The near plane of the last world camera given to Remix. */
+    public float getNearPlane() {
+        return nearPlane;
+    }
+
+    /** The view of the last world camera while the game's projection is orthographic. */
+    public OrthographicView getOrthographicView() {
+        return orthographicView;
     }
 
     /** Runs on the client executor so the clear lands during teardown, before the next world initializes. */

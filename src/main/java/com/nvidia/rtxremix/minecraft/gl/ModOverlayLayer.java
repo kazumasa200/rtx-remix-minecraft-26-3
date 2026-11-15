@@ -29,7 +29,6 @@ import org.lwjgl.system.MemoryStack;
  */
 public final class ModOverlayLayer {
 
-    private static final float NEAR_PLANE = 0.05f;
     private static final int UNIT = 0;
 
     private static final String VERTEX_SHADER = """
@@ -48,6 +47,8 @@ public final class ModOverlayLayer {
             uniform vec2 ViewportSize;
             uniform float Near;
             uniform float Far;
+            // How far behind the game's camera the Remix camera stands.
+            uniform float Back;
             // Rows 2 and 3 of the projection's third and fourth columns: m22, m32, m23, m33.
             uniform vec4 Projection;
             uniform float ZeroToOne;
@@ -55,7 +56,7 @@ public final class ModOverlayLayer {
             void main() {
                 vec2 uv = gl_FragCoord.xy / ViewportSize;
                 float depth = texture(RemixDepth, vec2(uv.x, 1.0 - uv.y)).r;
-                float z = Near * Far / (Far - depth * (Far - Near));
+                float z = Near * Far / (Far - depth * (Far - Near)) - Back;
                 float ndc = (Projection.x * -z + Projection.y) / (Projection.z * -z + Projection.w);
                 gl_FragDepth = clamp(ZeroToOne > 0.5 ? ndc : ndc * 0.5 + 0.5, 0.0, 1.0);
             }
@@ -87,9 +88,11 @@ public final class ModOverlayLayer {
 
     /**
      * Clears the main target's colour to transparent and writes the last Remix frame's depth
-     * into its depth. Called at the start of the main pass, before any draw of it.
+     * into its depth. Called at the start of the main pass, before any draw of it. The Remix
+     * camera wrote that depth between {@code nearPlane} and {@code farPlane} from {@code back}
+     * blocks behind the game's camera, which is 0 but in an orthographic view.
      */
-    public void prepare(int remixDepthTexture, float farPlane, Matrix4fc projection) {
+    public void prepare(int remixDepthTexture, float nearPlane, float farPlane, float back, Matrix4fc projection) {
         prepared = false;
         captured = false;
         RenderTarget main = client.gameRenderer.mainRenderTarget();
@@ -125,7 +128,8 @@ public final class ModOverlayLayer {
             GlStateManager._depthMask(true);
             GlStateManager._disableBlend(0);
             GL45C.glUniform2f(GL45C.glGetUniformLocation(depthProgram, "ViewportSize"), main.width, main.height);
-            GL45C.glUniform1f(GL45C.glGetUniformLocation(depthProgram, "Near"), NEAR_PLANE);
+            GL45C.glUniform1f(GL45C.glGetUniformLocation(depthProgram, "Near"), nearPlane);
+            GL45C.glUniform1f(GL45C.glGetUniformLocation(depthProgram, "Back"), back);
             GL45C.glUniform1f(GL45C.glGetUniformLocation(depthProgram, "Far"), farPlane);
             GL45C.glUniform4f(GL45C.glGetUniformLocation(depthProgram, "Projection"),
                     projection.m22(), projection.m32(), projection.m23(), projection.m33());

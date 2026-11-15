@@ -11,6 +11,16 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Added
+
+- An orthographic view from another mod, such as OrthoCamera, shows with RTX
+  on. The runtime cannot trace a parallel projection, so the mod draws the scene
+  from far behind the camera through a narrow field of view, which comes within
+  a few hundredths of the game's own orthographic view. That view has no
+  fog, no lens effects and no rain streaks, and clouds between the far camera
+  and the scene cover it as they do without RTX. Under a roof, such as the
+  Nether's, the view shows the top of the roof, as the game does without Sodium (#34)
+
 ### Changed
 
 - The water's wave normals are computed when the game starts, in about a second,

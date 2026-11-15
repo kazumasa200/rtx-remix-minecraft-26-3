@@ -215,6 +215,20 @@ caches, keyed on scene positions, start over. Culling, raycasts, the lens,
 flare sources and texture coordinates stay in world space. The Debug page's
 Offset Scene Origin moves the origin 4096 blocks even near spawn: anything
 handed over in world coordinates then vanishes, and toggling it runs a move.
+When another mod makes the game's projection orthographic (OrthoCamera, #34),
+the runtime cannot draw it, since it casts every primary ray from one point.
+`OrthographicView` reads the projection the camera renders with, and
+`RemixRenderer` then places the Remix camera 128 blocks behind the game's for
+each block of the view's half height, 8192 at most, with the field of view that
+spans the same extent at the game camera's plane: across a depth of that half
+height, sizes differ by under a hundredth. Seen from that far, the medium and
+the view-distance fade covered the whole scene, so the `mc.orthographic` conf
+layer takes both away and the camera medium stays clear; the lens and the
+weather, which place the scene from the game's camera, do not draw; and
+`ModOverlayLayer` takes that distance off the Remix depth, so other mods'
+draws still line up. Under a roof the far camera sees its top: the Nether is
+dark, as the game is without Sodium, whose raster drops a section's faces that
+turn away from the camera.
 
 **Presentation.** `gl/RemixPresentationWindow` hosts Vulkan in a child of
 Minecraft's SDL/OpenGL window by default; `-Drtxremix.presentation=parent`
@@ -284,8 +298,8 @@ own frame index. Still shots for the screenshot tool use their own codec
 
 **Gameplay-driven conf layers.** `ConfLayerDriver` fades a fixed table of mod
 layers (water, view distance, its LOD extension and the fade mode that goes
-with it, volumetric settling, rain, thunder, a lightning flash, and four times
-of day) by gameplay state. The
+with it, volumetric settling, rain, thunder, a lightning flash, an orthographic
+view, and four times of day) by gameplay state. The
 lightning layer slows the auto exposure while a bolt flashes and for a moment
 after, or the exposure undid the flash within a fifth of a second. Option layers come from a mod
 root shipping archetypes, acquired at init, and a world root inside a save

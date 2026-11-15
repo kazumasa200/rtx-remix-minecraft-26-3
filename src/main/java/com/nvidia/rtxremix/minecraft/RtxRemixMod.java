@@ -683,18 +683,28 @@ public class RtxRemixMod implements ClientModInitializer {
             mod.frameFailureLogged = false;
             if (remixTexture > 0 && mod.textureOverlay != null && isRtxEnabled()) {
                 mod.textureOverlay.render(remixTexture);
-                try (ProfileScope lensScope = ProfileScope.begin("Lens")) {
-                    renderer.getLensEffects().render(remixTexture, renderer.getInteropDepthTexture());
-                }
                 RemixWeatherRenderer weather = renderer.getWeatherRenderer();
-                if (weather != null) {
-                    try (ProfileScope weatherScope = ProfileScope.begin("Weather")) {
-                        weather.render(
-                                remixTexture,
-                                renderer.getInteropDepthTexture());
-                        weatherScope
-                                .drawCalls(weather.getLastDrawCount())
-                                .vertexCount(weather.getLastQuadCount() * 4);
+                if (renderer.getOrthographicView().active()) {
+                    // The lens and the weather place the scene from the game's camera, and this
+                    // image was drawn from far behind it: their haze, clouds and rain would land
+                    // in the wrong places, so the view goes without them.
+                    renderer.getLensEffects().skip();
+                    if (weather != null) {
+                        weather.beginCapture();
+                    }
+                } else {
+                    try (ProfileScope lensScope = ProfileScope.begin("Lens")) {
+                        renderer.getLensEffects().render(remixTexture, renderer.getInteropDepthTexture());
+                    }
+                    if (weather != null) {
+                        try (ProfileScope weatherScope = ProfileScope.begin("Weather")) {
+                            weather.render(
+                                    remixTexture,
+                                    renderer.getInteropDepthTexture());
+                            weatherScope
+                                    .drawCalls(weather.getLastDrawCount())
+                                    .vertexCount(weather.getLastQuadCount() * 4);
+                        }
                     }
                 }
                 mod.modOverlay.composite();
@@ -710,8 +720,8 @@ public class RtxRemixMod implements ClientModInitializer {
         RtxRemixMod mod = instance;
         if (mod == null || renderer == null || !renderer.isInitialized() || !isRtxEnabled()) return;
         try {
-            mod.modOverlay.prepare(renderer.getInteropDepthTexture(), renderer.getFarPlane(),
-                    camera == null ? null : camera.projectionMatrix);
+            mod.modOverlay.prepare(renderer.getInteropDepthTexture(), renderer.getNearPlane(), renderer.getFarPlane(),
+                    renderer.getOrthographicView().distance(), camera == null ? null : camera.projectionMatrix);
         } catch (RuntimeException e) {
             LOGGER.error("Failed to prepare the mod overlay layer", e);
         }

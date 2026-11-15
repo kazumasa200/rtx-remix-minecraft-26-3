@@ -149,12 +149,13 @@ public final class ConfLayerDriver {
     /**
      * The fixed layer catalog: water, automatic view distance and its LOD
      * extension and the fade mode that goes with it, volumetric settling,
-     * weather and a lightning flash, and four fixed time-of-day profiles (12 rows, one per
-     * shipped conf; ConfLayerDriverTest cross-checks them against the shipped
-     * confs). Biome and zone layers are NOT listed here: they are discovered
-     * from their conf file names at acquire and reload time, so a new authored
-     * look needs no code.
-     * Priorities: water dominates everything, zones beat biomes, lightning
+     * weather and a lightning flash, an orthographic view, and four fixed
+     * time-of-day profiles (13 rows, one per shipped conf; ConfLayerDriverTest
+     * cross-checks them against the shipped confs). Biome and zone layers are
+     * NOT listed here: they are discovered from their conf file names at
+     * acquire and reload time, so a new authored look needs no code.
+     * Priorities: water dominates everything, an orthographic view everything
+     * else, since the fog of any profile under it would cover the view, zones beat biomes, lightning
      * beats thunder, which beats rain, time supplies the environmental foundation, and the
      * integration-owned controllers (automatic view distance, its LOD
      * extension just above it, volumetric settling) sit below every
@@ -177,6 +178,8 @@ public final class ConfLayerDriver {
     private static List<LayerSpec> buildStaticLayerTable() {
         List<LayerSpec> table = new ArrayList<>();
         table.add(new LayerSpec(LogicChannels.UNDERWATER, "confs/water.conf", 20000f, 0.5f, false,
+                LayerSource.MOD));
+        table.add(new LayerSpec(LogicChannels.ORTHOGRAPHIC, "confs/orthographic.conf", 15000f, 0.5f, false,
                 LayerSource.MOD));
         table.add(new LayerSpec(LogicChannels.VIEW_DISTANCE,
                 "confs/view_distance.conf", 3000f, 0.01f, false, LayerSource.MOD));
@@ -724,7 +727,7 @@ public final class ConfLayerDriver {
      * Computes per-layer targets, eases smoothed layers toward them, and
      * sends changed strengths to the runtime.
      */
-    public void update(ClientLevel world, Vec3 cameraPos, boolean underwater,
+    public void update(ClientLevel world, Vec3 cameraPos, boolean underwater, boolean orthographic,
                        float viewDistanceStrength, float lodViewDistanceStrength,
                        float tickDelta, ZoneRegistry zones) {
         if (!active) {
@@ -733,6 +736,7 @@ public final class ConfLayerDriver {
         float dtSeconds = frameDtSeconds();
 
         setTarget(LogicChannels.UNDERWATER, underwater ? 1.0f : 0.0f);
+        setTarget(LogicChannels.ORTHOGRAPHIC, orthographic ? 1.0f : 0.0f);
         setTarget(LogicChannels.VIEW_DISTANCE, Math.clamp(viewDistanceStrength, 0.0f, 1.0f));
         setTarget(LogicChannels.VIEW_DISTANCE_LOD, Math.clamp(lodViewDistanceStrength, 0.0f, 1.0f));
         setTarget(LogicChannels.VIEW_DISTANCE_LOD_MODE, Math.clamp(lodViewDistanceStrength, 0.0f, 1.0f));

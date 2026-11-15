@@ -2703,6 +2703,11 @@ public final class LensEffects {
         }
     }
 
+    /** Stands in for {@link #render} on a frame the lens does not draw: the flare sources offered for it are dropped. */
+    public void skip() {
+        FlareSources.clear();
+    }
+
     private void draw(int sceneColorTexture, int depthTexture) {
         float depthOfField = LensLook.getDepthOfField();
         float flare = LensLook.getFlare();
