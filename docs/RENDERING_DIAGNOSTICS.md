@@ -107,6 +107,36 @@ artifact to capture. Sprites exceeding
 `RemixCapturingConsumer.MAX_CARD_FACE_RECTS` retain full faces and their alpha
 relaunch behavior.
 
+## Flashback Player Visibility
+
+The optional integration supports Flashback 0.43.6 for Minecraft 26.3. It is a
+compile-only dependency and is not bundled or required. Other versions log a
+warning and skip the integration. `FlashbackVisibility` reads the editor state
+selected by `EditorStateManager.getCurrent()`, including an export job's state.
+
+Player List **Hide/Show** changes a UUID set; **Hide All Spectators** and
+entity-type filters also suppress entities through the dispatcher. Visuals'
+**Render Players** and **Render Entities** instead guard vanilla's entity
+submit call, classifying the extracted `AvatarRenderState`. Remix captures
+outside both those vanilla paths for off-screen shadows, reflections, and the
+local first-person body. `RemixEntityPass` applies the logical exclusions to
+both capture paths and before pose reuse, without applying raster frustum or
+distance culling. Hiding discards cached poses; normal frame-end retirement
+removes retained parts before scene submission. Showing again extracts a fresh
+pose. Ordinary invisibility and the separate first-person hands/items pass keep
+their existing behavior. Independent analytic lights are not changed.
+
+To verify in game, compare RTX off and on in the same replay. Hide and show one
+recorded player, leaving another visible; test Render Players separately from
+Render Entities. Repeat before and after capture, near the camera and beyond
+64 blocks, while facing away, paused, playing, seeking, spectating, and exporting.
+Check direct views, shadows, and reflections, then check ordinary first-person
+body shadows/reflections and hands/items without Flashback. Record the surviving
+entity's ID/UUID before attributing a model to duplicate capture: the replay
+viewer has a separate UUID from recorded players. JVM tests cover admission,
+pose invalidation, optional loading, and retirement, but do not establish visual
+correctness or native renderer behavior.
+
 ## Material Updates And Surface Capacity
 
 `RemixMaterialStore.update` uses the runtime's `UpdateMaterial` to mutate a

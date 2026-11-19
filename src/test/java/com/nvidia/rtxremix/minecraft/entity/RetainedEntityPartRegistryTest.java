@@ -141,6 +141,33 @@ class RetainedEntityPartRegistryTest {
     }
 
     @Test
+    void hiddenOwnerRetiresWhileOtherOwnersStayAndShowingRecreatesItsParts() {
+        RetainedEntityPartRegistry<Object, String> registry = new RetainedEntityPartRegistry<>();
+        Object player = new Object();
+        Object other = new Object();
+        List<String> retired = new ArrayList<>();
+
+        registry.beginFrame();
+        registry.retain(player, 1, 0, 0, value -> true, () -> "old-body", retired::add);
+        registry.retain(other, 0, 0, 0, value -> true, () -> "other-body", retired::add);
+        registry.endFrame(retired::add);
+
+        registry.beginFrame();
+        registry.retain(other, 0, 0, 0, value -> true, () -> "unused", retired::add);
+        registry.endFrame(retired::add);
+        assertEquals(List.of("old-body"), retired);
+        assertEquals(1, registry.size());
+
+        registry.beginFrame();
+        assertEquals("new-body", registry.retain(player, 1, 0, 0, value -> true,
+                () -> "new-body", retired::add));
+        registry.retain(other, 0, 0, 0, value -> true, () -> "unused", retired::add);
+        registry.endFrame(retired::add);
+        assertEquals(2, registry.size());
+        assertEquals(List.of("old-body"), retired);
+    }
+
+    @Test
     void enforcesBalancedFrameOwnership() {
         RetainedEntityPartRegistry<Object, Object> registry = new RetainedEntityPartRegistry<>();
 

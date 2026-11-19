@@ -798,9 +798,18 @@ draws are captured in place, so a model is evaluated once rather than once for O
 again for Remix; entities outside vanilla's frustum are swept up closest-first
 under a budget, because a path tracer needs them for shadows and reflections,
 and an entity that owns a Remix light this frame is swept at any distance so
-its light never arrives without its housing. The local player is always swept,
+its light never arrives without its housing. The local player keeps a capture slot,
 even when vanilla's own draws use up the budget, because in first person its
-hidden body is captured nowhere else. Rigid occurrences retain instances
+hidden body is captured nowhere else. Flashback 0.43.6's logical visibility
+exclusions take precedence in both capture paths, including cached off-screen
+poses (`EntityCaptureVisibility`, `compat/flashback/FlashbackVisibility`): UUID
+hiding, spectator and entity-type filters, and the independent avatar/entity
+switches. The adapter reads the current replay or export editor state, discards
+hidden owners' cached poses, and leaves unseen retained parts to the usual
+frame-end retirement. Its compile-only API is loaded only for that supported
+version; absent or untested Flashback leaves capture unchanged, with a warning
+for an untested version. Raster frustum and distance checks are not added to
+Remix's sweep. Rigid occurrences retain instances
 keyed by owner, category, layer, and part; strips and beams stream transient
 meshes per frame. `OverlayComposite` paints cutout overlay layers, such as a
 villager's profession, a sheep's wool or a GeckoLib model's layer drawn again
