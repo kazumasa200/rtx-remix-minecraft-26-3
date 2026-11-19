@@ -219,6 +219,10 @@ dependencies {
     compileOnly("maven.modrinth:sodium:mc26.3-0.9.2-fabric") { transitive = false }
     compileOnly("maven.modrinth:immediatelyfast:1.17.1+26.3-fabric") { transitive = false }
 
+    // Optional Flashback 0.43.6 for 26.3; never staged or bundled.
+    compileOnly("maven.modrinth:flashback:cV1pa0YV") { transitive = false }
+    testImplementation("maven.modrinth:flashback:cV1pa0YV") { transitive = false }
+
     // Testing
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'

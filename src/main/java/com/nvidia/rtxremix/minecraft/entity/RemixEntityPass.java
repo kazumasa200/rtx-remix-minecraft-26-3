@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.entity;
 
+import com.nvidia.rtxremix.minecraft.compat.flashback.FlashbackVisibility;
 import com.nvidia.rtxremix.minecraft.util.ClosestKHeap;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -25,6 +26,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
 import net.minecraft.client.renderer.entity.state.EntityRenderState;
+import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 import net.minecraft.client.renderer.state.level.CameraRenderState;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -156,6 +158,7 @@ public class RemixEntityPass {
         float[] boneData = new float[0];
         int boneCount;
         String typeKey;
+        boolean avatar;
         long frame;
 
         void resizeLayers(int count) {
@@ -187,9 +190,15 @@ public class RemixEntityPass {
      * closing sweep, which runs after the frame's light pass.
      */
     private final IntPredicate lightOwners;
+    private final EntityCaptureVisibility visibility;
 
     public RemixEntityPass(IntPredicate lightOwners) {
+        this(lightOwners, FlashbackVisibility.create());
+    }
+
+    RemixEntityPass(IntPredicate lightOwners, EntityCaptureVisibility visibility) {
         this.lightOwners = lightOwners;
+        this.visibility = visibility;
     }
 
     /** Drops poses for entities that have not been submitted for a while. */
@@ -261,6 +270,11 @@ public class RemixEntityPass {
         if (!capturedIds.add(entity.getId())) {
             return false;
         }
+        if (visibility.isEntityHidden(entity)
+                || visibility.isStateHidden(state instanceof AvatarRenderState)) {
+            poseSnapshots.remove(entity.getId());
+            return true;
+        }
         long captureStart = System.nanoTime();
         // Remix traces shadows from the scene lights, so the capture leaves
         // vanilla's blob shadow submits unbuilt.
@@ -281,7 +295,7 @@ public class RemixEntityPass {
             return true;
         }
         if (snapshotPose) {
-            snapshotPose(entity, result);
+            snapshotPose(entity, state instanceof AvatarRenderState, result);
         }
         frameEntityCount++;
         frameLayerCount += result.layers().size();
@@ -428,7 +442,8 @@ public class RemixEntityPass {
      * kept the same way, and keeps a slot even when the in-place captures used up
      * the budget: in first person its hidden body is captured only here, and a city
      * full of item frames and armour stands otherwise dropped it from every shadow
-     * and reflection whenever enough of them were on screen.
+     * and reflection whenever enough of them were on screen. Logical visibility
+     * exclusions still take precedence over either priority.
      */
     private void captureOffFrustum(ClientLevel world, Vec3 cameraPos, float tickDelta,
                                    EntityRenderDispatcher dispatcher, CameraRenderState camera,
@@ -449,6 +464,10 @@ public class RemixEntityPass {
         maxDistSq *= maxDistSq;
         for (Entity entity : world.entitiesForRendering()) {
             if (capturedIds.contains(entity.getId())) {
+                continue;
+            }
+            if (visibility.isEntityHidden(entity)) {
+                poseSnapshots.remove(entity.getId());
                 continue;
             }
             double distSq = entity.distanceToSqr(cameraPos);
@@ -565,9 +584,17 @@ public class RemixEntityPass {
     private boolean submitOffFrustum(Entity entity, Vec3 cameraPos, float tickDelta,
                                      EntityRenderDispatcher dispatcher, CameraRenderState camera,
                                      RemixEntitySubmitter submitter) {
+        PoseSnapshot snapshot = poseSnapshots.get(entity.getId());
+        // Check before pose reuse: a recorded pose does not pass through vanilla's
+        // extraction or submit-site visibility hooks again.
+        if (visibility.isEntityHidden(entity)
+                || snapshot != null && visibility.isStateHidden(snapshot.avatar)) {
+            poseSnapshots.remove(entity.getId());
+            capturedIds.add(entity.getId());
+            return false;
+        }
         boolean far = entity.distanceToSqr(cameraPos) > POSE_REUSE_MIN_SQ;
         if (far) {
-            PoseSnapshot snapshot = poseSnapshots.get(entity.getId());
             // The stagger spreads refreshes across frames; the age test is what bounds
             // the lag. In-place captures record no pose, so an entity that has been on
             // screen for a while still holds the snapshot from before it entered the
@@ -610,7 +637,7 @@ public class RemixEntityPass {
      * pooled consumer that is recycled the moment the next entity renders. An
      * entity carrying any of the latter is skipped rather than half-snapshotted.
      */
-    private void snapshotPose(Entity entity, EntityCaptureResult result) {
+    private void snapshotPose(Entity entity, boolean avatar, EntityCaptureResult result) {
         List<RemixVertexConsumerProvider.CapturedLayer> layers = result.layers();
         // Check replayability before touching the stored pose, so a failed refresh leaves
         // no half-written snapshot behind.
@@ -658,6 +685,7 @@ public class RemixEntityPass {
         System.arraycopy(result.boneData(), 0, snapshot.boneData, 0, boneFloats);
         snapshot.boneCount = result.boneCount();
         snapshot.typeKey = result.entityTypeKey();
+        snapshot.avatar = avatar;
         snapshot.frame = sweepFrame;
     }
 
